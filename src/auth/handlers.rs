@@ -7,19 +7,30 @@ use serde::{Deserialize, Serialize};
 use crate::app::AppState;
 use crate::auth::middleware::{CurrentUser, SESSION_COOKIE};
 use crate::auth::password;
-use crate::db::queries::users as user_queries;
+use crate::db::queries::{github_token as token_queries, users as user_queries};
 use crate::error::{AppError, AppResult};
 
 const SESSION_TTL_DAYS: i64 = 30;
 
 #[derive(Serialize)]
 pub struct AuthStatus {
+    /// True until both an admin account and a GitHub token exist; the setup wizard stays up
+    /// on the frontend for as long as this is true.
     pub needs_setup: bool,
+    pub needs_admin: bool,
+    pub needs_github_token: bool,
 }
 
 pub async fn status(State(state): State<AppState>) -> AppResult<Json<AuthStatus>> {
-    let count = user_queries::count(&state.db).await?;
-    Ok(Json(AuthStatus { needs_setup: count == 0 }))
+    let user_count = user_queries::count(&state.db).await?;
+    let has_token = token_queries::get(&state.db).await?.is_some();
+    let needs_admin = user_count == 0;
+    let needs_github_token = !has_token;
+    Ok(Json(AuthStatus {
+        needs_setup: needs_admin || needs_github_token,
+        needs_admin,
+        needs_github_token,
+    }))
 }
 
 #[derive(Deserialize)]
