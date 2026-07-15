@@ -11,7 +11,7 @@ use crate::github::{client, issues, releases};
 
 async fn client_for(state: &AppState, repo_id: &str) -> AppResult<(octocrab::Octocrab, crate::db::models::Repo)> {
     let repo = repo_queries::find_by_id(&state.db, repo_id).await?.ok_or(AppError::NotFound)?;
-    let client = client::for_repo(state, &repo).await.map_err(AppError::Internal)?;
+    let client = client::shared(state).await?;
     Ok((client, repo))
 }
 
