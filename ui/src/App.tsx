@@ -1,6 +1,7 @@
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useAuthStatus, useMe } from "./hooks/useAuth";
-import SetupPage from "./pages/SetupPage";
+import SetupWizard from "./pages/setup/SetupWizard";
 import LoginPage from "./pages/LoginPage";
 import AppShell from "./components/layout/AppShell";
 import AppRoutes from "./routes";
@@ -9,12 +10,22 @@ export default function App() {
   const { data: status, isLoading: statusLoading } = useAuthStatus();
   const { data: me, isLoading: meLoading, isError: meError } = useMe();
 
-  if (statusLoading) {
+  // Decided once from the first status read, then held locally: needs_setup flips to false
+  // partway through the wizard (as soon as an admin + token exist), but the wizard still has
+  // its repos/done steps left to show, so it must not be re-evaluated against live status.
+  const [inWizard, setInWizard] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (inWizard === null && status) {
+      setInWizard(status.needs_setup);
+    }
+  }, [status, inWizard]);
+
+  if (statusLoading || inWizard === null) {
     return <FullScreenMessage>Loading…</FullScreenMessage>;
   }
 
-  if (status?.needs_setup) {
-    return <SetupPage />;
+  if (inWizard) {
+    return <SetupWizard initialStatus={status} onComplete={() => setInWizard(false)} />;
   }
 
   if (meLoading) {
