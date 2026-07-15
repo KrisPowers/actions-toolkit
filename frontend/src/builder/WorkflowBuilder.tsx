@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import ReactFlow, { Background, Controls, addEdge, applyEdgeChanges, applyNodeChanges } from "reactflow";
 import type { Connection, Edge, EdgeChange, Node, NodeChange } from "reactflow";
 import "reactflow/dist/style.css";
@@ -31,7 +31,7 @@ function parseYaml(source: string, fallbackName: string): { model: WorkflowModel
   try {
     const parsed = yaml.load(source) as WorkflowModel;
     if (!parsed || typeof parsed !== "object") return { model: emptyModel(fallbackName), error: null };
-    return { model: { jobs: {}, on: {}, ...parsed }, error: null };
+    return { model: { ...parsed, jobs: parsed.jobs ?? {}, on: parsed.on ?? {} }, error: null };
   } catch (e) {
     return { model: null, error: (e as Error).message };
   }
