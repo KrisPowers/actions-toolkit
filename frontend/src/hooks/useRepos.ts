@@ -29,3 +29,11 @@ export function useDeleteRepo() {
 export function useTestRepoConnection() {
   return useMutation({ mutationFn: (id: string) => reposApi.testConnection(id) });
 }
+
+export function useUpdateRepoPat(repoId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (pat: string) => reposApi.updatePat(repoId, pat),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["repos", repoId] }),
+  });
+}
