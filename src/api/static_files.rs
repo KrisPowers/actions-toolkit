@@ -5,13 +5,13 @@ use axum::response::{IntoResponse, Response};
 use rust_embed::RustEmbed;
 
 #[derive(RustEmbed)]
-#[folder = "../frontend/dist"]
+#[folder = "ui/dist"]
 struct FrontendAssets;
 
 /// Serve the embedded Vite build for any non-API path, falling back to `index.html` for
-/// client-side routing (SPA fallback). If `frontend/dist` doesn't exist at build time (e.g.
+/// client-side routing (SPA fallback). If `ui/dist` doesn't exist at build time (e.g.
 /// during backend-only development), `rust-embed` embeds an empty set and this always 404s,
-/// which is expected when running the frontend separately via `npm run dev`.
+/// which is expected when running the UI separately via `npm run dev`.
 pub async fn spa_fallback(AxumPath(path): AxumPath<String>) -> Response {
     serve_embedded(&path)
 }
@@ -35,7 +35,7 @@ fn serve_embedded(path: &str) -> Response {
                 .header(header::CONTENT_TYPE, "text/html")
                 .body(Body::from(content.data.into_owned()))
                 .unwrap(),
-            None => (StatusCode::NOT_FOUND, "frontend build not found; run `npm run build` in frontend/").into_response(),
+            None => (StatusCode::NOT_FOUND, "UI build not found; run `npm run build` in ui/").into_response(),
         },
     }
 }
