@@ -1,5 +1,6 @@
 pub mod analytics;
 pub mod artifacts;
+pub mod github_account;
 pub mod github_proxy;
 pub mod repos;
 pub mod runs;
@@ -24,9 +25,13 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/me", get(auth_handlers::me))
         .route("/users", get(auth_handlers::list_users).post(auth_handlers::create_user))
         .route("/users/{id}", delete(auth_handlers::delete_user))
+        .route(
+            "/github/token",
+            get(github_account::status).post(github_account::set_token).delete(github_account::delete_token),
+        )
+        .route("/github/accessible-repos", get(github_account::accessible_repos))
         .route("/repos", get(repos::list).post(repos::create))
         .route("/repos/{id}", get(repos::get).delete(repos::delete))
-        .route("/repos/{id}/pat", patch(repos::update_pat))
         .route("/repos/{id}/test-connection", post(repos::test_connection))
         .route("/repos/{id}/webhook-events", get(repos::webhook_events))
         .route("/repos/{repo_id}/workflows", get(workflows::list_for_repo).post(workflows::create))
