@@ -68,13 +68,3 @@ impl EncryptionKey {
         Ok(String::from_utf8(bytes)?)
     }
 }
-
-/// Mask a secret for display, e.g. `ghp_****...ab12`. Never return raw secrets from a GET.
-pub fn mask_secret(secret: &str) -> String {
-    if secret.len() <= 8 {
-        return "****".to_string();
-    }
-    let prefix = &secret[..4.min(secret.len())];
-    let suffix = &secret[secret.len() - 4..];
-    format!("{prefix}****...{suffix}")
-}
