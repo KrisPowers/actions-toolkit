@@ -1,16 +1,14 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { useDeleteRepo, useRepo, useTestRepoConnection, useUpdateRepoPat } from "../hooks/useRepos";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useDeleteRepo, useRepo, useTestRepoConnection } from "../hooks/useRepos";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 
 export default function RepoSettingsPage() {
   const { repoId } = useParams();
   const { data: repo } = useRepo(repoId);
-  const updatePat = useUpdateRepoPat(repoId as string);
   const testConnection = useTestRepoConnection();
   const deleteRepo = useDeleteRepo();
   const navigate = useNavigate();
-  const [pat, setPat] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (!repo) return null;
@@ -24,24 +22,18 @@ export default function RepoSettingsPage() {
       <div className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-5">
         <div className="text-sm font-medium text-neutral-200">Webhook</div>
         <code className="mt-1 block break-all rounded bg-neutral-950 px-2 py-1 text-xs text-neutral-400">{repo.webhook_url}</code>
+        <p className="mt-1 text-xs text-neutral-600">
+          The webhook secret was shown once when this repo was connected. Disconnect and reconnect to generate a new one.
+        </p>
 
-        <div className="mt-4 text-sm font-medium text-neutral-200">Personal access token</div>
-        <div className="mt-1 text-xs text-neutral-500">Current: {repo.pat_masked}</div>
-        <input
-          type="password"
-          value={pat}
-          onChange={(e) => setPat(e.target.value)}
-          placeholder="Enter a new token to rotate it"
-          className="mt-2 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent"
-        />
-        <button
-          type="button"
-          disabled={!pat || updatePat.isPending}
-          onClick={() => updatePat.mutate(pat, { onSuccess: () => setPat("") })}
-          className="mt-2 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
-        >
-          {updatePat.isPending ? "Updating…" : "Update token"}
-        </button>
+        <div className="mt-4 text-sm font-medium text-neutral-200">GitHub access</div>
+        <p className="mt-1 text-xs text-neutral-500">
+          Uses the account-wide GitHub token configured in{" "}
+          <Link to="/settings" className="text-accent hover:underline">
+            Settings
+          </Link>
+          .
+        </p>
 
         <div className="mt-5 border-t border-neutral-800 pt-4">
           <button
