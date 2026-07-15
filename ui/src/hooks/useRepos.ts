@@ -12,8 +12,8 @@ export function useRepo(id: string | undefined) {
 export function useCreateRepo() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ owner, name, pat, defaultBranch }: { owner: string; name: string; pat: string; defaultBranch?: string }) =>
-      reposApi.create(owner, name, pat, defaultBranch),
+    mutationFn: ({ owner, name, defaultBranch }: { owner: string; name: string; defaultBranch?: string }) =>
+      reposApi.create(owner, name, defaultBranch),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["repos"] }),
   });
 }
@@ -28,12 +28,4 @@ export function useDeleteRepo() {
 
 export function useTestRepoConnection() {
   return useMutation({ mutationFn: (id: string) => reposApi.testConnection(id) });
-}
-
-export function useUpdateRepoPat(repoId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (pat: string) => reposApi.updatePat(repoId, pat),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["repos", repoId] }),
-  });
 }
