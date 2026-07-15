@@ -27,7 +27,7 @@ export default function SuccessRateChart({ summary }: { summary: AnalyticsSummar
       <Tile label="Failed" value={String(summary.failed)} color={summary.failed > 0 ? CRITICAL : MUTED} />
       <Tile
         label="Avg duration"
-        value={summary.avg_duration_seconds != null ? `${Math.round(summary.avg_duration_seconds)}s` : "—"}
+        value={summary.avg_duration_seconds != null ? `${Math.round(summary.avg_duration_seconds)}s` : "N/A"}
       />
     </div>
   );
