@@ -1,0 +1,27 @@
+# Rust
+/backend/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Node / frontend
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.vite/
+npm-debug.log*
+
+# Runtime data
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Env / secrets
+.env
+.env.local
+*.key
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
