@@ -9,10 +9,24 @@ export interface RepoPublic {
   owner: string;
   name: string;
   default_branch: string;
-  pat_masked: string;
   webhook_url: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface GithubTokenStatus {
+  connected: boolean;
+  github_login: string | null;
+  scopes: string | null;
+  connected_at: string | null;
+}
+
+export interface AccessibleRepo {
+  owner: string;
+  name: string;
+  full_name: string;
+  private: boolean;
+  default_branch: string;
 }
 
 export interface WorkflowRow {

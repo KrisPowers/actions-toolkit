@@ -3,6 +3,8 @@ import type { User } from "./types";
 
 export interface AuthStatus {
   needs_setup: boolean;
+  needs_admin: boolean;
+  needs_github_token: boolean;
 }
 
 export const authApi = {
