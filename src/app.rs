@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use axum::extract::FromRef;
 use bollard::Docker;
-use dashmap::DashMap;
+use octocrab::Octocrab;
 use sqlx::SqlitePool;
+use tokio::sync::RwLock;
 
 use crate::auth::jwt::JwtCodec;
 use crate::config::AppConfig;
@@ -22,7 +23,10 @@ pub struct AppStateInner {
     /// endpoints return a clear error instead of panicking when this is absent.
     pub docker: Option<Docker>,
     pub log_hub: Arc<LogHub>,
-    pub github_clients: DashMap<String, octocrab::Octocrab>,
+    /// Cached client for the single account-wide GitHub token set up in the setup wizard.
+    /// `None` until a token has been configured, or after `github::client::invalidate` runs
+    /// following a rotation/removal.
+    pub github_client: RwLock<Option<Octocrab>>,
 }
 
 impl FromRef<AppState> for SqlitePool {

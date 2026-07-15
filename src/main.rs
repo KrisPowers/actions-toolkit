@@ -14,7 +14,7 @@ mod ws;
 use std::sync::Arc;
 
 use clap::Parser;
-use dashmap::DashMap;
+use tokio::sync::RwLock;
 
 use crate::app::{AppState, AppStateInner};
 use crate::auth::jwt::JwtCodec;
@@ -85,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
         enc,
         docker,
         log_hub,
-        github_clients: DashMap::new(),
+        github_client: RwLock::new(None),
     }));
 
     let app = api::router(state);
