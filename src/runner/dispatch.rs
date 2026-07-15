@@ -39,7 +39,7 @@ pub async fn spawn_run(
         run_queries::create_job_run(&state.db, &run.id, job_key, job.name.as_deref(), &needs_json).await?;
     }
 
-    let pat = state.enc.decrypt_str(&repo.pat_encrypted, &repo.pat_nonce)?;
+    let pat = crate::github::client::decrypted_token(state).await?;
     let checkout = Some(CheckoutContext {
         owner: repo.owner.clone(),
         repo: repo.name.clone(),
