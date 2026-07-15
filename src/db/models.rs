@@ -28,8 +28,6 @@ pub struct Repo {
     pub owner: String,
     pub name: String,
     pub default_branch: String,
-    pub pat_encrypted: Vec<u8>,
-    pub pat_nonce: Vec<u8>,
     pub webhook_secret_encrypted: Vec<u8>,
     pub webhook_secret_nonce: Vec<u8>,
     pub created_by: String,
@@ -43,10 +41,31 @@ pub struct RepoPublic {
     pub owner: String,
     pub name: String,
     pub default_branch: String,
-    pub pat_masked: String,
     pub webhook_url: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// Singleton row (id is always 1) holding the one account-wide GitHub token entered during
+/// setup. Replaces the old per-repo PAT model so connecting a repo no longer requires its own
+/// credential.
+#[derive(Debug, Clone, FromRow)]
+pub struct GithubToken {
+    pub id: i64,
+    pub token_encrypted: Vec<u8>,
+    pub token_nonce: Vec<u8>,
+    pub github_login: String,
+    pub scopes: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GithubTokenStatus {
+    pub connected: bool,
+    pub github_login: Option<String>,
+    pub scopes: Option<String>,
+    pub connected_at: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]
