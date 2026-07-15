@@ -30,7 +30,6 @@ export default function RepoListPage() {
               {r.owner}/{r.name}
             </div>
             <div className="mt-1 text-xs text-neutral-500">default branch: {r.default_branch}</div>
-            <div className="mt-3 text-xs text-neutral-600">PAT {r.pat_masked}</div>
           </Link>
         ))}
       </div>
