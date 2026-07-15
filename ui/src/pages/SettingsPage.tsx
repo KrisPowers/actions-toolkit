@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authApi } from "../api/auth";
 import { useMe } from "../hooks/useAuth";
+import GithubConnectionCard from "../components/settings/GithubConnectionCard";
 
 export default function SettingsPage() {
   const { data: me } = useMe();
@@ -27,6 +28,10 @@ export default function SettingsPage() {
   return (
     <div className="max-w-lg">
       <h1 className="text-lg font-semibold text-neutral-100">Settings</h1>
+
+      <div className="mt-5">
+        <GithubConnectionCard />
+      </div>
 
       <div className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-5">
         <h2 className="text-sm font-semibold text-neutral-200">Users</h2>
