@@ -1,12 +1,12 @@
 # Rust
-/backend/target/
+/target/
 **/*.rs.bk
 Cargo.lock.bak
 
-# Node / frontend
-/frontend/node_modules/
-/frontend/dist/
-/frontend/.vite/
+# Node / UI
+/ui/node_modules/
+/ui/dist/
+/ui/.vite/
 npm-debug.log*
 
 # Runtime data
