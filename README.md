@@ -14,13 +14,19 @@ while keeping a workflow-file-driven, trigger-based pipeline you already know.
 
 ## How it works
 
-1. Connect a GitHub repo with a personal access token.
-2. Point a GitHub webhook at this server (or tunnel it, see below) so push/PR/release events
+1. On first run, a setup wizard walks you through creating an admin account and entering a
+   single GitHub personal access token, directly in the browser, never written to an env file.
+2. Pick which repos to connect from a list the token can see (or add one manually by owner/name).
+3. Point a GitHub webhook at this server (or tunnel it, see below) so push/PR/release events
    reach it.
-3. Define workflows (`on:` triggers, `jobs:`, `steps:`) either as YAML or visually.
-4. When a matching event arrives (or you click "Run now"), actions-toolkit checks out your repo,
+4. Define workflows (`on:` triggers, `jobs:`, `steps:`) either as YAML or visually.
+5. When a matching event arrives (or you click "Run now"), actions-toolkit checks out your repo,
    spins up a Docker container per job, runs each step, streams logs live to the UI, and captures
    any declared artifacts, all on your own hardware.
+
+One token covers every repo the wizard connects; there's no per-repo credential to manage, and
+the token itself is entered only through the setup UI and Settings, never as an environment
+variable.
 
 ## Prerequisites
 
@@ -29,7 +35,7 @@ while keeping a workflow-file-driven, trigger-based pipeline you already know.
 - [Docker](https://www.docker.com/) running locally. This is what actually executes workflow
   jobs. The server starts without it, but dispatching a workflow will fail until Docker is
   reachable.
-- A GitHub personal access token with repo scope, for any repo you want to connect
+- A GitHub personal access token with repo scope, covering whichever repos you want to connect
 
 ## Development
 
@@ -43,7 +49,8 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. On first run you'll be asked to create an admin account.
+Open `http://localhost:5173`. On first run the setup wizard walks you through creating an admin
+account and connecting your GitHub token.
 
 ## Production build
 
@@ -100,6 +107,13 @@ sequentially, just like GitHub's own runners.
 
 ## Known limitations
 
+- **One token for the whole account.** There's no per-repo or per-org credential; the single
+  configured token needs access to every repo you connect. Removing the token in Settings stops
+  workflow dispatch, webhook processing, and issue/PR/release actions for every connected repo
+  until a new one is added.
+- The accessible-repos picker lists up to a few hundred repos (a handful of paginated requests);
+  very large orgs may not see their entire repo list there, but can still connect a repo by exact
+  owner/name via the manual fallback.
 - **Docker is required** to execute anything; there's no non-container execution mode.
 - The visual builder and the YAML editor share one canonical model, but the backend regenerates
   YAML on every visual-builder save, so hand-written comments and formatting are not preserved
