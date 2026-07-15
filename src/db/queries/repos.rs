@@ -3,14 +3,11 @@ use uuid::Uuid;
 
 use crate::db::models::{now_iso, Repo};
 
-#[allow(clippy::too_many_arguments)]
 pub async fn create(
     pool: &SqlitePool,
     owner: &str,
     name: &str,
     default_branch: &str,
-    pat_encrypted: &[u8],
-    pat_nonce: &[u8],
     webhook_secret_encrypted: &[u8],
     webhook_secret_nonce: &[u8],
     created_by: &str,
@@ -18,16 +15,13 @@ pub async fn create(
     let id = Uuid::new_v4().to_string();
     let now = now_iso();
     sqlx::query(
-        "INSERT INTO repos (id, owner, name, default_branch, pat_encrypted, pat_nonce, \
-         webhook_secret_encrypted, webhook_secret_nonce, created_by, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO repos (id, owner, name, default_branch, webhook_secret_encrypted, webhook_secret_nonce, created_by, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(owner)
     .bind(name)
     .bind(default_branch)
-    .bind(pat_encrypted)
-    .bind(pat_nonce)
     .bind(webhook_secret_encrypted)
     .bind(webhook_secret_nonce)
     .bind(created_by)
@@ -50,22 +44,6 @@ pub async fn find_by_id(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<Repo
         .bind(id)
         .fetch_optional(pool)
         .await
-}
-
-pub async fn update_pat(
-    pool: &SqlitePool,
-    id: &str,
-    pat_encrypted: &[u8],
-    pat_nonce: &[u8],
-) -> sqlx::Result<()> {
-    sqlx::query("UPDATE repos SET pat_encrypted = ?, pat_nonce = ?, updated_at = ? WHERE id = ?")
-        .bind(pat_encrypted)
-        .bind(pat_nonce)
-        .bind(now_iso())
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
 }
 
 pub async fn delete(pool: &SqlitePool, id: &str) -> sqlx::Result<()> {
