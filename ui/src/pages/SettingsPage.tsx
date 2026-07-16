@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authApi } from "../api/auth";
 import { useMe } from "../hooks/useAuth";
 import GithubConnectionCard from "../components/settings/GithubConnectionCard";
+import RuntimeSettingsCard from "../components/settings/RuntimeSettingsCard";
 
 export default function SettingsPage() {
   const { data: me } = useMe();
@@ -31,6 +32,10 @@ export default function SettingsPage() {
 
       <div className="mt-5">
         <GithubConnectionCard />
+      </div>
+
+      <div className="mt-5">
+        <RuntimeSettingsCard />
       </div>
 
       <div className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-5">

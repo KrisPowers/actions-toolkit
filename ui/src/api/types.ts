@@ -21,6 +21,22 @@ export interface GithubTokenStatus {
   connected_at: string | null;
 }
 
+export interface Settings {
+  id: number;
+  port: number;
+  bind_addr: string;
+  docker_host: string | null;
+  max_concurrent_jobs: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpdateSettingsRequest {
+  bind_addr?: string;
+  docker_host?: string;
+  max_concurrent_jobs?: number;
+}
+
 export interface AccessibleRepo {
   owner: string;
   name: string;
