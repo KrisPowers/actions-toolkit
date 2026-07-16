@@ -21,6 +21,7 @@ class ActionsToolkit < Formula
 
   def install
     bin.install "actions-toolkit"
+    system bin/"actions-toolkit", "init"
   end
 
   test do

@@ -64,6 +64,9 @@ chmod +x "$INSTALL_DIR/$BIN_NAME"
 
 echo "Installed actions-toolkit to $INSTALL_DIR/$BIN_NAME"
 
+echo "Initializing data directory..."
+"$INSTALL_DIR/$BIN_NAME" init
+
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
   *)
