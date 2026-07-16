@@ -212,17 +212,25 @@ where
 }
 
 /// Runs in the freshly-forked, still-single-threaded child between `fork()` and `execve()` (see
-/// `Command::pre_exec`). Puts the child into new user/mount/uts/ipc/cgroup/net/pid namespaces
-/// and maps its own (unprivileged) uid/gid to 0 inside the new user namespace — the standard
+/// `Command::pre_exec`). Puts the child into new user/mount/uts/ipc/net/pid namespaces (cgroup
+/// is handled separately, see below) and maps its own (unprivileged) uid/gid to 0 inside the new
+/// user namespace — the standard
 /// unprivileged-user-namespace pattern (`man 7 user_namespaces`), safe here because a process
 /// that just created a user namespace via `unshare` automatically holds full capabilities
 /// within that namespace, including the `CAP_SETUID`/`CAP_SETGID` needed to write its own map.
+///
+/// Deliberately excludes `CLONE_NEWCGROUP` here: per `cgroup_namespaces(7)`, a cgroup namespace
+/// has to be entered *after* the process has already been moved into its target cgroup, not
+/// before — joining a cgroup via its absolute host path while already inside a fresh cgroup
+/// namespace fails with EIO, since that path is no longer a descendant of the namespace's own
+/// root. `bucket_init::join_cgroup` does the join first; `unshare(CLONE_NEWCGROUP)` happens
+/// separately right after, giving the sandboxed process a namespaced view rooted at its own
+/// cgroup from that point on.
 fn unshare_into_new_namespaces() -> std::io::Result<()> {
     let flags = CloneFlags::CLONE_NEWUSER
         | CloneFlags::CLONE_NEWNS
         | CloneFlags::CLONE_NEWUTS
         | CloneFlags::CLONE_NEWIPC
-        | CloneFlags::CLONE_NEWCGROUP
         | CloneFlags::CLONE_NEWNET
         | CloneFlags::CLONE_NEWPID;
 
