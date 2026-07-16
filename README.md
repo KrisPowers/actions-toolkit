@@ -42,7 +42,10 @@ Or via Homebrew (macOS and Linux):
 brew install https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/Formula/actions-toolkit.rb
 ```
 
-Either way you get a single `actions-toolkit` command:
+Either way, the installer also runs `actions-toolkit init` once, which creates the data directory
+(an OS-standard per-user location, e.g. `~/.local/share/actions-toolkit`) and initializes its
+SQLite database with default settings, before you ever run `start`. Then you get a single
+`actions-toolkit` command:
 
 ```bash
 actions-toolkit start   # or: actions-toolkit listen
@@ -51,7 +54,8 @@ actions-toolkit start   # or: actions-toolkit listen
 This starts the backend API and serves the UI from the same process. By default it listens on
 `:7890`; if that port is already taken, it automatically tries the next few ports up and logs
 whichever one it actually bound to, so a busy default port won't stop it from starting. Pass
-`--port` to pick one yourself instead.
+`--port <n>` (or `--bind-addr <addr>`) to change it; the value is saved to the database, so a
+later plain `start` remembers it.
 
 No prebuilt binary for your OS/architecture yet? Build from source, see below.
 
@@ -91,12 +95,14 @@ npm run build
 
 cd ..
 cargo build --release
+./target/release/actions-toolkit init    # creates the data dir + database, safe to skip (start does it too)
 ./target/release/actions-toolkit start
 ```
 
-Then open `http://<host>:7890`. Configuration is via environment variables or CLI flags, see
-`.env.example` for the full list (port, data directory, Docker host override, JWT/encryption
-secrets, max concurrent jobs).
+Then open `http://<host>:7890`. Port and bind address are set with `start --port`/`--bind-addr`
+(persisted to the database for next time); bind address, Docker host override, and max concurrent
+jobs can also be changed from the Settings page in the UI. `.env.example` covers the remaining
+advanced overrides: a custom data directory, and recovery of the JWT/encryption secrets.
 
 ## Exposing your webhook
 
