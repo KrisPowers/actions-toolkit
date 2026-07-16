@@ -4,6 +4,7 @@ pub mod github_account;
 pub mod github_proxy;
 pub mod repos;
 pub mod runs;
+pub mod settings;
 pub mod static_files;
 pub mod webhooks;
 pub mod workflows;
@@ -30,6 +31,7 @@ pub fn router(state: AppState) -> Router {
             get(github_account::status).post(github_account::set_token).delete(github_account::delete_token),
         )
         .route("/github/accessible-repos", get(github_account::accessible_repos))
+        .route("/settings", get(settings::get).patch(settings::update))
         .route("/repos", get(repos::list).post(repos::create))
         .route("/repos/{id}", get(repos::get).delete(repos::delete))
         .route("/repos/{id}/test-connection", post(repos::test_connection))
