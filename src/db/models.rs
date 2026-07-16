@@ -156,6 +156,20 @@ pub struct WebhookEvent {
     pub received_at: String,
 }
 
+/// Singleton row (id is always 1) holding runtime settings that used to be CLI/.env-only.
+/// Seeded with defaults by `migrations/0010_settings.sql`, so it always exists once the
+/// database has been created.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Settings {
+    pub id: i64,
+    pub port: i64,
+    pub bind_addr: String,
+    pub docker_host: Option<String>,
+    pub max_concurrent_jobs: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
 }
