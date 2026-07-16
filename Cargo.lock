@@ -28,6 +28,7 @@ dependencies = [
  "hmac",
  "indexmap 2.14.0",
  "jsonwebtoken",
+ "libc",
  "mime_guess",
  "nix",
  "octocrab",
