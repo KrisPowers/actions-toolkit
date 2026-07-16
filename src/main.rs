@@ -1,6 +1,7 @@
 mod api;
 mod app;
 mod auth;
+mod bucket;
 mod config;
 mod crypto;
 mod db;
@@ -59,11 +60,26 @@ async fn bind_with_fallback(bind_addr: &str, preferred_port: u16) -> anyhow::Res
     })
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    telemetry::init();
-
+/// Plain, synchronous entry point (deliberately *not* `#[tokio::main]`): the hidden
+/// `__bucket-init` subcommand must run before any tokio runtime exists. Tokio's multi-thread
+/// runtime spawns its worker threads as soon as it's built, and `bucket_init::run` needs to
+/// `fork()` from a genuinely single-threaded process — if that dispatch happened from inside an
+/// already-running tokio runtime, the fork would be unsound. Every other subcommand builds its
+/// own runtime after this check, unaffected.
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    #[cfg(target_os = "linux")]
+    if let Command::BucketInit(args) = cli.command {
+        let code = bucket::bucket_init::run(args)?;
+        std::process::exit(code);
+    }
+
+    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run(cli))
+}
+
+async fn run(cli: Cli) -> anyhow::Result<()> {
+    telemetry::init();
 
     let args = match cli.command {
         Command::Init(args) => {
@@ -73,6 +89,9 @@ async fn main() -> anyhow::Result<()> {
             return Ok(());
         }
         Command::Start(args) => args,
+        // Handled directly in `main()` before the tokio runtime is built (Linux); unreachable
+        // in practice, but the match must stay exhaustive over `Command`.
+        Command::BucketInit(_) => anyhow::bail!("__bucket-init must be dispatched before the async runtime starts"),
     };
 
     let data_dir = config::resolve_data_dir(args.data_dir.clone());
@@ -105,6 +124,21 @@ async fn main() -> anyhow::Result<()> {
             None
         }
     };
+
+    let bucket_capability = bucket::probe_capability().await;
+    if bucket_capability.ok {
+        tracing::info!("Bucket sandbox is available on this host");
+    } else {
+        tracing::warn!(
+            reason = bucket_capability.reason.as_deref().unwrap_or("unknown"),
+            "Bucket sandbox is not usable on this host; workflow dispatch will fail until it is"
+        );
+    }
+
+    // Force-clean any sandbox left over from a previous process that never got to tear itself
+    // down (a crash mid-run), before anything else touches the buckets directory.
+    bucket::reaper::reconcile_on_startup(&db, &app_config.buckets_dir()).await;
+    tokio::spawn(bucket::reaper::run_periodic_sweep(db.clone(), Arc::from(app_config.buckets_dir())));
 
     let log_hub = Arc::new(LogHub::new());
     tokio::spawn(LogHub::run_periodic_flush(log_hub.clone(), db.clone()));

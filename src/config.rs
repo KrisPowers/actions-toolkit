@@ -103,6 +103,10 @@ impl AppConfig {
         self.data_dir.join("workspaces")
     }
 
+    pub fn buckets_dir(&self) -> PathBuf {
+        self.data_dir.join("buckets")
+    }
+
     pub fn artifacts_dir(&self) -> PathBuf {
         self.data_dir.join("artifacts")
     }
@@ -142,6 +146,7 @@ pub async fn bootstrap(data_dir: PathBuf, jwt_secret: Option<String>, encryption
     std::fs::create_dir_all(&app_config.data_dir)?;
     std::fs::create_dir_all(app_config.workspaces_dir())?;
     std::fs::create_dir_all(app_config.artifacts_dir())?;
+    std::fs::create_dir_all(app_config.buckets_dir())?;
 
     let db = crate::db::connect(&app_config.db_path()).await?;
     tracing::info!(path = %app_config.db_path().display(), "database ready");
