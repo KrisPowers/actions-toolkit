@@ -1,11 +1,25 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "actions-toolkit", about = "Local, self-hosted GitHub Actions-compatible runner")]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum Command {
+    /// Start the server (backend API + embedded UI) and keep it running in the foreground.
+    #[command(alias = "listen")]
+    Start(AppConfig),
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct AppConfig {
-    /// Port the web server (backend API + frontend) listens on.
+    /// Preferred port for the web server (backend API + frontend). If already in use, the next
+    /// free port is tried automatically; check the startup log for the port actually bound.
     #[arg(long, env = "PORT", default_value_t = 7890)]
     pub port: u16,
 

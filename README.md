@@ -28,6 +28,33 @@ One token covers every repo the wizard connects; there's no per-repo credential 
 the token itself is entered only through the setup UI and Settings, never as an environment
 variable.
 
+## Install
+
+The backend embeds the built UI into a single binary, so installing gets you both:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.sh | sh
+```
+
+Or via Homebrew (macOS and Linux):
+
+```bash
+brew install https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/Formula/actions-toolkit.rb
+```
+
+Either way you get a single `actions-toolkit` command:
+
+```bash
+actions-toolkit start   # or: actions-toolkit listen
+```
+
+This starts the backend API and serves the UI from the same process. By default it listens on
+`:7890`; if that port is already taken, it automatically tries the next few ports up and logs
+whichever one it actually bound to, so a busy default port won't stop it from starting. Pass
+`--port` to pick one yourself instead.
+
+No prebuilt binary for your OS/architecture yet? Build from source, see below.
+
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (stable toolchain)
@@ -40,8 +67,8 @@ variable.
 ## Development
 
 ```bash
-# Backend (terminal 1), serves the API on :7890, run from the repo root
-cargo run
+# Backend (terminal 1), serves the API on :7890 (or the next free port), run from the repo root
+cargo run -- start
 
 # UI (terminal 2), Vite dev server on :5173, proxies /api and /webhooks to :7890
 cd ui
@@ -64,7 +91,7 @@ npm run build
 
 cd ..
 cargo build --release
-./target/release/actions-toolkit-backend
+./target/release/actions-toolkit start
 ```
 
 Then open `http://<host>:7890`. Configuration is via environment variables or CLI flags, see
@@ -93,6 +120,8 @@ Cargo.toml, src/, migrations/, build.rs   Rust backend (axum): REST + WebSocket 
 ui/                                        React + TypeScript UI (Vite, Tailwind): dashboard,
                                            repo/workflow management, dual-mode workflow editor
                                            (Monaco + React Flow), live logs, analytics
+install.sh, Formula/, scripts/            cURL installer, Homebrew formula, and the script that
+                                           refreshes the formula's checksums after a release
 ```
 
 The backend lives at the repo root rather than in its own subdirectory since it's the primary
@@ -127,6 +156,21 @@ sequentially, just like GitHub's own runners.
   between jobs. Tracked in issue #4.
 - There's no polling fallback for hosts that can't receive webhooks at all yet; a tunnel (ngrok/
   cloudflared) is currently the only way to reach a non-public host. Tracked in issue #2.
+
+## Releasing
+
+Pushing a `v*` tag (e.g. `v0.2.0`) runs `.github/workflows/release.yml`, which builds the UI,
+compiles release binaries for macOS (arm64 and x86_64) and Linux (x86_64), and attaches them
+(with `.sha256` checksums) to a GitHub Release. `install.sh` always downloads the `latest`
+release unless `ACTIONS_TOOLKIT_VERSION` is set.
+
+After a release finishes, refresh the Homebrew formula's pinned version and checksums:
+
+```bash
+scripts/bump-formula.sh 0.2.0
+```
+
+Review the diff and commit `Formula/actions-toolkit.rb`.
 
 ## License
 
