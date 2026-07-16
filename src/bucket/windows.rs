@@ -42,7 +42,7 @@ use windows::Win32::System::Pipes::CreatePipe;
 const JOB_OBJECT_ALL_ACCESS: u32 = 0x001F_003F;
 use windows::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess, InitializeProcThreadAttributeList, ResumeThread,
-    UpdateProcThreadAttribute, WaitForSingleObject, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT,
+    UpdateProcThreadAttribute, WaitForSingleObject, CREATE_SUSPENDED, EXTENDED_STARTUPINFO_PRESENT,
     INFINITE, LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTUPINFOEXW,
     STARTUPINFOW,
 };
@@ -351,7 +351,7 @@ fn run_step_blocking(
 
         let mut cmdline = to_wide(&format!("cmd.exe /d /s /c \"{shell_command}\""));
         let _ = env; // see the TODO at the CreateProcessW call below: env overrides aren't wired yet on Windows
-        let cwd = working_dir.map(|d| to_wide(d)).unwrap_or_else(|| to_wide(&workspace.to_string_lossy()));
+        let cwd = working_dir.map(to_wide).unwrap_or_else(|| to_wide(&workspace.to_string_lossy()));
 
         let mut process_info = PROCESS_INFORMATION::default();
         let create_result = unsafe {
@@ -453,7 +453,7 @@ fn create_inheritable_pipe() -> Result<(HANDLE, HANDLE)> {
 }
 
 fn read_pipe_lines(handle: HANDLE, stream: &'static str, tx: tokio::sync::mpsc::UnboundedSender<(&'static str, String)>) {
-    let file = unsafe { std::fs::File::from_raw_handle(handle.0 as *mut core::ffi::c_void) };
+    let file = unsafe { std::fs::File::from_raw_handle(handle.0) };
     let reader = BufReader::new(file);
     for line in reader.lines() {
         match line {
