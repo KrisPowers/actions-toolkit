@@ -24,6 +24,19 @@ pub enum Command {
     /// Start the server (backend API + embedded UI) and keep it running in the foreground.
     #[command(alias = "listen")]
     Start(StartArgs),
+
+    /// Internal: re-exec target used by the Bucket sandbox to perform namespace/mount setup
+    /// from a freshly-forked, single-threaded child before exec'ing a step's command. Not
+    /// meant to be invoked directly; hidden from `--help`.
+    #[command(name = "__bucket-init", hide = true)]
+    BucketInit(BucketInitArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct BucketInitArgs {
+    /// Path to the JSON-serialized `bucket::BucketInitSpec` describing the sandbox to set up
+    /// and the command to run inside it.
+    pub spec_path: PathBuf,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -90,6 +103,10 @@ impl AppConfig {
         self.data_dir.join("workspaces")
     }
 
+    pub fn buckets_dir(&self) -> PathBuf {
+        self.data_dir.join("buckets")
+    }
+
     pub fn artifacts_dir(&self) -> PathBuf {
         self.data_dir.join("artifacts")
     }
@@ -129,6 +146,7 @@ pub async fn bootstrap(data_dir: PathBuf, jwt_secret: Option<String>, encryption
     std::fs::create_dir_all(&app_config.data_dir)?;
     std::fs::create_dir_all(app_config.workspaces_dir())?;
     std::fs::create_dir_all(app_config.artifacts_dir())?;
+    std::fs::create_dir_all(app_config.buckets_dir())?;
 
     let db = crate::db::connect(&app_config.db_path()).await?;
     tracing::info!(path = %app_config.db_path().display(), "database ready");

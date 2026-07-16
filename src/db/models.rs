@@ -170,6 +170,23 @@ pub struct Settings {
     pub updated_at: String,
 }
 
+/// One native sandbox instance ("Bucket") used to run a job's steps without Docker. Rows are
+/// created before the sandbox is spawned and marked `reaped_at` once it's torn down, so a row
+/// still open at startup identifies a sandbox that outlived a crash of the previous process.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Bucket {
+    pub id: String,
+    pub job_run_id: String,
+    pub workflow_run_id: String,
+    pub os_pid: Option<i64>,
+    pub os_handle_json: Option<String>,
+    pub workspace_path: String,
+    pub network_enabled: i64,
+    pub created_at: String,
+    pub ttl_expires_at: String,
+    pub reaped_at: Option<String>,
+}
+
 pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
 }
