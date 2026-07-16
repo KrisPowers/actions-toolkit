@@ -36,6 +36,12 @@ The backend embeds the built UI into a single binary, so installing gets you bot
 curl -fsSL https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.sh | sh
 ```
 
+On Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.ps1 | iex
+```
+
 Or via Homebrew (macOS and Linux):
 
 ```bash
@@ -126,8 +132,9 @@ Cargo.toml, src/, migrations/, build.rs   Rust backend (axum): REST + WebSocket 
 ui/                                        React + TypeScript UI (Vite, Tailwind): dashboard,
                                            repo/workflow management, dual-mode workflow editor
                                            (Monaco + React Flow), live logs, analytics
-install.sh, Formula/, scripts/            cURL installer, Homebrew formula, and the script that
-                                           refreshes the formula's checksums after a release
+install.sh, install.ps1,                  cURL/PowerShell installers, Homebrew formula, and the
+Formula/, scripts/                        script that refreshes the formula's checksums after a
+                                           release
 ```
 
 The backend lives at the repo root rather than in its own subdirectory since it's the primary
@@ -166,9 +173,10 @@ sequentially, just like GitHub's own runners.
 ## Releasing
 
 Pushing a `v*` tag (e.g. `v0.2.0`) runs `.github/workflows/release.yml`, which builds the UI,
-compiles release binaries for macOS (arm64 and x86_64) and Linux (x86_64), and attaches them
-(with `.sha256` checksums) to a GitHub Release. `install.sh` always downloads the `latest`
-release unless `ACTIONS_TOOLKIT_VERSION` is set.
+compiles release binaries for macOS (arm64 and x86_64), Linux (x86_64), and Windows (x86_64), and
+attaches them (with `.sha256` checksums; Windows ships as `.zip`, the rest as `.tar.gz`) to a
+GitHub Release. `install.sh`/`install.ps1` always download the `latest` release unless
+`ACTIONS_TOOLKIT_VERSION` is set.
 
 After a release finishes, refresh the Homebrew formula's pinned version and checksums:
 
