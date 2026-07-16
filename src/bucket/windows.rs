@@ -350,7 +350,7 @@ fn run_step_blocking(
         startup_info.lpAttributeList = attr_list;
 
         let mut cmdline = to_wide(&format!("cmd.exe /d /s /c \"{shell_command}\""));
-        let env_block = build_environment_block(env);
+        let _ = env; // see the TODO at the CreateProcessW call below: env overrides aren't wired yet on Windows
         let cwd = working_dir.map(|d| to_wide(d)).unwrap_or_else(|| to_wide(&workspace.to_string_lossy()));
 
         let mut process_info = PROCESS_INFORMATION::default();
@@ -361,8 +361,17 @@ fn run_step_blocking(
                 None,
                 None,
                 true,
-                CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
-                Some(env_block.as_ptr() as *const core::ffi::c_void),
+                CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
+                None,
+                // TODO(bucket-windows-env): passing a hand-built lpEnvironment block here
+                // consistently fails CreateProcessW with ERROR_BAD_ENVIRONMENT (0xCB) when
+                // combined with PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES; suspect AppContainer
+                // process creation expects a block built via CreateEnvironmentBlock() for the
+                // target identity (which auto-injects APPDATA/LOCALAPPDATA/USERPROFILE rebased to
+                // the per-AppContainer isolated paths) rather than an arbitrary hand-rolled one.
+                // Inheriting the parent's environment (None here) works reliably; step-level env
+                // var overrides are not yet wired on the Windows backend as a result — tracked as
+                // a follow-up, `env` is accepted but currently unused for the actual process.
                 PCWSTR(cwd.as_ptr()),
                 &startup_info.StartupInfo,
                 &mut process_info,
@@ -474,4 +483,143 @@ fn build_environment_block(env: &[String]) -> Vec<u16> {
     }
     block.push(0);
     block
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::models::now_iso;
+
+    #[tokio::test]
+    async fn probe_reports_this_host_can_run_buckets() {
+        let capability = probe_capability().await;
+        assert!(capability.ok, "expected this host to support AppContainer + Job Objects: {:?}", capability.reason);
+    }
+
+    /// End-to-end: create a bucket, run a step that writes into its workspace and attempts to
+    /// write outside it and reach the network, then tear the bucket down. Unlike the Linux
+    /// backend, this doesn't need `current_exe()` re-exec (CreateProcessW is called directly),
+    /// so `cargo test` can exercise the real spawn path, not just pure logic.
+    #[tokio::test]
+    async fn full_bucket_lifecycle_isolates_and_cleans_up() {
+        let capability = probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let base = std::env::temp_dir().join(format!("atk-bucket-test-{test_id}"));
+        let buckets_root = base.join("buckets");
+        let workspace = base.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&buckets_root).unwrap();
+
+        let db_path = base.join("test.db");
+        let pool = crate::db::connect(&db_path).await.expect("db connect should succeed");
+        seed_fk_chain(&pool, "repo-1", "workflow-1", "run-1", "job-1").await;
+
+        let spec = BucketSpec {
+            workspace_host_path: &workspace,
+            run_id: "run-1",
+            job_run_id: "job-1",
+            network_enabled: false,
+            ttl: std::time::Duration::from_secs(3600),
+        };
+        let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
+
+        let mut stdout_lines = Vec::new();
+        let command = "echo WORKSPACE_WRITE_TEST & echo hello> step_output.txt & type step_output.txt & \
+             echo TRY_ESCAPE & (echo bad > C:\\Windows\\Temp\\atk_escape_test.txt 2>nul && echo ESCAPE_SUCCEEDED || echo ESCAPE_BLOCKED) & \
+             echo TRY_NETWORK & (ping -n 1 -w 1000 127.0.0.1 >nul 2>nul && echo NETWORK_SUCCEEDED || echo NETWORK_BLOCKED)";
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            exec_step(&handle, command, None, &[], |stream, line| {
+                if stream == "stdout" {
+                    stdout_lines.push(line);
+                }
+            }),
+        )
+        .await
+        .expect("exec_step timed out")
+        .expect("exec_step should succeed");
+
+        let output = stdout_lines.join("\n");
+        println!("sandboxed step output:\n{output}");
+
+        assert!(output.contains("hello"), "expected the workspace write/read round-trip to succeed: {output}");
+        assert!(
+            workspace.join("step_output.txt").exists(),
+            "expected step_output.txt to exist in the real host workspace dir after the step ran"
+        );
+        assert!(
+            !output.contains("ESCAPE_SUCCEEDED") && !std::path::Path::new(r"C:\Windows\Temp\atk_escape_test.txt").exists(),
+            "expected the AppContainer to be denied write access outside its granted workspace: {output}"
+        );
+        assert!(!output.contains("NETWORK_SUCCEEDED"), "expected no network capability to be granted by default: {output}");
+        assert_eq!(result.exit_code, 0);
+
+        remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
+        assert!(!handle.root_skeleton.exists(), "expected the bucket scratch directory to be removed after teardown");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    async fn seed_fk_chain(pool: &sqlx::SqlitePool, repo_id: &str, workflow_id: &str, run_id: &str, job_run_id: &str) {
+        let now = now_iso();
+        sqlx::query(
+            "INSERT INTO users (id, username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, 'admin', ?, ?)",
+        )
+        .bind("user-1")
+        .bind("test-user")
+        .bind("hash")
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO repos (id, owner, name, default_branch, webhook_secret_encrypted, \
+             webhook_secret_nonce, created_by, created_at, updated_at) VALUES (?, 'test-owner', 'test-repo', 'main', \
+             x'00', x'00', 'user-1', ?, ?)",
+        )
+        .bind(repo_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO workflows (id, repo_id, name, file_path, yaml_source, parsed_json, enabled, created_at, updated_at) \
+             VALUES (?, ?, 'test-workflow', 'ci.yml', '', '{}', 1, ?, ?)",
+        )
+        .bind(workflow_id)
+        .bind(repo_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO workflow_runs (id, workflow_id, repo_id, trigger_event, status, created_at) \
+             VALUES (?, ?, ?, 'manual', 'running', ?)",
+        )
+        .bind(run_id)
+        .bind(workflow_id)
+        .bind(repo_id)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query("INSERT INTO job_runs (id, workflow_run_id, job_key, status) VALUES (?, ?, 'build', 'running')")
+            .bind(job_run_id)
+            .bind(run_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
 }
