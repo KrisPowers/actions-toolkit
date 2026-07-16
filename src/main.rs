@@ -21,7 +21,7 @@ use tokio::sync::RwLock;
 use crate::app::{AppState, AppStateInner};
 use crate::auth::jwt::JwtCodec;
 use crate::config::{Cli, Command};
-use crate::crypto::EncryptionKey;
+use crate::db::queries::settings as settings_queries;
 use crate::runner::log_stream::LogHub;
 
 /// How many ports past the requested one to try before giving up.
@@ -64,37 +64,32 @@ async fn main() -> anyhow::Result<()> {
     telemetry::init();
 
     let cli = Cli::parse();
-    let Command::Start(config) = cli.command;
 
-    std::fs::create_dir_all(&config.data_dir)?;
-    std::fs::create_dir_all(config.workspaces_dir())?;
-    std::fs::create_dir_all(config.artifacts_dir())?;
-
-    let db = db::connect(&config.db_path()).await?;
-    tracing::info!(path = %config.db_path().display(), "database ready");
-
-    let enc = EncryptionKey::load_or_generate(config.encryption_key.as_deref(), &config.secrets_dir())?;
-
-    let jwt_secret = match &config.jwt_secret {
-        Some(s) => s.clone(),
-        None => {
-            let path = config.secrets_dir().join("jwt.key");
-            std::fs::create_dir_all(&config.secrets_dir())?;
-            if path.exists() {
-                std::fs::read_to_string(&path)?.trim().to_string()
-            } else {
-                use rand::RngCore;
-                let mut bytes = [0u8; 32];
-                rand::rngs::OsRng.fill_bytes(&mut bytes);
-                let secret = hex::encode(bytes);
-                std::fs::write(&path, &secret)?;
-                secret
-            }
+    let args = match cli.command {
+        Command::Init(args) => {
+            let data_dir = config::resolve_data_dir(args.data_dir);
+            let boot = config::bootstrap(data_dir, None, None).await?;
+            println!("actions-toolkit initialized at {}", boot.app_config.data_dir.display());
+            return Ok(());
         }
+        Command::Start(args) => args,
     };
+
+    let data_dir = config::resolve_data_dir(args.data_dir.clone());
+    let config::Bootstrapped { db, app_config, enc, jwt_secret } =
+        config::bootstrap(data_dir, args.jwt_secret.clone(), args.encryption_key.clone()).await?;
     let jwt = JwtCodec::new(&jwt_secret);
 
-    let docker = match runner::docker::connect(config.docker_host.as_deref()) {
+    let settings = settings_queries::get(&db).await?;
+    let patch = settings_queries::SettingsPatch {
+        port: args.port,
+        bind_addr: args.bind_addr.clone(),
+        docker_host: args.docker_host.clone().map(Some),
+        max_concurrent_jobs: args.max_concurrent_jobs,
+    };
+    let settings = if patch.is_empty() { settings } else { settings_queries::update(&db, patch).await? };
+
+    let docker = match runner::docker::connect(settings.docker_host.as_deref()) {
         Ok(client) => match runner::docker::ping(&client).await {
             Ok(()) => {
                 tracing::info!("connected to Docker Engine");
@@ -114,12 +109,12 @@ async fn main() -> anyhow::Result<()> {
     let log_hub = Arc::new(LogHub::new());
     tokio::spawn(LogHub::run_periodic_flush(log_hub.clone(), db.clone()));
 
-    let port = config.port;
-    let bind_addr = config.bind_addr.clone();
+    let port = settings.port as u16;
+    let bind_addr = settings.bind_addr.clone();
 
     let state = AppState(Arc::new(AppStateInner {
         db,
-        config,
+        config: app_config,
         jwt,
         enc,
         docker,

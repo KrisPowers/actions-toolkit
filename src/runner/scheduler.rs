@@ -6,6 +6,7 @@ use tokio::sync::Semaphore;
 
 use crate::app::AppState;
 use crate::db::queries::runs as run_queries;
+use crate::db::queries::settings as settings_queries;
 use crate::runner::executor::{self, CheckoutContext};
 use crate::workflow::expr::{evaluate, ExprContext};
 use crate::workflow::model::Workflow;
@@ -47,7 +48,8 @@ async fn run_inner(
         job_run_ids.insert(jr.job_key.clone(), jr.id.clone());
     }
 
-    let semaphore = Arc::new(Semaphore::new(state.config.max_concurrent_jobs.max(1)));
+    let max_concurrent_jobs = settings_queries::get(&state.db).await?.max_concurrent_jobs.max(1) as usize;
+    let semaphore = Arc::new(Semaphore::new(max_concurrent_jobs));
     let mut results: HashMap<String, bool> = HashMap::new();
     let mut in_flight: HashSet<String> = HashSet::new();
     let mut handles = Vec::new();
