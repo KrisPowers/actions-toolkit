@@ -35,6 +35,10 @@ pub fn run(args: BucketInitArgs) -> Result<i32> {
     let spec: BucketInitSpec = serde_json::from_slice(&spec_bytes).context("failed to parse bucket init spec")?;
 
     join_cgroup(&spec.cgroup_path).context("failed to join cgroup")?;
+    // Only safe to unshare the cgroup namespace *after* joining the target cgroup by its
+    // absolute host path above (see the note on `linux::unshare_into_new_namespaces`); from
+    // here on this process's cgroupfs view is rooted at the cgroup it just joined.
+    nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWCGROUP).context("failed to unshare cgroup namespace")?;
     build_sandbox_root(&spec).context("failed to assemble sandbox root filesystem")?;
 
     // SAFETY: this process is single-threaded (a freshly re-exec'd binary whose main() dispatches
