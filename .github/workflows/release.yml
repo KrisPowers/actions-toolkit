@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+          - os: macos-latest
+            platform: macos
+            arch: aarch64
+          - os: macos-13
+            platform: macos
+            arch: x86_64
+          - os: windows-latest
+            platform: windows
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build UI (backend embeds ui/dist)
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --bin actions-toolkit
+
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        run: |
+          asset="actions-toolkit-${{ matrix.platform }}-${{ matrix.arch }}"
+          mkdir -p "dist/$asset"
+          cp target/release/actions-toolkit "dist/$asset/"
+          tar -C dist -czf "$asset.tar.gz" "$asset"
+          shasum -a 256 "$asset.tar.gz" > "$asset.tar.gz.sha256"
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $asset = "actions-toolkit-${{ matrix.platform }}-${{ matrix.arch }}"
+          New-Item -ItemType Directory -Force -Path "dist/$asset" | Out-Null
+          Copy-Item target/release/actions-toolkit.exe "dist/$asset/"
+          Compress-Archive -Path "dist/$asset/*" -DestinationPath "$asset.zip"
+          $hash = (Get-FileHash "$asset.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $asset.zip" | Out-File -Encoding ascii "$asset.zip.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: actions-toolkit-${{ matrix.platform }}-${{ matrix.arch }}
+          if-no-files-found: ignore
+          path: |
+            actions-toolkit-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+            actions-toolkit-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz.sha256
+            actions-toolkit-${{ matrix.platform }}-${{ matrix.arch }}.zip
+            actions-toolkit-${{ matrix.platform }}-${{ matrix.arch }}.zip.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten release assets
+        run: |
+          mkdir -p out
+          find dist -type f -exec cp {} out/ \;
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true

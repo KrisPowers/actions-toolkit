@@ -1,0 +1,65 @@
+[package]
+name = "actions-toolkit-backend"
+version = "0.1.0"
+edition = "2021"
+description = "Local, self-hosted GitHub Actions-compatible workflow runner"
+license = "MIT"
+
+[[bin]]
+name = "actions-toolkit"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws", "macros"] }
+axum-extra = { version = "0.10", features = ["cookie", "typed-header"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "cors", "trace", "compression-gzip"] }
+
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono", "uuid", "migrate"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.10"
+
+bollard = "0.18"
+octocrab = "0.44"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+jsonwebtoken = "9"
+argon2 = "0.5"
+hmac = "0.12"
+sha2 = "0.10"
+subtle = "2"
+aes-gcm = "0.10"
+rand = "0.8"
+
+clap = { version = "4", features = ["derive", "env"] }
+dirs = "5"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+thiserror = "2"
+
+rust-embed = { version = "8", features = ["compression"] }
+mime_guess = "2"
+async-trait = "0.1"
+futures = "0.3"
+futures-util = "0.3"
+indexmap = { version = "2", features = ["serde"] }
+globset = "0.4"
+dashmap = "6"
+time = "0.3"
+git2 = "0.19"
+base64 = "0.22"
+hex = "0.4"
+bytes = "1"
+tokio-util = { version = "0.7", features = ["io"] }
+tar = "0.4"
+
+[dev-dependencies]
+tokio-test = "0.4"
