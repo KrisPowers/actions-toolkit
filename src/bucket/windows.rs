@@ -100,8 +100,12 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     let workspace = spec.workspace_host_path.to_path_buf();
     let profile_name = appcontainer_profile_name(&id);
     let workspace_for_setup = workspace.clone();
-    let job_name = job_object_name(&id);
 
+    // The Job Object is deliberately *not* created here: a named kernel object with no open
+    // handle and no assigned process is destroyed immediately, and at this point there's no
+    // process yet to assign. `exec_step` creates (or reopens, if a previous step's job is still
+    // alive) the job right before assigning the step's process to it, which is the earliest
+    // point a handle can usefully be kept open.
     tokio::task::spawn_blocking(move || -> Result<()> {
         let sid = create_appcontainer(&profile_name, "actions-toolkit workflow step sandbox")
             .context("failed to create AppContainer profile")?;
@@ -112,11 +116,6 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
         let sid_string = sid_string.context("failed to stringify AppContainer SID")?;
 
         grant_full_control(&workspace_for_setup, &sid_string).context("failed to grant AppContainer access to workspace")?;
-
-        let job = create_job_object(&job_name).context("failed to create job object")?;
-        unsafe {
-            let _ = CloseHandle(job);
-        }
         Ok(())
     })
     .await
@@ -379,7 +378,10 @@ fn run_step_blocking(
         create_result.context("CreateProcessW failed")?;
 
         let job_name = job_object_name(id);
-        let job = open_job_object(&job_name).context("failed to open job object for this bucket")?;
+        // Creates the job on the first step, or reopens the same named object if a previous
+        // step's job handle is (unusually) still alive; either way `create_job_object` also
+        // (re-)applies JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, which is idempotent.
+        let job = create_job_object(&job_name).context("failed to create or open job object for this bucket")?;
         let assign_result = unsafe { AssignProcessToJobObject(job, process_info.hProcess) };
         if let Err(e) = assign_result {
             unsafe {
