@@ -28,6 +28,7 @@ export default function WorkflowEditorPage() {
             Workflows
           </Link>
           <h1 className="mt-0.5 text-lg font-semibold text-neutral-100">{workflow.name}</h1>
+          {workflow.description && <p className="mt-0.5 text-xs text-neutral-500">{workflow.description}</p>}
         </div>
         <button
           type="button"

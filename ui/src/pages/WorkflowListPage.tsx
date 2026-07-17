@@ -1,59 +1,39 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowRight, Play, Plus, Trash2 } from "lucide-react";
-import { useCreateWorkflow, useDeleteWorkflow, useWorkflows } from "../hooks/useWorkflows";
+import { useDeleteWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import { useDispatchWorkflow } from "../hooks/useWorkflows";
 import ConfirmDialog from "../components/common/ConfirmDialog";
-
-const DEFAULT_YAML = `name: New workflow
-on:
-  push:
-    branches: [main]
-jobs:
-  build:
-    steps:
-      - name: Say hello
-        run: echo "hello from actions-toolkit"
-`;
+import AddWorkflowModal from "../components/workflows/AddWorkflowModal";
+import GithubWorkflowsSection from "../components/workflows/GithubWorkflowsSection";
 
 export default function WorkflowListPage() {
   const { repoId } = useParams();
   const { data: workflows } = useWorkflows(repoId);
-  const createWorkflow = useCreateWorkflow(repoId as string);
   const deleteWorkflow = useDeleteWorkflow(repoId as string);
   const dispatch = useDispatchWorkflow();
-  const [newName, setNewName] = useState("");
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-
-  function createNew(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    createWorkflow.mutate({ name: newName.trim(), yaml_source: DEFAULT_YAML.replace("New workflow", newName.trim()) });
-    setNewName("");
-  }
+  const [showAddModal, setShowAddModal] = useState(false);
 
   return (
     <div>
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-neutral-100">Workflows</h1>
-        <Link to={`/repos/${repoId}/runs`} className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
-          View runs
-          <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link to={`/repos/${repoId}/runs`} className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
+            View runs
+            <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
+          </Link>
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+            Add workflow
+          </button>
+        </div>
       </div>
-
-      <form onSubmit={createNew} className="mt-4 flex gap-2">
-        <input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="New workflow name"
-          className="w-64 rounded-md border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
-        />
-        <button type="submit" className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover">
-          <Plus className="h-3.5 w-3.5" strokeWidth={2} />
-          Create workflow
-        </button>
-      </form>
 
       <div className="mt-6 divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900">
         {(workflows ?? []).map((w) => (
@@ -63,6 +43,7 @@ export default function WorkflowListPage() {
                 {w.name}
               </Link>
               <div className="mt-0.5 text-xs text-neutral-500">{w.enabled ? "enabled" : "disabled"} · {w.file_path}</div>
+              {w.description && <div className="mt-1 max-w-md text-xs text-neutral-400">{w.description}</div>}
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -88,6 +69,8 @@ export default function WorkflowListPage() {
         {(workflows ?? []).length === 0 && <div className="px-4 py-6 text-sm text-neutral-500">No workflows yet.</div>}
       </div>
 
+      {repoId && <GithubWorkflowsSection repoId={repoId} />}
+
       <ConfirmDialog
         open={!!pendingDelete}
         title="Delete workflow"
@@ -100,6 +83,8 @@ export default function WorkflowListPage() {
           setPendingDelete(null);
         }}
       />
+
+      {showAddModal && repoId && <AddWorkflowModal repoId={repoId} onClose={() => setShowAddModal(false)} />}
     </div>
   );
 }
