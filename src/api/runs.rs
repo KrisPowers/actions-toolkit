@@ -5,7 +5,9 @@ use serde::Deserialize;
 use crate::app::AppState;
 use crate::auth::middleware::CurrentUser;
 use crate::db::models::{RunLog, RunTree, WorkflowRun};
-use crate::db::queries::{repos as repo_queries, runs as run_queries, workflows as workflow_queries};
+use crate::db::queries::{
+    buckets as bucket_queries, repos as repo_queries, runs as run_queries, workflows as workflow_queries,
+};
 use crate::error::{AppError, AppResult};
 
 #[derive(Deserialize)]
@@ -68,6 +70,18 @@ pub async fn cancel(
             .map_err(AppError::Internal)?;
         for container_id in containers {
             let _ = crate::runner::docker::remove_container(docker, &container_id).await;
+        }
+    }
+
+    let buckets = bucket_queries::list_unreaped_for_run(&state.db, &id).await?;
+    let buckets_root = state.config.buckets_dir();
+    for row in buckets {
+        let handle = crate::bucket::handle_from_bucket_row(&buckets_root, &row);
+        if let Err(e) = crate::bucket::remove_bucket(&state.db, &handle).await {
+            tracing::warn!(error = %e, bucket_id = %row.id, "failed to remove bucket on cancel");
+        }
+        if let Err(e) = bucket_queries::mark_reaped(&state.db, &row.id).await {
+            tracing::warn!(error = %e, bucket_id = %row.id, "failed to mark bucket reaped on cancel");
         }
     }
 
