@@ -7,6 +7,7 @@ pub async fn create(
     pool: &SqlitePool,
     repo_id: &str,
     name: &str,
+    description: Option<&str>,
     file_path: &str,
     yaml_source: &str,
     parsed_json: &str,
@@ -14,12 +15,13 @@ pub async fn create(
     let id = Uuid::new_v4().to_string();
     let now = now_iso();
     sqlx::query(
-        "INSERT INTO workflows (id, repo_id, name, file_path, yaml_source, parsed_json, enabled, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)",
+        "INSERT INTO workflows (id, repo_id, name, description, file_path, yaml_source, parsed_json, enabled, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
     )
     .bind(&id)
     .bind(repo_id)
     .bind(name)
+    .bind(description)
     .bind(file_path)
     .bind(yaml_source)
     .bind(parsed_json)

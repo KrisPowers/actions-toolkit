@@ -73,6 +73,7 @@ pub struct Workflow {
     pub id: String,
     pub repo_id: String,
     pub name: String,
+    pub description: Option<String>,
     pub file_path: String,
     pub yaml_source: String,
     pub parsed_json: String,
