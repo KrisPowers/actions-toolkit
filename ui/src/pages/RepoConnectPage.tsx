@@ -1,11 +1,22 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CheckCircle2, ChevronDown, ChevronUp, Lock, Search } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, LayoutGrid, Lock, Search } from "lucide-react";
 import { useCreateRepo, useRepos } from "../hooks/useRepos";
 import { useAccessibleRepos, useGithubTokenStatus } from "../hooks/useGithubAccount";
 import GithubTokenHelp from "../components/settings/GithubTokenHelp";
 import GithubMark from "../components/common/GithubMark";
 import type { CreateRepoResponse } from "../api/repos";
+
+// A small fixed palette so each org/account gets a consistent, distinguishable color across the
+// picker (pill + repo row swatch), the same way GitHub's contribution graph uses color to make
+// groupings scannable at a glance.
+const OWNER_COLORS = ["#3654d6", "#a15c00", "#157347", "#7b2ff7", "#d33a3a", "#0f766e", "#b45309", "#4338ca"];
+
+function colorForOwner(owner: string): string {
+  let hash = 0;
+  for (let i = 0; i < owner.length; i++) hash = (hash * 31 + owner.charCodeAt(i)) >>> 0;
+  return OWNER_COLORS[hash % OWNER_COLORS.length];
+}
 
 export default function RepoConnectPage() {
   const { data: tokenStatus } = useGithubTokenStatus();
@@ -15,6 +26,7 @@ export default function RepoConnectPage() {
   const navigate = useNavigate();
 
   const [query, setQuery] = useState("");
+  const [selectedOrg, setSelectedOrg] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState<CreateRepoResponse[]>([]);
@@ -28,12 +40,30 @@ export default function RepoConnectPage() {
     [connectedRepos],
   );
 
+  const connectable = useMemo(
+    () => (accessibleRepos ?? []).filter((r) => !alreadyConnected.has(r.full_name)),
+    [accessibleRepos, alreadyConnected],
+  );
+
+  const orgs = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of connectable) counts.set(r.owner, (counts.get(r.owner) ?? 0) + 1);
+    const list = Array.from(counts.entries()).map(([owner, count]) => ({ owner, count }));
+    const myLogin = tokenStatus?.github_login;
+    list.sort((a, b) => {
+      if (a.owner === myLogin) return -1;
+      if (b.owner === myLogin) return 1;
+      return a.owner.localeCompare(b.owner);
+    });
+    return list;
+  }, [connectable, tokenStatus]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (accessibleRepos ?? [])
-      .filter((r) => !alreadyConnected.has(r.full_name))
+    return connectable
+      .filter((r) => !selectedOrg || r.owner === selectedOrg)
       .filter((r) => !q || r.full_name.toLowerCase().includes(q));
-  }, [accessibleRepos, alreadyConnected, query]);
+  }, [connectable, selectedOrg, query]);
 
   function toggle(fullName: string) {
     setSelected((prev) => {
@@ -138,7 +168,38 @@ export default function RepoConnectPage() {
       <h1 className="text-lg font-semibold text-neutral-100">Connect a repo</h1>
       <p className="mt-1 text-sm text-neutral-400">Connected as @{tokenStatus.github_login}. Pick from repos this token can see.</p>
 
-      <div className="relative mt-4">
+      <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1">
+        <button
+          type="button"
+          onClick={() => setSelectedOrg(null)}
+          className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+            selectedOrg === null
+              ? "border-accent bg-accent/15 text-accent"
+              : "border-neutral-700 text-neutral-300 hover:bg-neutral-800"
+          }`}
+        >
+          <LayoutGrid className="h-3.5 w-3.5" strokeWidth={2} />
+          All
+        </button>
+        {orgs.map(({ owner, count }) => (
+          <button
+            key={owner}
+            type="button"
+            onClick={() => setSelectedOrg(owner)}
+            className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+              selectedOrg === owner
+                ? "border-accent bg-accent/15 text-accent"
+                : "border-neutral-700 text-neutral-300 hover:bg-neutral-800"
+            }`}
+          >
+            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: colorForOwner(owner) }} />
+            {owner}
+            <span className="text-neutral-500">{count}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="relative mt-3">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" strokeWidth={2} />
         <input
           value={query}
@@ -157,6 +218,7 @@ export default function RepoConnectPage() {
             className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2 last:border-b-0 hover:bg-neutral-800/50"
           >
             <input type="checkbox" checked={selected.has(r.full_name)} onChange={() => toggle(r.full_name)} />
+            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: colorForOwner(r.owner) }} />
             <span className="flex-1 text-sm text-neutral-200">{r.full_name}</span>
             {r.private && <Lock className="h-3.5 w-3.5 text-neutral-600" strokeWidth={2} />}
           </label>
