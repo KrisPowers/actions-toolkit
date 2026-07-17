@@ -3,6 +3,13 @@
 **/*.rs.bk
 Cargo.lock.bak
 
+# Local release builds
+/dist/
+/actions-toolkit-*.zip
+/actions-toolkit-*.zip.sha256
+/actions-toolkit-*.tar.gz
+/actions-toolkit-*.tar.gz.sha256
+
 # Node / UI
 /ui/node_modules/
 /ui/dist/
