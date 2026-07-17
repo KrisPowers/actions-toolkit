@@ -1,14 +1,10 @@
 import type { AnalyticsSummary } from "../../api/analytics";
 
-const GOOD = "#0ca30c";
-const CRITICAL = "#e66767";
-const MUTED = "#898781";
-
 function Tile({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3">
       <div className="text-xs text-neutral-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums" style={{ color: color ?? "#e6e8ee" }}>
+      <div className="mt-1 text-2xl font-semibold tabular-nums" style={{ color: color ?? "var(--color-neutral-100)" }}>
         {value}
       </div>
     </div>
@@ -20,6 +16,9 @@ function Tile({ label, value, color }: { label: string; value: string; color?: s
  * (dataviz guidance: a single number doesn't need a plotted form).
  */
 export default function SuccessRateChart({ summary }: { summary: AnalyticsSummary }) {
+  const GOOD = "var(--color-status-success)";
+  const CRITICAL = "var(--color-status-error)";
+  const MUTED = "var(--color-status-muted)";
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <Tile label="Success rate" value={`${Math.round(summary.success_rate * 100)}%`} color={summary.success_rate >= 0.8 ? GOOD : summary.success_rate < 0.5 ? CRITICAL : undefined} />
