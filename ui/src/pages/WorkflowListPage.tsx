@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { ArrowRight, Play, Plus, Trash2 } from "lucide-react";
 import { useCreateWorkflow, useDeleteWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import { useDispatchWorkflow } from "../hooks/useWorkflows";
 import ConfirmDialog from "../components/common/ConfirmDialog";
@@ -35,8 +36,9 @@ export default function WorkflowListPage() {
     <div>
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-neutral-100">Workflows</h1>
-        <Link to={`/repos/${repoId}/runs`} className="text-sm text-accent hover:underline">
-          View runs →
+        <Link to={`/repos/${repoId}/runs`} className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
+          View runs
+          <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
         </Link>
       </div>
 
@@ -47,7 +49,8 @@ export default function WorkflowListPage() {
           placeholder="New workflow name"
           className="w-64 rounded-md border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
         />
-        <button type="submit" className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-dark">
+        <button type="submit" className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover">
+          <Plus className="h-3.5 w-3.5" strokeWidth={2} />
           Create workflow
         </button>
       </form>
@@ -65,15 +68,18 @@ export default function WorkflowListPage() {
               <button
                 type="button"
                 onClick={() => dispatch.mutate(w.id)}
-                className="rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-800"
+                className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-800"
               >
+                <Play className="h-3 w-3" strokeWidth={2} />
                 Run now
               </button>
               <button
                 type="button"
                 onClick={() => setPendingDelete(w.id)}
-                className="rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-red-300 hover:bg-red-950/40"
+                aria-label={`Delete ${w.name}`}
+                className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-[var(--color-status-error)] hover:bg-[var(--color-status-error)]/10"
               >
+                <Trash2 className="h-3 w-3" strokeWidth={2} />
                 Delete
               </button>
             </div>
