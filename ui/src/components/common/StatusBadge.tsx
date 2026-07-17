@@ -1,19 +1,28 @@
-const COLORS: Record<string, string> = {
-  succeeded: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  success: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  running: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  queued: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-  pending: "bg-neutral-500/15 text-neutral-400 border-neutral-500/30",
-  failed: "bg-red-500/15 text-red-400 border-red-500/30",
-  failure: "bg-red-500/15 text-red-400 border-red-500/30",
-  cancelled: "bg-neutral-500/15 text-neutral-400 border-neutral-500/30",
-  skipped: "bg-neutral-500/15 text-neutral-500 border-neutral-500/20",
+import { CheckCircle2, CircleDashed, CircleSlash, Clock, GitMerge, Loader2, XCircle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
+const STATUS: Record<string, { color: string; icon: LucideIcon; spin?: boolean }> = {
+  succeeded: { color: "var(--color-status-success)", icon: CheckCircle2 },
+  success: { color: "var(--color-status-success)", icon: CheckCircle2 },
+  merged: { color: "var(--color-status-success)", icon: GitMerge },
+  running: { color: "var(--color-status-info)", icon: Loader2, spin: true },
+  queued: { color: "var(--color-status-warning)", icon: Clock },
+  pending: { color: "var(--color-status-muted)", icon: CircleDashed },
+  failed: { color: "var(--color-status-error)", icon: XCircle },
+  failure: { color: "var(--color-status-error)", icon: XCircle },
+  cancelled: { color: "var(--color-status-muted)", icon: CircleSlash },
+  skipped: { color: "var(--color-status-muted)", icon: CircleSlash },
 };
 
 export default function StatusBadge({ status }: { status: string }) {
-  const cls = COLORS[status] ?? "bg-neutral-500/15 text-neutral-400 border-neutral-500/30";
+  const entry = STATUS[status] ?? { color: "var(--color-status-muted)", icon: CircleDashed };
+  const Icon = entry.icon;
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize ${cls}`}>
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize"
+      style={{ color: entry.color, borderColor: `color-mix(in srgb, ${entry.color} 30%, transparent)`, backgroundColor: `color-mix(in srgb, ${entry.color} 12%, transparent)` }}
+    >
+      <Icon className={entry.spin ? "h-3 w-3 animate-spin" : "h-3 w-3"} strokeWidth={2.5} />
       {status}
     </span>
   );

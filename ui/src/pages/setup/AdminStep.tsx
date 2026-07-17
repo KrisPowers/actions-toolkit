@@ -35,12 +35,12 @@ export default function AdminStep({ onNext }: { onNext: () => void }) {
       />
       <p className="mt-1 text-xs text-neutral-600">At least 3 characters for the username, 8 for the password.</p>
 
-      {setup.isError && <p className="mt-3 text-sm text-red-400">{(setup.error as Error).message}</p>}
+      {setup.isError && <p className="mt-3 text-sm text-[var(--color-status-error)]">{(setup.error as Error).message}</p>}
 
       <button
         type="submit"
         disabled={setup.isPending}
-        className="mt-5 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-60"
+        className="mt-5 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
       >
         {setup.isPending ? "Creating…" : "Continue"}
       </button>

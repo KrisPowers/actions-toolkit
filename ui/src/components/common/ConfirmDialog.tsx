@@ -1,3 +1,5 @@
+import { AlertTriangle } from "lucide-react";
+
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
@@ -17,8 +19,17 @@ export default function ConfirmDialog({ open, title, message, confirmLabel = "Co
         className="w-full max-w-sm rounded-lg border border-neutral-800 bg-neutral-900 p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-sm font-semibold text-neutral-100">{title}</h3>
-        <p className="mt-2 text-sm text-neutral-400">{message}</p>
+        <div className="flex items-start gap-3">
+          {danger && (
+            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-status-error)]/12 text-[var(--color-status-error)]">
+              <AlertTriangle className="h-4 w-4" strokeWidth={2} />
+            </span>
+          )}
+          <div>
+            <h3 className="text-sm font-semibold text-neutral-100">{title}</h3>
+            <p className="mt-1 text-sm text-neutral-400">{message}</p>
+          </div>
+        </div>
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
@@ -30,7 +41,7 @@ export default function ConfirmDialog({ open, title, message, confirmLabel = "Co
           <button
             type="button"
             onClick={onConfirm}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium text-white ${danger ? "bg-red-600 hover:bg-red-500" : "bg-accent hover:bg-accent-dark"}`}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium text-white ${danger ? "bg-[var(--color-status-error)] hover:brightness-110" : "bg-accent hover:bg-accent-hover"}`}
           >
             {confirmLabel}
           </button>

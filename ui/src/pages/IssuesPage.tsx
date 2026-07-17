@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { MessageSquare } from "lucide-react";
 import { githubApi } from "../api/github";
 import StatusBadge from "../components/common/StatusBadge";
 
@@ -38,7 +39,7 @@ export default function IssuesPage() {
         <select
           value={state}
           onChange={(e) => setState(e.target.value as typeof state)}
-          className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-200"
+          className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-200 outline-none focus:border-accent"
         >
           <option value="open">Open</option>
           <option value="closed">Closed</option>
@@ -79,14 +80,15 @@ export default function IssuesPage() {
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     placeholder="Write a comment…"
-                    className="flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100"
+                    className="flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
                   />
                   <button
                     type="button"
                     disabled={!comment || addComment.isPending}
                     onClick={() => addComment.mutate(issue.number)}
-                    className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
                   >
+                    <MessageSquare className="h-3.5 w-3.5" strokeWidth={2} />
                     Comment
                   </button>
                 </div>

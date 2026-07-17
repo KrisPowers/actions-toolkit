@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Lock, Search } from "lucide-react";
 import { useAccessibleRepos } from "../../hooks/useGithubAccount";
 import { useCreateRepo } from "../../hooks/useRepos";
 
@@ -43,12 +44,15 @@ export default function ReposStep({ onNext }: { onNext: () => void }) {
         Pick any repos you want to run workflows for. You can always connect more later from the Repos page.
       </p>
 
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search repos…"
-        className="mt-4 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent"
-      />
+      <div className="relative mt-4">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" strokeWidth={2} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search repos…"
+          className="w-full rounded-md border border-neutral-700 bg-neutral-950 py-2 pl-9 pr-3 text-sm text-neutral-100 outline-none focus:border-accent"
+        />
+      </div>
 
       <div className="mt-3 max-h-56 overflow-y-auto rounded-md border border-neutral-800">
         {isLoading && <p className="p-3 text-sm text-neutral-500">Loading repos…</p>}
@@ -56,8 +60,8 @@ export default function ReposStep({ onNext }: { onNext: () => void }) {
         {filtered.map((r) => (
           <label key={r.full_name} className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2 last:border-b-0 hover:bg-neutral-800/50">
             <input type="checkbox" checked={selected.has(r.full_name)} onChange={() => toggle(r.full_name)} />
-            <span className="text-sm text-neutral-200">{r.full_name}</span>
-            {r.private && <span className="text-xs text-neutral-600">private</span>}
+            <span className="flex-1 text-sm text-neutral-200">{r.full_name}</span>
+            {r.private && <Lock className="h-3.5 w-3.5 text-neutral-600" strokeWidth={2} />}
           </label>
         ))}
       </div>
@@ -66,7 +70,7 @@ export default function ReposStep({ onNext }: { onNext: () => void }) {
         type="button"
         onClick={connectSelected}
         disabled={selected.size === 0 || connecting}
-        className="mt-5 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-60"
+        className="mt-5 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
       >
         {connecting ? "Connecting…" : `Connect ${selected.size || ""} repo${selected.size === 1 ? "" : "s"}`.trim()}
       </button>

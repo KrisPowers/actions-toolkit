@@ -1,7 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { CheckCircle2, ChevronDown, ChevronUp, Lock, Search } from "lucide-react";
 import { useCreateRepo, useRepos } from "../hooks/useRepos";
 import { useAccessibleRepos, useGithubTokenStatus } from "../hooks/useGithubAccount";
+import GithubTokenHelp from "../components/settings/GithubTokenHelp";
+import GithubMark from "../components/common/GithubMark";
 import type { CreateRepoResponse } from "../api/repos";
 
 export default function RepoConnectPage() {
@@ -70,14 +73,17 @@ export default function RepoConnectPage() {
 
   if (connected.length > 0) {
     return (
-      <div className="max-w-xl">
-        <h1 className="text-lg font-semibold text-neutral-100">
-          {connected.length === 1 ? "Repo connected" : `${connected.length} repos connected`}
-        </h1>
+      <div className="max-w-2xl">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-5 w-5 text-[var(--color-status-success)]" strokeWidth={2} />
+          <h1 className="text-lg font-semibold text-neutral-100">
+            {connected.length === 1 ? "Repo connected" : `${connected.length} repos connected`}
+          </h1>
+        </div>
         <p className="mt-2 text-sm text-neutral-400">
-          To receive events (push, pull request, release) without paying for GitHub-hosted runners, add a webhook on
-          each GitHub repo pointing at this server. If this machine isn't publicly reachable, tunnel it (e.g.{" "}
-          <code>ngrok http</code>) and use the tunnel URL instead.
+          To trigger workflows from push, pull request, and release events, add a webhook on each repo pointing at the
+          URL below. If this machine isn't publicly reachable, tunnel it first (e.g. <code>ngrok http</code>) and use
+          the tunnel URL instead.
         </p>
 
         <div className="mt-4 flex flex-col gap-3">
@@ -94,14 +100,14 @@ export default function RepoConnectPage() {
           ))}
         </div>
         <p className="mt-3 text-xs text-neutral-500">
-          In each GitHub repo, go to Settings, Webhooks, Add webhook, set content type to <code>application/json</code>,
-          paste the matching secret above, and select the events you want to trigger workflows for.
+          In each repo on GitHub: Settings → Webhooks → Add webhook. Set content type to <code>application/json</code>
+          and paste the matching secret above.
         </p>
 
         <button
           type="button"
           onClick={() => navigate("/repos")}
-          className="mt-5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-dark"
+          className="mt-5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
         >
           Done
         </button>
@@ -112,14 +118,17 @@ export default function RepoConnectPage() {
   if (!tokenStatus?.connected) {
     return (
       <div className="max-w-md">
-        <h1 className="text-lg font-semibold text-neutral-100">Connect a repo</h1>
-        <p className="mt-3 text-sm text-neutral-400">
-          You need a GitHub token before connecting repos.{" "}
-          <Link to="/settings" className="text-accent hover:underline">
-            Add one in Settings
-          </Link>
-          , then come back here.
+        <div className="flex items-center gap-2">
+          <GithubMark className="h-5 w-5 text-neutral-500" />
+          <h1 className="text-lg font-semibold text-neutral-100">Connect a repo</h1>
+        </div>
+        <p className="mt-3 flex items-center gap-1.5 text-sm text-neutral-400">
+          You need a GitHub token first.
+          <GithubTokenHelp />
         </p>
+        <Link to="/settings" className="mt-3 inline-block text-sm text-accent hover:underline">
+          Add one in Settings →
+        </Link>
       </div>
     );
   }
@@ -129,12 +138,15 @@ export default function RepoConnectPage() {
       <h1 className="text-lg font-semibold text-neutral-100">Connect a repo</h1>
       <p className="mt-1 text-sm text-neutral-400">Connected as @{tokenStatus.github_login}. Pick from repos this token can see.</p>
 
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search repos…"
-        className="mt-4 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent"
-      />
+      <div className="relative mt-4">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" strokeWidth={2} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search repos…"
+          className="w-full rounded-md border border-neutral-700 bg-neutral-950 py-2 pl-9 pr-3 text-sm text-neutral-100 outline-none focus:border-accent"
+        />
+      </div>
 
       <div className="mt-3 max-h-72 overflow-y-auto rounded-md border border-neutral-800">
         {isLoading && <p className="p-3 text-sm text-neutral-500">Loading repos…</p>}
@@ -145,8 +157,8 @@ export default function RepoConnectPage() {
             className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2 last:border-b-0 hover:bg-neutral-800/50"
           >
             <input type="checkbox" checked={selected.has(r.full_name)} onChange={() => toggle(r.full_name)} />
-            <span className="text-sm text-neutral-200">{r.full_name}</span>
-            {r.private && <span className="text-xs text-neutral-600">private</span>}
+            <span className="flex-1 text-sm text-neutral-200">{r.full_name}</span>
+            {r.private && <Lock className="h-3.5 w-3.5 text-neutral-600" strokeWidth={2} />}
           </label>
         ))}
       </div>
@@ -155,12 +167,17 @@ export default function RepoConnectPage() {
         type="button"
         onClick={connectSelected}
         disabled={selected.size === 0 || connecting}
-        className="mt-4 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-60"
+        className="mt-4 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
       >
         {connecting ? "Connecting…" : `Connect ${selected.size || ""} repo${selected.size === 1 ? "" : "s"}`.trim()}
       </button>
 
-      <button type="button" onClick={() => setShowManual((v) => !v)} className="mt-3 text-xs text-neutral-500 hover:text-neutral-300">
+      <button
+        type="button"
+        onClick={() => setShowManual((v) => !v)}
+        className="mt-3 inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-300"
+      >
+        {showManual ? <ChevronUp className="h-3.5 w-3.5" strokeWidth={2} /> : <ChevronDown className="h-3.5 w-3.5" strokeWidth={2} />}
         {showManual ? "Hide manual entry" : "Not seeing a repo? Add it by owner/name"}
       </button>
 

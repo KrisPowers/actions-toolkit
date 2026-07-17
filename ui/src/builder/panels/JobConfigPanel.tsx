@@ -1,3 +1,4 @@
+import { Plus, X } from "lucide-react";
 import type { Job, Step } from "../../api/types";
 import ConditionRuleBuilder from "./ConditionRuleBuilder";
 import StepConfigPanel from "./StepConfigPanel";
@@ -18,7 +19,7 @@ export default function JobConfigPanel({ jobKey, job, onChange, onRemove }: Prop
     <div>
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-neutral-100">Job: {jobKey}</h3>
-        <button type="button" onClick={onRemove} className="text-xs text-red-400 hover:underline">
+        <button type="button" onClick={onRemove} className="text-xs text-[var(--color-status-error)] hover:underline">
           Delete job
         </button>
       </div>
@@ -73,9 +74,10 @@ export default function JobConfigPanel({ jobKey, job, onChange, onRemove }: Prop
           <button
             type="button"
             onClick={() => onChange({ ...job, steps: [...job.steps, emptyStep()] })}
-            className="text-xs text-accent hover:underline"
+            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
           >
-            + Add step
+            <Plus className="h-3 w-3" strokeWidth={2} />
+            Add step
           </button>
         </div>
         <div className="mt-2 flex flex-col gap-2">
@@ -97,9 +99,10 @@ export default function JobConfigPanel({ jobKey, job, onChange, onRemove }: Prop
           <button
             type="button"
             onClick={() => onChange({ ...job, artifacts: [...job.artifacts, { name: "artifact", path: "/workspace/dist" }] })}
-            className="text-xs text-accent hover:underline"
+            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
           >
-            + Add artifact
+            <Plus className="h-3 w-3" strokeWidth={2} />
+            Add artifact
           </button>
         </div>
         {job.artifacts.map((a, i) => (
@@ -121,9 +124,10 @@ export default function JobConfigPanel({ jobKey, job, onChange, onRemove }: Prop
             <button
               type="button"
               onClick={() => onChange({ ...job, artifacts: job.artifacts.filter((_, j) => j !== i) })}
-              className="text-xs text-red-400 hover:underline"
+              aria-label={`Remove artifact ${a.name}`}
+              className="text-[var(--color-status-error)] hover:underline"
             >
-              ✕
+              <X className="h-3.5 w-3.5" strokeWidth={2} />
             </button>
           </div>
         ))}

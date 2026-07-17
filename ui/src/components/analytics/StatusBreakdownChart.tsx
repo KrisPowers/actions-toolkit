@@ -4,15 +4,15 @@ import type { StatusCount } from "../../api/analytics";
 // Fixed status palette (never themed / never reused for series identity) so a status color
 // always means the same run outcome across the app, matching StatusBadge.
 const STATUS_COLOR: Record<string, string> = {
-  succeeded: "#0ca30c",
-  failed: "#e66767",
-  cancelled: "#898781",
-  running: "#3987e5",
-  queued: "#c98500",
+  succeeded: "var(--color-status-success)",
+  failed: "var(--color-status-error)",
+  cancelled: "var(--color-status-muted)",
+  running: "var(--color-status-info)",
+  queued: "var(--color-status-warning)",
 };
 
-const GRIDLINE = "#2c2c2a";
-const MUTED_INK = "#898781";
+const GRIDLINE = "var(--color-neutral-800)";
+const MUTED_INK = "var(--color-neutral-500)";
 
 export default function StatusBreakdownChart({ counts }: { counts: StatusCount[] }) {
   const data = counts.map((c) => ({ status: c.status, count: c.count }));
@@ -27,9 +27,9 @@ export default function StatusBreakdownChart({ counts }: { counts: StatusCount[]
             <XAxis type="number" stroke={MUTED_INK} fontSize={11} tickLine={false} axisLine={{ stroke: GRIDLINE }} allowDecimals={false} />
             <YAxis type="category" dataKey="status" stroke={MUTED_INK} fontSize={11} tickLine={false} axisLine={false} width={80} />
             <Tooltip
-              contentStyle={{ background: "#1a1a19", border: "1px solid #2c2c2a", borderRadius: 6, fontSize: 12 }}
-              labelStyle={{ color: "#c3c2b7" }}
-              cursor={{ fill: "rgba(255,255,255,0.04)" }}
+              contentStyle={{ background: "var(--color-neutral-900)", border: "1px solid var(--color-neutral-800)", borderRadius: 6, fontSize: 12 }}
+              labelStyle={{ color: "var(--color-neutral-300)" }}
+              cursor={{ fill: "rgba(128,128,128,0.08)" }}
             />
             <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={18}>
               {data.map((d) => (

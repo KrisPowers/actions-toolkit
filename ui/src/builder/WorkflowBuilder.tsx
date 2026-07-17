@@ -3,6 +3,8 @@ import * as yaml from "js-yaml";
 import ReactFlow, { Background, Controls, addEdge, applyEdgeChanges, applyNodeChanges } from "reactflow";
 import type { Connection, Edge, EdgeChange, Node, NodeChange } from "reactflow";
 import "reactflow/dist/style.css";
+import { Plus, Save } from "lucide-react";
+import { useTheme } from "../theme/ThemeProvider";
 
 import type { Job, WorkflowModel } from "../api/types";
 import YamlCodeEditor from "./YamlCodeEditor";
@@ -38,6 +40,7 @@ function parseYaml(source: string, fallbackName: string): { model: WorkflowModel
 }
 
 export default function WorkflowBuilder({ name, initialYaml, onSave, saving, saveError }: Props) {
+  const { resolvedTheme } = useTheme();
   const [mode, setMode] = useState<"visual" | "code">("code");
   const [yamlText, setYamlText] = useState(initialYaml);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -172,13 +175,14 @@ export default function WorkflowBuilder({ name, initialYaml, onSave, saving, sav
           </button>
         </div>
         <div className="flex items-center gap-3">
-          {saveError && <span className="text-xs text-red-400">{saveError}</span>}
+          {saveError && <span className="text-xs text-[var(--color-status-error)]">{saveError}</span>}
           <button
             type="button"
             onClick={save}
             disabled={saving}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-dark disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-60"
           >
+            <Save className="h-3.5 w-3.5" strokeWidth={2} />
             {saving ? "Saving…" : "Save workflow"}
           </button>
         </div>
@@ -191,8 +195,13 @@ export default function WorkflowBuilder({ name, initialYaml, onSave, saving, sav
           <div className="flex h-full gap-3">
             <div className="min-w-0 flex-1 rounded-lg border border-neutral-800">
               <div className="border-b border-neutral-800 p-2">
-                <button type="button" onClick={addJob} className="rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-800">
-                  + Add job
+                <button
+                  type="button"
+                  onClick={addJob}
+                  className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-800"
+                >
+                  <Plus className="h-3 w-3" strokeWidth={2} />
+                  Add job
                 </button>
               </div>
               <ReactFlow
@@ -207,7 +216,7 @@ export default function WorkflowBuilder({ name, initialYaml, onSave, saving, sav
                 fitView
                 proOptions={{ hideAttribution: true }}
               >
-                <Background gap={16} color="#1f2028" />
+                <Background gap={16} color={resolvedTheme === "dark" ? "#232631" : "#d8dae0"} />
                 <Controls />
               </ReactFlow>
             </div>
