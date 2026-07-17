@@ -1,2 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Migration files are checksummed byte-for-byte by sqlx and embedded into
+# the binary at compile time. They must stay LF on every platform, or a
+# CRLF checkout produces a different checksum than the one recorded by an
+# existing database, which breaks startup with "migration N was previously
+# applied but has been modified".
+migrations/*.sql text eol=lf
