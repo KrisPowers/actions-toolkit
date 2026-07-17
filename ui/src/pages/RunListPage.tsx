@@ -1,4 +1,5 @@
 import { Link, useParams } from "react-router-dom";
+import { Clock } from "lucide-react";
 import { useRuns } from "../hooks/useRuns";
 import StatusBadge from "../components/common/StatusBadge";
 
@@ -20,7 +21,10 @@ export default function RunListPage() {
                 {run.trigger_event}
                 {run.ref_name ? ` · ${run.ref_name}` : ""}
               </div>
-              <div className="mt-0.5 text-xs text-neutral-500">{new Date(run.created_at).toLocaleString()}</div>
+              <div className="mt-0.5 flex items-center gap-1 text-xs text-neutral-500">
+                <Clock className="h-3 w-3" strokeWidth={2} />
+                {new Date(run.created_at).toLocaleString()}
+              </div>
             </div>
             <StatusBadge status={run.status} />
           </Link>
