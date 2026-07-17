@@ -42,7 +42,7 @@ use windows::Win32::System::Pipes::CreatePipe;
 const JOB_OBJECT_ALL_ACCESS: u32 = 0x001F_003F;
 use windows::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess, InitializeProcThreadAttributeList, ResumeThread,
-    UpdateProcThreadAttribute, WaitForSingleObject, CREATE_SUSPENDED, EXTENDED_STARTUPINFO_PRESENT,
+    UpdateProcThreadAttribute, WaitForSingleObject, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT,
     INFINITE, LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTUPINFOEXW,
     STARTUPINFOW,
 };
@@ -350,8 +350,8 @@ fn run_step_blocking(
         startup_info.lpAttributeList = attr_list;
 
         let mut cmdline = to_wide(&format!("cmd.exe /d /s /c \"{shell_command}\""));
-        let _ = env; // see the TODO at the CreateProcessW call below: env overrides aren't wired yet on Windows
         let cwd = working_dir.map(to_wide).unwrap_or_else(|| to_wide(&workspace.to_string_lossy()));
+        let env_block = build_environment_block(env);
 
         let mut process_info = PROCESS_INFORMATION::default();
         let create_result = unsafe {
@@ -361,17 +361,14 @@ fn run_step_blocking(
                 None,
                 None,
                 true,
-                CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
-                None,
-                // TODO(bucket-windows-env): passing a hand-built lpEnvironment block here
-                // consistently fails CreateProcessW with ERROR_BAD_ENVIRONMENT (0xCB) when
-                // combined with PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES; suspect AppContainer
-                // process creation expects a block built via CreateEnvironmentBlock() for the
-                // target identity (which auto-injects APPDATA/LOCALAPPDATA/USERPROFILE rebased to
-                // the per-AppContainer isolated paths) rather than an arbitrary hand-rolled one.
-                // Inheriting the parent's environment (None here) works reliably; step-level env
-                // var overrides are not yet wired on the Windows backend as a result — tracked as
-                // a follow-up, `env` is accepted but currently unused for the actual process.
+                CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
+                // A prior attempt here passed a block containing only the step's override vars
+                // (plus a PATH fallback), which reliably failed with ERROR_BAD_ENVIRONMENT: it was
+                // missing SystemRoot/ComSpec/TEMP/etc. that cmd.exe needs to initialize at all.
+                // build_environment_block now starts from this process's own (inherited, already
+                // proven to work) environment and overlays the step's overrides on top, so the
+                // sandboxed process gets a complete, valid block either way.
+                Some(env_block.as_ptr() as *const core::ffi::c_void),
                 PCWSTR(cwd.as_ptr()),
                 &startup_info.StartupInfo,
                 &mut process_info,
@@ -468,17 +465,26 @@ fn read_pipe_lines(handle: HANDLE, stream: &'static str, tx: tokio::sync::mpsc::
 }
 
 /// Builds a double-null-terminated `KEY=VALUE\0...\0\0` UTF-16 block for `CreateProcessW`'s
-/// `lpEnvironment`, since `CREATE_UNICODE_ENVIRONMENT` was requested.
-fn build_environment_block(env: &[String]) -> Vec<u16> {
-    let mut vars: Vec<String> = env.to_vec();
-    if !vars.iter().any(|e| e.to_ascii_uppercase().starts_with("PATH=")) {
-        if let Ok(path) = std::env::var("PATH") {
-            vars.push(format!("PATH={path}"));
+/// `lpEnvironment`, since `CREATE_UNICODE_ENVIRONMENT` is requested alongside it.
+///
+/// Starts from this process's own environment (the same set a sandboxed process would get by
+/// inheriting, which is already known to work) rather than only the step's override vars, then
+/// applies `overrides` on top by key (case-insensitively, last write wins). This keeps essentials
+/// like `SystemRoot`/`ComSpec`/`TEMP` present even when a step only overrides one or two vars.
+fn build_environment_block(overrides: &[String]) -> Vec<u16> {
+    let mut vars: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for (key, value) in std::env::vars() {
+        vars.insert(key.to_ascii_uppercase(), format!("{key}={value}"));
+    }
+    for entry in overrides {
+        if let Some(eq) = entry.find('=') {
+            vars.insert(entry[..eq].to_ascii_uppercase(), entry.clone());
         }
     }
+
     let mut block = Vec::new();
-    for var in vars {
-        block.extend(std::ffi::OsStr::new(&var).encode_wide());
+    for entry in vars.values() {
+        block.extend(std::ffi::OsStr::new(entry).encode_wide());
         block.push(0);
     }
     block.push(0);
@@ -531,10 +537,12 @@ mod tests {
         let mut stdout_lines = Vec::new();
         let command = "echo WORKSPACE_WRITE_TEST & echo hello> step_output.txt & type step_output.txt & \
              echo TRY_ESCAPE & (echo bad > C:\\Windows\\Temp\\atk_escape_test.txt 2>nul && echo ESCAPE_SUCCEEDED || echo ESCAPE_BLOCKED) & \
-             echo TRY_NETWORK & (ping -n 1 -w 1000 127.0.0.1 >nul 2>nul && echo NETWORK_SUCCEEDED || echo NETWORK_BLOCKED)";
+             echo TRY_NETWORK & (ping -n 1 -w 1000 127.0.0.1 >nul 2>nul && echo NETWORK_SUCCEEDED || echo NETWORK_BLOCKED) & \
+             echo TRY_ENV_OVERRIDE & echo ATK_TEST_VAR=%ATK_TEST_VAR% & echo SYSTEMROOT_SET=%SystemRoot%";
+        let env = vec!["ATK_TEST_VAR=sandboxed_value".to_string()];
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(20),
-            exec_step(&handle, command, None, &[], |stream, line| {
+            exec_step(&handle, command, None, &env, |stream, line| {
                 if stream == "stdout" {
                     stdout_lines.push(line);
                 }
@@ -548,6 +556,14 @@ mod tests {
         println!("sandboxed step output:\n{output}");
 
         assert!(output.contains("hello"), "expected the workspace write/read round-trip to succeed: {output}");
+        assert!(
+            output.contains("ATK_TEST_VAR=sandboxed_value"),
+            "expected the step-declared env var override to reach the sandboxed process: {output}"
+        );
+        assert!(
+            !output.contains("SYSTEMROOT_SET=%SystemRoot%") && output.contains("SYSTEMROOT_SET="),
+            "expected the inherited SystemRoot to still be present alongside the override: {output}"
+        );
         assert!(
             workspace.join("step_output.txt").exists(),
             "expected step_output.txt to exist in the real host workspace dir after the step ran"
