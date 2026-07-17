@@ -116,6 +116,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
         let sid_string = sid_string.context("failed to stringify AppContainer SID")?;
 
         grant_full_control(&workspace_for_setup, &sid_string).context("failed to grant AppContainer access to workspace")?;
+        grant_ancestor_traverse_access(&workspace_for_setup, &sid_string);
         Ok(())
     })
     .await
@@ -265,6 +266,47 @@ fn grant_full_control(path: &Path, sid_string: &str) -> Result<()> {
     Ok(())
 }
 
+/// Grants the AppContainer SID traverse-only access (`(X)`, not full control, and not inherited
+/// by each ancestor's other children) to `path`'s two immediate ancestors — for a workspace at
+/// `<data_dir>/workspaces/<run_id>`, that's `<data_dir>/workspaces` and `<data_dir>` itself — on
+/// top of `grant_full_control`'s full-control grant on `path` itself.
+///
+/// AppContainer tokens don't hold the "bypass traverse checking" privilege normal user tokens get
+/// by default, so a workspace nested under the app's own data dir is otherwise only reachable by
+/// tools that don't validate their working directory at startup. `cmd.exe`'s inherited-cwd
+/// handling doesn't (file I/O inside the granted leaf directory works fine even without this), but
+/// PowerShell's `Set-Location`/`$PWD` initialization does, and fails with
+/// `UnauthorizedAccessException` without it — found by testing a real (non-`cmd`) default-shell
+/// step end-to-end, not from documentation.
+///
+/// Deliberately bounded to 2 levels rather than walking to the drive root: this covers every
+/// directory the app itself creates without touching (and persistently modifying the ACLs of)
+/// arbitrary user-profile directories above `data_dir` that this process doesn't own — which, on
+/// top of the unbounded-depth version being needlessly invasive, also turned out to be extremely
+/// slow (one `icacls` process per ancestor, several of which took tens of seconds against real
+/// directories with large existing ACLs).
+fn grant_ancestor_traverse_access(path: &Path, sid_string: &str) {
+    let grant_arg = format!("*{sid_string}:(X)");
+    for ancestor in path.ancestors().skip(1).take(2) {
+        if ancestor.parent().is_none() {
+            break;
+        }
+        match std::process::Command::new("icacls").arg(ancestor).arg("/grant").arg(&grant_arg).output() {
+            Ok(output) if !output.status.success() => {
+                tracing::warn!(
+                    path = %ancestor.display(),
+                    stderr = %String::from_utf8_lossy(&output.stderr),
+                    "failed to grant traverse access to a bucket workspace ancestor directory"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, path = %ancestor.display(), "failed to invoke icacls for ancestor traverse grant");
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Builds the capability SIDs granted when `network: true` is requested: `internetClient` for
 /// outbound internet access, `privateNetworkClientServer` for also reaching other hosts on the
 /// local/private network. Returns the raw SID byte buffers alongside the `SID_AND_ATTRIBUTES`
@@ -344,15 +386,14 @@ struct StepInvocation<'a> {
     env: &'a [String],
 }
 
+type OutputLineSender = tokio::sync::mpsc::UnboundedSender<(&'static str, String)>;
+
 fn run_step_blocking(
     id: &str,
     workspace: &Path,
     network_enabled: bool,
     invocation: StepInvocation<'_>,
-    (stdout_tx, stderr_tx): (
-        tokio::sync::mpsc::UnboundedSender<(&'static str, String)>,
-        tokio::sync::mpsc::UnboundedSender<(&'static str, String)>,
-    ),
+    (stdout_tx, stderr_tx): (OutputLineSender, OutputLineSender),
 ) -> Result<ExecResult> {
     let StepInvocation { shell_command, shell, working_dir, env } = invocation;
     let profile_name = appcontainer_profile_name(id);
@@ -574,14 +615,20 @@ fn pwsh_available() -> bool {
 /// real GitHub Actions' Windows runner default. An explicit `shell: pwsh` is honored as-is (no
 /// silent fallback) so a missing pwsh install fails loudly instead of quietly using a different
 /// shell than the one the workflow author asked for.
+///
+/// `-NoProfile` is load-bearing, not cosmetic: without it, PowerShell loads the invoking host
+/// account's profile script before running the step, and a profile that does something as
+/// ordinary as `cd`-ing somewhere silently changes the step's actual working directory out from
+/// under `-WorkingDirectory`/`lpCurrentDirectory` entirely (caught by testing this against a real
+/// profile that does exactly that, not from documentation).
 fn resolve_shell_cmdline(shell: Option<&str>, shell_command: &str) -> String {
     match shell.map(str::to_ascii_lowercase).as_deref() {
         Some("cmd") => format!("cmd.exe /d /s /c \"{shell_command}\""),
-        Some("powershell") => format!("powershell.exe -NoLogo -NonInteractive -Command \"{shell_command}\""),
-        Some("pwsh") => format!("pwsh.exe -NoLogo -NonInteractive -Command \"{shell_command}\""),
+        Some("powershell") => format!("powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
+        Some("pwsh") => format!("pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
         Some(other) => format!("{other} \"{shell_command}\""),
-        None if pwsh_available() => format!("pwsh.exe -NoLogo -NonInteractive -Command \"{shell_command}\""),
-        None => format!("powershell.exe -NoLogo -NonInteractive -Command \"{shell_command}\""),
+        None if pwsh_available() => format!("pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
+        None => format!("powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
     }
 }
 
@@ -738,11 +785,11 @@ mod tests {
         assert_eq!(resolve_shell_cmdline(Some("cmd"), "echo hi"), "cmd.exe /d /s /c \"echo hi\"");
         assert_eq!(
             resolve_shell_cmdline(Some("PowerShell"), "Write-Host hi"),
-            "powershell.exe -NoLogo -NonInteractive -Command \"Write-Host hi\""
+            "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"Write-Host hi\""
         );
         assert_eq!(
             resolve_shell_cmdline(Some("pwsh"), "Write-Host hi"),
-            "pwsh.exe -NoLogo -NonInteractive -Command \"Write-Host hi\""
+            "pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"Write-Host hi\""
         );
     }
 
