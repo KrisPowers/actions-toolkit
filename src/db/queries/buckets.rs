@@ -68,3 +68,106 @@ pub async fn list_expired(pool: &SqlitePool) -> sqlx::Result<Vec<Bucket>> {
 pub async fn list_unreaped(pool: &SqlitePool) -> sqlx::Result<Vec<Bucket>> {
     sqlx::query_as::<_, Bucket>("SELECT * FROM buckets WHERE reaped_at IS NULL").fetch_all(pool).await
 }
+
+/// Still-open buckets belonging to a given run — the cancel handler's target, so a cancelled
+/// run's sandboxes are torn down immediately instead of waiting for the TTL reaper.
+pub async fn list_unreaped_for_run(pool: &SqlitePool, workflow_run_id: &str) -> sqlx::Result<Vec<Bucket>> {
+    sqlx::query_as::<_, Bucket>("SELECT * FROM buckets WHERE reaped_at IS NULL AND workflow_run_id = ?")
+        .bind(workflow_run_id)
+        .fetch_all(pool)
+        .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn seed_fk_chain(pool: &SqlitePool, repo_id: &str, workflow_id: &str, run_id: &str, job_run_id: &str) {
+        let now = now_iso();
+        let user_id = format!("user-{repo_id}");
+        sqlx::query(
+            "INSERT INTO users (id, username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, 'admin', ?, ?)",
+        )
+        .bind(&user_id)
+        .bind(format!("test-user-{repo_id}"))
+        .bind("hash")
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO repos (id, owner, name, default_branch, webhook_secret_encrypted, \
+             webhook_secret_nonce, created_by, created_at, updated_at) VALUES (?, 'test-owner', ?, 'main', \
+             x'00', x'00', ?, ?, ?)",
+        )
+        .bind(repo_id)
+        .bind(repo_id)
+        .bind(&user_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO workflows (id, repo_id, name, file_path, yaml_source, parsed_json, enabled, created_at, updated_at) \
+             VALUES (?, ?, 'test-workflow', 'ci.yml', '', '{}', 1, ?, ?)",
+        )
+        .bind(workflow_id)
+        .bind(repo_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO workflow_runs (id, workflow_id, repo_id, trigger_event, status, created_at) \
+             VALUES (?, ?, ?, 'manual', 'running', ?)",
+        )
+        .bind(run_id)
+        .bind(workflow_id)
+        .bind(repo_id)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query("INSERT INTO job_runs (id, workflow_run_id, job_key, status) VALUES (?, ?, 'build', 'running')")
+            .bind(job_run_id)
+            .bind(run_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    async fn test_pool() -> SqlitePool {
+        let dir = std::env::temp_dir().join(format!("atk-bucket-queries-test-{}", uuid::Uuid::new_v4()));
+        crate::db::connect(&dir.join("test.db")).await.expect("db connect should succeed")
+    }
+
+    #[tokio::test]
+    async fn list_unreaped_for_run_only_returns_open_buckets_for_that_run() {
+        let pool = test_pool().await;
+        seed_fk_chain(&pool, "repo-1", "workflow-1", "run-1", "job-1").await;
+        seed_fk_chain(&pool, "repo-2", "workflow-2", "run-2", "job-2").await;
+
+        let in_run = create(&pool, "bucket-1", "job-1", "run-1", "/workspace/1", false, "2999-01-01T00:00:00Z")
+            .await
+            .expect("create should succeed");
+        let already_reaped = create(&pool, "bucket-2", "job-1", "run-1", "/workspace/2", false, "2999-01-01T00:00:00Z")
+            .await
+            .expect("create should succeed");
+        mark_reaped(&pool, &already_reaped.id).await.expect("mark_reaped should succeed");
+        create(&pool, "bucket-3", "job-2", "run-2", "/workspace/3", false, "2999-01-01T00:00:00Z")
+            .await
+            .expect("create should succeed");
+
+        let found = list_unreaped_for_run(&pool, "run-1").await.expect("list_unreaped_for_run should succeed");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, in_run.id);
+    }
+}
