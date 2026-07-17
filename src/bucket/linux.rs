@@ -59,6 +59,7 @@ pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &crate::db::model
         id: row.id.clone(),
         workspace: PathBuf::from(&row.workspace_path),
         root_skeleton: root_skeleton_path(buckets_root, &row.id),
+        network_enabled: row.network_enabled != 0,
         cgroup_path: cgroup_path_for(&row.id),
     }
 }
@@ -85,7 +86,13 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     .await
     .context("failed to record bucket in database")?;
 
-    Ok(BucketHandle { id, workspace: spec.workspace_host_path.to_path_buf(), root_skeleton, cgroup_path })
+    Ok(BucketHandle {
+        id,
+        workspace: spec.workspace_host_path.to_path_buf(),
+        root_skeleton,
+        network_enabled: spec.network_enabled,
+        cgroup_path,
+    })
 }
 
 pub async fn exec_step<F>(
@@ -99,8 +106,8 @@ pub async fn exec_step<F>(
 where
     F: FnMut(&str, String) + Send,
 {
-    run_in_sandbox(&handle.root_skeleton, &handle.cgroup_path, &handle.workspace, shell_command, shell, working_dir, env, on_line)
-        .await
+    let invocation = StepInvocation { shell_command, shell, working_dir, env };
+    run_in_sandbox(&handle.root_skeleton, &handle.cgroup_path, &handle.workspace, handle.network_enabled, invocation, on_line).await
 }
 
 pub async fn remove_bucket(pool: &SqlitePool, handle: &BucketHandle) -> Result<()> {
@@ -145,11 +152,21 @@ async fn probe_inner(id: &str, root_skeleton: &Path) -> Result<()> {
     let workspace = root_skeleton.join("probe-workspace");
     std::fs::create_dir_all(&workspace)?;
 
-    let result = run_in_sandbox(root_skeleton, &cgroup_path, &workspace, "true", None, None, &[], |_, _| {}).await?;
+    let invocation = StepInvocation { shell_command: "true", shell: None, working_dir: None, env: &[] };
+    let result = run_in_sandbox(root_skeleton, &cgroup_path, &workspace, false, invocation, |_, _| {}).await?;
     if result.exit_code != 0 {
         anyhow::bail!("probe command exited with status {}", result.exit_code);
     }
     Ok(())
+}
+
+/// What to actually run: bundled separately from the sandbox's own identity/config params so
+/// `run_in_sandbox` doesn't grow an unwieldy positional argument list.
+struct StepInvocation<'a> {
+    shell_command: &'a str,
+    shell: Option<&'a str>,
+    working_dir: Option<&'a str>,
+    env: &'a [String],
 }
 
 /// Spawns `__bucket-init` with the namespace-unshare `pre_exec` hook, streams its stdout/stderr
@@ -159,15 +176,14 @@ async fn run_in_sandbox<F>(
     root_skeleton: &Path,
     cgroup_path: &Path,
     workspace: &Path,
-    shell_command: &str,
-    shell: Option<&str>,
-    working_dir: Option<&str>,
-    env: &[String],
+    network_enabled: bool,
+    invocation: StepInvocation<'_>,
     mut on_line: F,
 ) -> Result<ExecResult>
 where
     F: FnMut(&str, String) + Send,
 {
+    let StepInvocation { shell_command, shell, working_dir, env } = invocation;
     let ro_mounts: Vec<PathBuf> = DEFAULT_RO_MOUNTS.iter().map(PathBuf::from).filter(|p| p.exists()).collect();
 
     let spec = BucketInitSpec {
@@ -207,6 +223,15 @@ where
     }
 
     let mut child = command.spawn().context("failed to spawn __bucket-init")?;
+
+    if network_enabled {
+        let pid = child.id().context("spawned __bucket-init has no PID (already exited?)")?;
+        if let Err(e) = setup_pasta_networking(pid).await {
+            let _ = child.start_kill(); // don't leave the already-spawned sandbox process running unsupervised
+            return Err(e.context("network: true was requested but pasta networking setup failed"));
+        }
+    }
+
     let stdout = child.stdout.take().expect("stdout was piped");
     let stderr = child.stderr.take().expect("stderr was piped");
 
@@ -402,6 +427,32 @@ async fn destroy_cgroup(path: &Path) -> Result<()> {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
     std::fs::remove_dir(path).context("failed to remove bucket cgroup directory after cgroup.kill")
+}
+
+/// Wires up opt-in network access for one step's already-spawned `__bucket-init` process (which,
+/// by the time this runs, has already `unshare(CLONE_NEWNET)`d into a fresh, otherwise-empty net
+/// namespace via the `pre_exec` hook) via `pasta`: an unprivileged, per-namespace userspace network
+/// stack, rather than hand-rolled veth+NAT+iptables, which would mutate host-global network state
+/// that a fork bomb or crash on our side could leave dangling. `pasta` attaches to the target
+/// PID's network namespace by number and is expected to keep running until that namespace is no
+/// longer referenced by any process, then exit on its own — not waited on here (see below).
+///
+/// NOTE: written from documented `pasta`/`passt` behavior, not exercised against a real `pasta`
+/// binary (none was available while writing this) — treat the exact invocation and the
+/// fire-and-forget assumption below as unverified until run on a live host. In particular: if
+/// `pasta` does *not* actually daemonize/return once attached (this implementation doesn't wait
+/// on it, on the assumption that it does), the step's network may not be ready the instant its
+/// command starts, which is a real race this couldn't be tested against here.
+async fn setup_pasta_networking(target_pid: u32) -> Result<()> {
+    let child = Command::new("pasta")
+        .arg(target_pid.to_string())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .context("pasta is not installed on this host (see https://passt.top); network: true requires it")?;
+    drop(child); // fire-and-forget; tokio reaps it in the background once it exits on its own
+    Ok(())
 }
 
 #[cfg(test)]

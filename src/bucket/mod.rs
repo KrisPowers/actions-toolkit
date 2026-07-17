@@ -54,6 +54,7 @@ pub struct BucketHandle {
     pub id: String,
     pub workspace: PathBuf,
     pub(crate) root_skeleton: PathBuf,
+    pub(crate) network_enabled: bool,
     #[cfg(target_os = "linux")]
     pub(crate) cgroup_path: PathBuf,
 }

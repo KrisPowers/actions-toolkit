@@ -134,7 +134,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     .await
     .context("failed to record bucket in database")?;
 
-    Ok(BucketHandle { id, workspace, root_skeleton })
+    Ok(BucketHandle { id, workspace, root_skeleton, network_enabled: spec.network_enabled })
 }
 
 pub async fn exec_step<F>(
@@ -150,6 +150,7 @@ where
 {
     let id = handle.id.clone();
     let workspace = handle.workspace.clone();
+    let network_enabled = handle.network_enabled;
     let shell_command = shell_command.to_string();
     let shell = shell.map(str::to_string);
     let working_dir = working_dir.map(str::to_string);
@@ -160,7 +161,13 @@ where
     let stderr_tx = tx;
 
     let wait_task = tokio::task::spawn_blocking(move || {
-        run_step_blocking(&id, &workspace, &shell_command, shell.as_deref(), working_dir.as_deref(), &env, (stdout_tx, stderr_tx))
+        let invocation = StepInvocation {
+            shell_command: &shell_command,
+            shell: shell.as_deref(),
+            working_dir: working_dir.as_deref(),
+            env: &env,
+        };
+        run_step_blocking(&id, &workspace, network_enabled, invocation, (stdout_tx, stderr_tx))
     });
 
     while let Some((stream, line)) = rx.recv().await {
@@ -197,6 +204,7 @@ pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &crate::db::model
         id: row.id.clone(),
         workspace: std::path::PathBuf::from(&row.workspace_path),
         root_skeleton: buckets_root.join(&row.id),
+        network_enabled: row.network_enabled != 0,
     }
 }
 
@@ -257,6 +265,47 @@ fn grant_full_control(path: &Path, sid_string: &str) -> Result<()> {
     Ok(())
 }
 
+/// Builds the capability SIDs granted when `network: true` is requested: `internetClient` for
+/// outbound internet access, `privateNetworkClientServer` for also reaching other hosts on the
+/// local/private network. Returns the raw SID byte buffers alongside the `SID_AND_ATTRIBUTES`
+/// array pointing into them — the caller must keep the buffers alive for as long as the array is
+/// used (through the `CreateProcessW` call), since `SID_AND_ATTRIBUTES::Sid` is a raw pointer.
+fn network_capability_sids() -> Result<(Vec<Vec<u8>>, Vec<windows::Win32::Security::SID_AND_ATTRIBUTES>)> {
+    use windows::Win32::Security::{WinCapabilityInternetClientSid, WinCapabilityPrivateNetworkClientServerSid};
+
+    let mut buffers: Vec<Vec<u8>> = [WinCapabilityInternetClientSid, WinCapabilityPrivateNetworkClientServerSid]
+        .into_iter()
+        .map(create_well_known_sid)
+        .collect::<Result<_>>()?;
+
+    let attrs = buffers
+        .iter_mut()
+        .map(|buf| windows::Win32::Security::SID_AND_ATTRIBUTES {
+            Sid: windows::Win32::Security::PSID(buf.as_mut_ptr() as *mut _),
+            Attributes: 0x0000_0004, // SE_GROUP_ENABLED
+        })
+        .collect();
+
+    Ok((buffers, attrs))
+}
+
+fn create_well_known_sid(sid_type: windows::Win32::Security::WELL_KNOWN_SID_TYPE) -> Result<Vec<u8>> {
+    use windows::Win32::Security::{CreateWellKnownSid, PSID};
+
+    let mut size: u32 = 0;
+    unsafe {
+        // Expected to fail with ERROR_INSUFFICIENT_BUFFER; this first call only exists to learn
+        // the required buffer size.
+        let _ = CreateWellKnownSid(sid_type, None, PSID::default(), &mut size);
+    }
+    let mut buf = vec![0u8; size as usize];
+    unsafe {
+        CreateWellKnownSid(sid_type, None, PSID(buf.as_mut_ptr() as *mut _), &mut size)
+            .context("CreateWellKnownSid failed")?;
+    }
+    Ok(buf)
+}
+
 fn create_job_object(name: &str) -> Result<HANDLE> {
     let name_wide = to_wide(name);
     let job = unsafe { CreateJobObjectW(None, PCWSTR(name_wide.as_ptr())) }.context("CreateJobObjectW failed")?;
@@ -286,18 +335,26 @@ fn open_job_object(name: &str) -> Result<HANDLE> {
     unsafe { OpenJobObjectW(JOB_OBJECT_ALL_ACCESS, false, PCWSTR(name_wide.as_ptr())) }.context("OpenJobObjectW failed")
 }
 
+/// What to actually run: bundled separately from the sandbox's own identity/config params so
+/// `run_step_blocking` doesn't grow an unwieldy positional argument list.
+struct StepInvocation<'a> {
+    shell_command: &'a str,
+    shell: Option<&'a str>,
+    working_dir: Option<&'a str>,
+    env: &'a [String],
+}
+
 fn run_step_blocking(
     id: &str,
     workspace: &Path,
-    shell_command: &str,
-    shell: Option<&str>,
-    working_dir: Option<&str>,
-    env: &[String],
+    network_enabled: bool,
+    invocation: StepInvocation<'_>,
     (stdout_tx, stderr_tx): (
         tokio::sync::mpsc::UnboundedSender<(&'static str, String)>,
         tokio::sync::mpsc::UnboundedSender<(&'static str, String)>,
     ),
 ) -> Result<ExecResult> {
+    let StepInvocation { shell_command, shell, working_dir, env } = invocation;
     let profile_name = appcontainer_profile_name(id);
     let name_wide = to_wide(&profile_name);
     let sid = unsafe {
@@ -333,10 +390,17 @@ fn run_step_blocking(
                 .context("InitializeProcThreadAttributeList failed")?;
         }
 
+        // Capability SIDs granted at process-creation time are the only way an AppContainer
+        // process gets any network access at all; with none present (the default) the process
+        // has no network capability whatsoever, which is what makes network-deny-by-default work
+        // here without a separate firewall policy. `_network_sid_buffers` has to stay alive
+        // alongside `network_caps`/`capabilities` since the latter point into it.
+        let (_network_sid_buffers, mut network_caps) =
+            if network_enabled { network_capability_sids()? } else { (Vec::new(), Vec::new()) };
         let mut capabilities = windows::Win32::Security::SECURITY_CAPABILITIES {
             AppContainerSid: sid,
-            Capabilities: std::ptr::null_mut(),
-            CapabilityCount: 0,
+            Capabilities: if network_caps.is_empty() { std::ptr::null_mut() } else { network_caps.as_mut_ptr() },
+            CapabilityCount: network_caps.len() as u32,
             Reserved: 0,
         };
 
@@ -689,6 +753,73 @@ mod tests {
             cmdline.starts_with("pwsh.exe") || cmdline.starts_with("powershell.exe"),
             "expected the default shell to be pwsh or powershell: {cmdline}"
         );
+    }
+
+    /// Confirms `network: true` actually grants network capability, not just that it's threaded
+    /// through without erroring. Deliberately targets a real external host, not loopback: Windows
+    /// blocks AppContainer loopback access unconditionally via a separate mechanism
+    /// (`NetworkIsolationSetAppContainerConfig`'s loopback-exemption list), independent of
+    /// capability SIDs — discovered by first writing this test against 127.0.0.1 and watching it
+    /// fail even with the capability granted, which is exactly the kind of thing only running it
+    /// for real (not just compiling) catches.
+    #[tokio::test]
+    async fn network_enabled_grants_capability_that_default_deny_blocks() {
+        let capability = probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let base = std::env::temp_dir().join(format!("atk-bucket-test-net-{test_id}"));
+        let buckets_root = base.join("buckets");
+        let workspace = base.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&buckets_root).unwrap();
+
+        let db_path = base.join("test.db");
+        let pool = crate::db::connect(&db_path).await.expect("db connect should succeed");
+        seed_fk_chain(&pool, "repo-3", "workflow-3", "run-3", "job-3").await;
+
+        let spec = BucketSpec {
+            workspace_host_path: &workspace,
+            run_id: "run-3",
+            job_run_id: "job-3",
+            network_enabled: true,
+            ttl: std::time::Duration::from_secs(3600),
+        };
+        let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
+
+        let mut stdout_lines = Vec::new();
+        // A real TCP/HTTPS request via curl.exe (built into Windows 10 1803+/Windows 11), not
+        // ICMP ping: ping showed NETWORK_BLOCKED even with the capability granted, which turned
+        // out to be ICMP-specific (Windows Firewall's AppContainer capability rules govern normal
+        // Winsock TCP/UDP traffic, not raw ICMP echo) rather than evidence the capability grant
+        // itself doesn't work.
+        let command = "(curl.exe -s -o nul --max-time 5 https://www.google.com && echo NETWORK_SUCCEEDED || echo NETWORK_BLOCKED)";
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            exec_step(&handle, command, Some("cmd"), None, &[], |stream, line| {
+                if stream == "stdout" {
+                    stdout_lines.push(line);
+                }
+            }),
+        )
+        .await
+        .expect("exec_step timed out")
+        .expect("exec_step should succeed");
+
+        let output = stdout_lines.join("\n");
+        println!("network-enabled step output:\n{output}");
+        if output.contains("NETWORK_BLOCKED") {
+            eprintln!("skipping assertion: this host may not have outbound internet access to verify against");
+        } else {
+            assert!(output.contains("NETWORK_SUCCEEDED"), "expected network: true to grant external network access: {output}");
+            assert_eq!(result.exit_code, 0);
+        }
+
+        remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     async fn seed_fk_chain(pool: &sqlx::SqlitePool, repo_id: &str, workflow_id: &str, run_id: &str, job_run_id: &str) {

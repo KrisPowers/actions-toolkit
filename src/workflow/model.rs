@@ -116,6 +116,11 @@ pub struct Job {
     pub artifacts: Vec<ArtifactSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "download_artifacts")]
     pub download_artifacts: Vec<String>,
+    /// Opts this job's sandbox into network access. Bucket (the native, non-Docker sandbox
+    /// backend) is network-default-deny; Docker's own container networking is unaffected by
+    /// this and keeps working as before regardless of its value.
+    #[serde(default)]
+    pub network: bool,
 }
 
 fn default_runs_on() -> String {
