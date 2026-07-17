@@ -16,6 +16,7 @@ use super::{BucketCapability, BucketHandle, BucketInitSpec, BucketSpec, ExecResu
 use crate::db::queries::buckets as bucket_queries;
 
 const CGROUP_ROOT: &str = "/sys/fs/cgroup/actions-toolkit";
+const DELEGATED_SLICE: &str = "actions-toolkit.slice";
 const DEFAULT_PIDS_MAX: &str = "512";
 const DEFAULT_MEMORY_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
@@ -23,8 +24,34 @@ fn root_skeleton_path(buckets_root: &Path, id: &str) -> PathBuf {
     buckets_root.join(id).join("root")
 }
 
+fn scope_unit_name(id: &str) -> String {
+    format!("atk-bucket-{id}.scope")
+}
+
+/// The cgroup path a `systemd --user --scope --slice=actions-toolkit.slice` invocation would
+/// place this bucket's anchor process under, per systemd's own (documented, deterministic) unit
+/// naming rules. Purely a string computation, no I/O.
+fn systemd_user_scope_cgroup_path(id: &str) -> PathBuf {
+    let uid = nix::unistd::getuid().as_raw();
+    PathBuf::from(format!(
+        "/sys/fs/cgroup/user.slice/user-{uid}.slice/user@{uid}.service/{DELEGATED_SLICE}/{}",
+        scope_unit_name(id)
+    ))
+}
+
+/// Which of the two possible cgroup layouts this bucket actually ended up using: the
+/// systemd-delegated path if it exists on disk (meaning `create_delegated_cgroup` successfully
+/// created it), otherwise the bare fallback path directly under `CGROUP_ROOT`. Used both right
+/// after creation and when reconstructing a handle from a DB row after a restart, so it has to be
+/// a plain existence check rather than a host-capability guess: whichever one this specific
+/// bucket actually has on disk is authoritative.
 fn cgroup_path_for(id: &str) -> PathBuf {
-    Path::new(CGROUP_ROOT).join(id)
+    let delegated = systemd_user_scope_cgroup_path(id);
+    if delegated.exists() {
+        delegated
+    } else {
+        Path::new(CGROUP_ROOT).join(id)
+    }
 }
 
 pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &crate::db::models::Bucket) -> BucketHandle {
@@ -41,8 +68,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     let root_skeleton = root_skeleton_path(buckets_root, &id);
     std::fs::create_dir_all(&root_skeleton).context("failed to create bucket root skeleton")?;
 
-    let cgroup_path = cgroup_path_for(&id);
-    create_cgroup(&cgroup_path).context("failed to create bucket cgroup")?;
+    let cgroup_path = create_delegated_cgroup(&id).await.context("failed to create bucket cgroup")?;
 
     let ttl_expires_at =
         (chrono::Utc::now() + chrono::Duration::seconds(spec.ttl.as_secs() as i64)).to_rfc3339();
@@ -95,10 +121,10 @@ pub async fn probe_capability() -> BucketCapability {
     let buckets_root = std::env::temp_dir().join("actions-toolkit-bucket-probe");
     let id = Uuid::new_v4().to_string();
     let root_skeleton = root_skeleton_path(&buckets_root, &id);
+
+    let result = probe_inner(&id, &root_skeleton).await;
+
     let cgroup_path = cgroup_path_for(&id);
-
-    let result = probe_inner(&root_skeleton, &cgroup_path).await;
-
     let _ = destroy_cgroup(&cgroup_path).await;
     let _ = std::fs::remove_dir_all(&root_skeleton);
 
@@ -108,14 +134,17 @@ pub async fn probe_capability() -> BucketCapability {
     }
 }
 
-async fn probe_inner(root_skeleton: &Path, cgroup_path: &Path) -> Result<()> {
+/// Exercises the same cgroup-creation path (systemd-delegated scope, falling back to a bare
+/// cgroup) that real buckets use, not just the fallback, so the probe actually reflects what a
+/// real bucket will get on this host.
+async fn probe_inner(id: &str, root_skeleton: &Path) -> Result<()> {
     std::fs::create_dir_all(root_skeleton).context("failed to create probe workspace")?;
-    create_cgroup(cgroup_path).context("failed to create probe cgroup")?;
+    let cgroup_path = create_delegated_cgroup(id).await.context("failed to create probe cgroup")?;
 
     let workspace = root_skeleton.join("probe-workspace");
     std::fs::create_dir_all(&workspace)?;
 
-    let result = run_in_sandbox(root_skeleton, cgroup_path, &workspace, "true", None, &[], |_, _| {}).await?;
+    let result = run_in_sandbox(root_skeleton, &cgroup_path, &workspace, "true", None, &[], |_, _| {}).await?;
     if result.exit_code != 0 {
         anyhow::bail!("probe command exited with status {}", result.exit_code);
     }
@@ -279,6 +308,79 @@ fn create_cgroup(path: &Path) -> Result<()> {
     let _ = std::fs::write(path.join("pids.max"), DEFAULT_PIDS_MAX);
     let _ = std::fs::write(path.join("memory.max"), DEFAULT_MEMORY_MAX_BYTES.to_string());
     Ok(())
+}
+
+/// Creates this bucket's cgroup under a systemd-delegated transient scope when a systemd user
+/// session is reachable, falling back to a bare cgroup directly under `CGROUP_ROOT` (today's
+/// only mechanism, still fully supported) when it isn't. A raw cgroup created directly off
+/// `/sys/fs/cgroup` is invisible to systemd's own bookkeeping and, on a systemd-managed host, is
+/// liable to be reaped as "foreign" state systemd doesn't recognize; a delegated scope avoids
+/// that because systemd itself owns the unit and won't touch cgroups it created.
+///
+/// NOTE: the delegated-scope path has been reviewed against documented systemd/cgroup-v2
+/// semantics but has not been exercised end-to-end on a real systemd host (this was implemented
+/// without one available) — treat it as unverified until it's actually run against `systemd-run
+/// --user --scope` on a live system, same as the rest of the Bucket adversarial-validation work.
+async fn create_delegated_cgroup(id: &str) -> Result<PathBuf> {
+    if let Some(path) = try_create_systemd_scope(id).await {
+        return Ok(path);
+    }
+    let path = Path::new(CGROUP_ROOT).join(id);
+    create_cgroup(&path)?;
+    Ok(path)
+}
+
+/// Spawns a long-lived anchor process inside a transient systemd `--user --scope`, keeping the
+/// delegated cgroup populated (and therefore alive) for the bucket's whole lifetime; an empty
+/// scope cgroup is torn down by systemd immediately, so each step's `__bucket-init` process joins
+/// this cgroup (via the existing `join_cgroup` call in `bucket_init.rs`, unchanged) alongside the
+/// anchor rather than instead of it. `cgroup.kill` in `destroy_cgroup` reaps the anchor along with
+/// everything else in the cgroup; `--collect` tells systemd to garbage-collect the transient unit
+/// once its cgroup is empty, so no explicit `systemctl stop` is needed.
+///
+/// The anchor's `Child` handle is deliberately dropped without `.wait()`-ing: tokio reaps
+/// orphaned children in the background once they exit (see the `tokio::process` orphan queue),
+/// and this process is meant to keep running until `cgroup.kill` ends it.
+async fn try_create_systemd_scope(id: &str) -> Option<PathBuf> {
+    let target = systemd_user_scope_cgroup_path(id);
+
+    let args: Vec<String> = vec![
+        "--user".to_string(),
+        "--scope".to_string(),
+        "--collect".to_string(),
+        "--quiet".to_string(),
+        "--unit".to_string(),
+        scope_unit_name(id),
+        "--slice".to_string(),
+        DELEGATED_SLICE.to_string(),
+        "--property".to_string(),
+        format!("TasksMax={DEFAULT_PIDS_MAX}"),
+        "--property".to_string(),
+        format!("MemoryMax={DEFAULT_MEMORY_MAX_BYTES}"),
+        "--".to_string(),
+        "sleep".to_string(),
+        "2147483647".to_string(),
+    ];
+
+    let mut child = Command::new("systemd-run")
+        .args(&args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+
+    for _ in 0..20 {
+        if target.exists() {
+            return Some(target);
+        }
+        if let Ok(Some(_)) = child.try_wait() {
+            return None; // systemd-run exited (most likely: no reachable user session bus)
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let _ = child.start_kill();
+    None
 }
 
 /// Tears down a bucket's cgroup: `cgroup.kill` (Linux 5.14+) atomically SIGKILLs every process
