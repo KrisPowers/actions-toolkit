@@ -100,12 +100,28 @@ pub struct ExecResult {
     pub exit_code: i64,
 }
 
+/// Resolves a step's `shell:` override into the `Cmd` array docker `exec` expects, defaulting to
+/// `sh` (present in virtually any Linux image, unlike `bash`) when unset. Recognizes the same
+/// shell keywords GitHub Actions does; anything else is passed through as a literal program name
+/// invoked with `-c`, best-effort.
+fn shell_cmd(shell: Option<&str>, shell_command: &str) -> Vec<String> {
+    let (program, arg) = match shell.map(str::to_ascii_lowercase).as_deref() {
+        None | Some("sh") => ("/bin/sh", "-c"),
+        Some("bash") => ("/bin/bash", "-c"),
+        Some("pwsh") => ("pwsh", "-Command"),
+        Some("powershell") => ("powershell", "-Command"),
+        Some(other) => return vec![other.to_string(), "-c".to_string(), shell_command.to_string()],
+    };
+    vec![program.to_string(), arg.to_string(), shell_command.to_string()]
+}
+
 /// Run a shell command inside an already-running container, streaming each output line to
 /// `on_line(stream, message)` as it arrives.
 pub async fn exec_step<F>(
     docker: &Docker,
     container_id: &str,
     shell_command: &str,
+    shell: Option<&str>,
     working_dir: Option<&str>,
     env: &[String],
     mut on_line: F,
@@ -117,7 +133,7 @@ where
         .create_exec(
             container_id,
             CreateExecOptions {
-                cmd: Some(vec!["/bin/sh".to_string(), "-c".to_string(), shell_command.to_string()]),
+                cmd: Some(shell_cmd(shell, shell_command)),
                 attach_stdout: Some(true),
                 attach_stderr: Some(true),
                 working_dir: working_dir.map(|s| s.to_string()),
@@ -284,4 +300,27 @@ pub async fn list_labeled_containers(docker: &Docker, run_id: &str) -> Result<Ve
         .await?;
 
     Ok(containers.into_iter().filter_map(|c| c.id).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shell_cmd_defaults_to_sh_when_unset() {
+        assert_eq!(shell_cmd(None, "echo hi"), vec!["/bin/sh", "-c", "echo hi"]);
+    }
+
+    #[test]
+    fn shell_cmd_honors_recognized_overrides() {
+        assert_eq!(shell_cmd(Some("bash"), "echo hi"), vec!["/bin/bash", "-c", "echo hi"]);
+        assert_eq!(shell_cmd(Some("BASH"), "echo hi"), vec!["/bin/bash", "-c", "echo hi"]);
+        assert_eq!(shell_cmd(Some("pwsh"), "Write-Host hi"), vec!["pwsh", "-Command", "Write-Host hi"]);
+        assert_eq!(shell_cmd(Some("powershell"), "Write-Host hi"), vec!["powershell", "-Command", "Write-Host hi"]);
+    }
+
+    #[test]
+    fn shell_cmd_passes_through_unrecognized_shells() {
+        assert_eq!(shell_cmd(Some("python3"), "print('hi')"), vec!["python3", "-c", "print('hi')"]);
+    }
 }

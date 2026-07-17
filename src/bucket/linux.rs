@@ -91,6 +91,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
 pub async fn exec_step<F>(
     handle: &BucketHandle,
     shell_command: &str,
+    shell: Option<&str>,
     working_dir: Option<&str>,
     env: &[String],
     on_line: F,
@@ -98,7 +99,7 @@ pub async fn exec_step<F>(
 where
     F: FnMut(&str, String) + Send,
 {
-    run_in_sandbox(&handle.root_skeleton, &handle.cgroup_path, &handle.workspace, shell_command, working_dir, env, on_line)
+    run_in_sandbox(&handle.root_skeleton, &handle.cgroup_path, &handle.workspace, shell_command, shell, working_dir, env, on_line)
         .await
 }
 
@@ -144,7 +145,7 @@ async fn probe_inner(id: &str, root_skeleton: &Path) -> Result<()> {
     let workspace = root_skeleton.join("probe-workspace");
     std::fs::create_dir_all(&workspace)?;
 
-    let result = run_in_sandbox(root_skeleton, &cgroup_path, &workspace, "true", None, &[], |_, _| {}).await?;
+    let result = run_in_sandbox(root_skeleton, &cgroup_path, &workspace, "true", None, None, &[], |_, _| {}).await?;
     if result.exit_code != 0 {
         anyhow::bail!("probe command exited with status {}", result.exit_code);
     }
@@ -159,6 +160,7 @@ async fn run_in_sandbox<F>(
     cgroup_path: &Path,
     workspace: &Path,
     shell_command: &str,
+    shell: Option<&str>,
     working_dir: Option<&str>,
     env: &[String],
     mut on_line: F,
@@ -174,6 +176,7 @@ where
         ro_mounts,
         cgroup_path: cgroup_path.to_path_buf(),
         shell_command: shell_command.to_string(),
+        shell: shell.map(str::to_string),
         working_dir: working_dir.map(str::to_string),
         env: env.to_vec(),
     };
@@ -431,6 +434,7 @@ mod tests {
             ro_mounts: vec![PathBuf::from("/usr"), PathBuf::from("/bin")],
             cgroup_path: PathBuf::from("/sys/fs/cgroup/actions-toolkit/bucket-1"),
             shell_command: "echo hello".to_string(),
+            shell: Some("bash".to_string()),
             working_dir: Some("/workspace".to_string()),
             env: vec!["FOO=bar".to_string()],
         };

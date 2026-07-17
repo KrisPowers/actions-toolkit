@@ -124,7 +124,7 @@ pub async fn run_job(
             let hub = state.log_hub.clone();
             let pool = state.db.clone();
             let step_run_id = step_run.id.clone();
-            let result = docker_ops::exec_step(docker, &container_id, command, None, &step_env, |stream, message| {
+            let result = docker_ops::exec_step(docker, &container_id, command, step.shell.as_deref(), None, &step_env, |stream, message| {
                 let hub = hub.clone();
                 let pool = pool.clone();
                 let step_run_id = step_run_id.clone();

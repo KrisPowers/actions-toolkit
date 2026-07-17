@@ -140,6 +140,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
 pub async fn exec_step<F>(
     handle: &BucketHandle,
     shell_command: &str,
+    shell: Option<&str>,
     working_dir: Option<&str>,
     env: &[String],
     mut on_line: F,
@@ -150,6 +151,7 @@ where
     let id = handle.id.clone();
     let workspace = handle.workspace.clone();
     let shell_command = shell_command.to_string();
+    let shell = shell.map(str::to_string);
     let working_dir = working_dir.map(str::to_string);
     let env = env.to_vec();
 
@@ -158,7 +160,7 @@ where
     let stderr_tx = tx;
 
     let wait_task = tokio::task::spawn_blocking(move || {
-        run_step_blocking(&id, &workspace, &shell_command, working_dir.as_deref(), &env, stdout_tx, stderr_tx)
+        run_step_blocking(&id, &workspace, &shell_command, shell.as_deref(), working_dir.as_deref(), &env, (stdout_tx, stderr_tx))
     });
 
     while let Some((stream, line)) = rx.recv().await {
@@ -288,10 +290,13 @@ fn run_step_blocking(
     id: &str,
     workspace: &Path,
     shell_command: &str,
+    shell: Option<&str>,
     working_dir: Option<&str>,
     env: &[String],
-    stdout_tx: tokio::sync::mpsc::UnboundedSender<(&'static str, String)>,
-    stderr_tx: tokio::sync::mpsc::UnboundedSender<(&'static str, String)>,
+    (stdout_tx, stderr_tx): (
+        tokio::sync::mpsc::UnboundedSender<(&'static str, String)>,
+        tokio::sync::mpsc::UnboundedSender<(&'static str, String)>,
+    ),
 ) -> Result<ExecResult> {
     let profile_name = appcontainer_profile_name(id);
     let name_wide = to_wide(&profile_name);
@@ -349,7 +354,7 @@ fn run_step_blocking(
         }
         startup_info.lpAttributeList = attr_list;
 
-        let mut cmdline = to_wide(&format!("cmd.exe /d /s /c \"{shell_command}\""));
+        let mut cmdline = to_wide(&resolve_shell_cmdline(shell, shell_command));
         let cwd = working_dir.map(to_wide).unwrap_or_else(|| to_wide(&workspace.to_string_lossy()));
         let env_block = build_environment_block(env);
 
@@ -491,6 +496,31 @@ fn build_environment_block(overrides: &[String]) -> Vec<u16> {
     block
 }
 
+/// Whether `pwsh.exe` (PowerShell 7+) is resolvable on `PATH`. Checked at runtime rather than
+/// assumed present, since unlike Windows PowerShell it isn't preinstalled on Windows.
+fn pwsh_available() -> bool {
+    std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).any(|dir| dir.join("pwsh.exe").exists()))
+        .unwrap_or(false)
+}
+
+/// Resolves a step's `shell:` override into the full command line `CreateProcessW` execs
+/// directly (no `cmd.exe` wrapper unless `cmd` is explicitly requested). Defaults to `pwsh`,
+/// falling back to the always-present `powershell.exe` when `pwsh.exe` isn't on `PATH` — matches
+/// real GitHub Actions' Windows runner default. An explicit `shell: pwsh` is honored as-is (no
+/// silent fallback) so a missing pwsh install fails loudly instead of quietly using a different
+/// shell than the one the workflow author asked for.
+fn resolve_shell_cmdline(shell: Option<&str>, shell_command: &str) -> String {
+    match shell.map(str::to_ascii_lowercase).as_deref() {
+        Some("cmd") => format!("cmd.exe /d /s /c \"{shell_command}\""),
+        Some("powershell") => format!("powershell.exe -NoLogo -NonInteractive -Command \"{shell_command}\""),
+        Some("pwsh") => format!("pwsh.exe -NoLogo -NonInteractive -Command \"{shell_command}\""),
+        Some(other) => format!("{other} \"{shell_command}\""),
+        None if pwsh_available() => format!("pwsh.exe -NoLogo -NonInteractive -Command \"{shell_command}\""),
+        None => format!("powershell.exe -NoLogo -NonInteractive -Command \"{shell_command}\""),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -542,7 +572,7 @@ mod tests {
         let env = vec!["ATK_TEST_VAR=sandboxed_value".to_string()];
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(20),
-            exec_step(&handle, command, None, &env, |stream, line| {
+            exec_step(&handle, command, Some("cmd"), None, &env, |stream, line| {
                 if stream == "stdout" {
                     stdout_lines.push(line);
                 }
@@ -579,6 +609,86 @@ mod tests {
         assert!(!handle.root_skeleton.exists(), "expected the bucket scratch directory to be removed after teardown");
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Confirms the default shell (unset `shell:`) actually resolves to a real, runnable
+    /// PowerShell variant end-to-end, not just that `resolve_shell_cmdline` returns a plausible
+    /// string: runs a PowerShell-syntax command with no shell override and checks it executed as
+    /// PowerShell (cmd.exe would fail on this syntax, not silently produce the same output).
+    #[tokio::test]
+    async fn default_shell_runs_as_powershell_without_an_override() {
+        let capability = probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let base = std::env::temp_dir().join(format!("atk-bucket-test-shell-{test_id}"));
+        let buckets_root = base.join("buckets");
+        let workspace = base.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&buckets_root).unwrap();
+
+        let db_path = base.join("test.db");
+        let pool = crate::db::connect(&db_path).await.expect("db connect should succeed");
+        seed_fk_chain(&pool, "repo-2", "workflow-2", "run-2", "job-2").await;
+
+        let spec = BucketSpec {
+            workspace_host_path: &workspace,
+            run_id: "run-2",
+            job_run_id: "job-2",
+            network_enabled: false,
+            ttl: std::time::Duration::from_secs(3600),
+        };
+        let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
+
+        let mut stdout_lines = Vec::new();
+        // `1..3 | ForEach-Object` only parses as PowerShell; cmd.exe would fail to run this at
+        // all. Single-quoted (not double-quoted) so it doesn't collide with the outer
+        // `-Command "..."` embedding's own double quotes.
+        let command = "1..3 | ForEach-Object { 'count-' + $_ }";
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            exec_step(&handle, command, None, None, &[], |stream, line| {
+                if stream == "stdout" {
+                    stdout_lines.push(line);
+                }
+            }),
+        )
+        .await
+        .expect("exec_step timed out")
+        .expect("exec_step should succeed");
+
+        let output = stdout_lines.join("\n");
+        println!("default-shell step output:\n{output}");
+        assert!(output.contains("count-1") && output.contains("count-3"), "expected PowerShell syntax to have run: {output}");
+        assert_eq!(result.exit_code, 0);
+
+        remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_shell_cmdline_honors_explicit_overrides() {
+        assert_eq!(resolve_shell_cmdline(Some("cmd"), "echo hi"), "cmd.exe /d /s /c \"echo hi\"");
+        assert_eq!(
+            resolve_shell_cmdline(Some("PowerShell"), "Write-Host hi"),
+            "powershell.exe -NoLogo -NonInteractive -Command \"Write-Host hi\""
+        );
+        assert_eq!(
+            resolve_shell_cmdline(Some("pwsh"), "Write-Host hi"),
+            "pwsh.exe -NoLogo -NonInteractive -Command \"Write-Host hi\""
+        );
+    }
+
+    #[test]
+    fn resolve_shell_cmdline_defaults_to_a_powershell_variant() {
+        let cmdline = resolve_shell_cmdline(None, "Write-Host hi");
+        assert!(
+            cmdline.starts_with("pwsh.exe") || cmdline.starts_with("powershell.exe"),
+            "expected the default shell to be pwsh or powershell: {cmdline}"
+        );
     }
 
     async fn seed_fk_chain(pool: &sqlx::SqlitePool, repo_id: &str, workflow_id: &str, run_id: &str, job_run_id: &str) {

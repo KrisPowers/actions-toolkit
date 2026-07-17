@@ -155,6 +155,12 @@ pub struct Step {
     pub if_condition: Option<String>,
     #[serde(default, rename = "continue-on-error")]
     pub continue_on_error: bool,
+    /// Overrides the shell a `run:` step's command is executed with (`bash`, `sh`, `pwsh`,
+    /// `powershell`, `cmd`). Each backend (Docker exec, the Linux Bucket sandbox, the Windows
+    /// Bucket sandbox) resolves its own platform-appropriate default when this is unset, mirroring
+    /// real GitHub Actions rather than a single shell hardcoded across every platform.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<String>,
 }
 
 impl Step {
