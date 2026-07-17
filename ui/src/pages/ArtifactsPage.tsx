@@ -1,4 +1,5 @@
 import { Link, useParams } from "react-router-dom";
+import { ArrowLeft, Download, Package } from "lucide-react";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { artifactsApi } from "../api/artifacts";
 
@@ -14,8 +15,9 @@ export default function ArtifactsPage() {
 
   return (
     <div>
-      <Link to={`/runs/${runId}`} className="text-xs text-neutral-500 hover:text-neutral-300">
-        ← Back to run
+      <Link to={`/runs/${runId}`} className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-300">
+        <ArrowLeft className="h-3 w-3" strokeWidth={2} />
+        Back to run
       </Link>
       <h1 className="mt-1 text-lg font-semibold text-neutral-100">Artifacts</h1>
 
@@ -24,11 +26,18 @@ export default function ArtifactsPage() {
       <div className="mt-4 divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900">
         {(artifacts ?? []).map((a) => (
           <div key={a.id} className="flex items-center justify-between px-4 py-3">
-            <div>
-              <div className="text-sm text-neutral-200">{a.name}</div>
-              <div className="mt-0.5 text-xs text-neutral-500">{formatBytes(a.size_bytes)}</div>
+            <div className="flex items-center gap-2">
+              <Package className="h-4 w-4 text-neutral-500" strokeWidth={2} />
+              <div>
+                <div className="text-sm text-neutral-200">{a.name}</div>
+                <div className="mt-0.5 text-xs text-neutral-500">{formatBytes(a.size_bytes)}</div>
+              </div>
             </div>
-            <a href={artifactsApi.downloadUrl(a.id)} className="rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-800">
+            <a
+              href={artifactsApi.downloadUrl(a.id)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-800"
+            >
+              <Download className="h-3.5 w-3.5" strokeWidth={2} />
               Download
             </a>
           </div>
