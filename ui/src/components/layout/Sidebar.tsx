@@ -32,12 +32,6 @@ export default function Sidebar() {
         <NavItem to="/" end icon={LayoutDashboard}>
           Dashboard
         </NavItem>
-        <NavItem to="/repos" icon={FolderGit2}>
-          Repositories
-        </NavItem>
-        <NavItem to="/settings" icon={Settings}>
-          Settings
-        </NavItem>
       </nav>
 
       {repoId && (
@@ -76,6 +70,12 @@ export default function Sidebar() {
           ))}
         </nav>
       </div>
+
+      <nav className="mt-3 flex flex-col gap-1 border-t border-neutral-800 pt-3">
+        <NavItem to="/settings" icon={Settings}>
+          Settings
+        </NavItem>
+      </nav>
     </aside>
   );
 }

@@ -5,9 +5,12 @@ use serde_json::Value;
 
 use crate::app::AppState;
 use crate::auth::middleware::CurrentUser;
+use crate::db::models::Workflow as WorkflowRow;
 use crate::db::queries::repos as repo_queries;
+use crate::db::queries::workflows as workflow_queries;
 use crate::error::{AppError, AppResult};
-use crate::github::{client, issues, releases};
+use crate::github::{actions, client, issues, releases};
+use crate::workflow::{validate, yaml};
 
 async fn client_for(state: &AppState, repo_id: &str) -> AppResult<(octocrab::Octocrab, crate::db::models::Repo)> {
     let repo = repo_queries::find_by_id(&state.db, repo_id).await?.ok_or(AppError::NotFound)?;
@@ -177,6 +180,68 @@ pub async fn create_release(
     .await
     .map_err(AppError::Internal)?;
     Ok(Json(serde_json::to_value(result).map_err(|e| AppError::Internal(e.into()))?))
+}
+
+/// The workflow files GitHub Actions itself would run for this repo (under
+/// `.github/workflows`), distinct from the workflows this app runs locally.
+pub async fn list_github_workflows(
+    State(state): State<AppState>,
+    Path(repo_id): Path<String>,
+    _user: CurrentUser,
+) -> AppResult<Json<Vec<actions::GithubWorkflowFile>>> {
+    let (client, repo) = client_for(&state, &repo_id).await?;
+    let result = actions::list_workflow_files(&client, &repo.owner, &repo.name).await.map_err(AppError::Internal)?;
+    Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+pub struct ImportGithubWorkflowRequest {
+    pub path: String,
+}
+
+/// Pull a GitHub Actions workflow file's YAML and register it as a workflow this app runs
+/// locally. Fails with a 400 if the file uses features this app's runner doesn't understand.
+pub async fn import_github_workflow(
+    State(state): State<AppState>,
+    Path(repo_id): Path<String>,
+    _user: CurrentUser,
+    Json(req): Json<ImportGithubWorkflowRequest>,
+) -> AppResult<Json<WorkflowRow>> {
+    let (client, repo) = client_for(&state, &repo_id).await?;
+    let yaml_source = actions::get_workflow_content(&client, &repo.owner, &repo.name, &req.path)
+        .await
+        .map_err(AppError::Internal)?;
+
+    let model = yaml::parse(&yaml_source).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    validate::validate(&model).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let canonical_yaml = yaml::to_yaml(&model).map_err(AppError::Internal)?;
+    let canonical_json = yaml::to_json(&model).map_err(AppError::Internal)?;
+
+    let name = if model.name.trim().is_empty() {
+        req.path.rsplit('/').next().unwrap_or(&req.path).to_string()
+    } else {
+        model.name.clone()
+    };
+    let description = format!("Imported from GitHub Actions ({})", req.path);
+
+    let workflow = workflow_queries::create(
+        &state.db,
+        &repo_id,
+        &name,
+        Some(&description),
+        &req.path,
+        &canonical_yaml,
+        &canonical_json,
+    )
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
+            AppError::Conflict("a workflow with this name already exists for this repo".into())
+        }
+        other => AppError::Database(other),
+    })?;
+
+    Ok(Json(workflow))
 }
 
 #[derive(Deserialize)]

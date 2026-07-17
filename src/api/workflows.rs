@@ -28,6 +28,7 @@ pub async fn get(
 #[derive(Deserialize)]
 pub struct CreateWorkflowRequest {
     pub name: String,
+    pub description: Option<String>,
     pub yaml_source: Option<String>,
     pub workflow_json: Option<serde_json::Value>,
     pub file_path: Option<String>,
@@ -59,8 +60,16 @@ pub async fn create(
     let (yaml_source, parsed_json) = resolve_yaml_and_json(req.yaml_source, req.workflow_json)?;
     let file_path = req.file_path.unwrap_or_else(|| format!(".actions-toolkit/{}.yml", req.name));
 
-    let workflow = workflow_queries::create(&state.db, &repo_id, &req.name, &file_path, &yaml_source, &parsed_json)
-        .await
+    let workflow = workflow_queries::create(
+        &state.db,
+        &repo_id,
+        &req.name,
+        req.description.as_deref(),
+        &file_path,
+        &yaml_source,
+        &parsed_json,
+    )
+    .await
         .map_err(|e| match e {
             sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
                 AppError::Conflict("a workflow with this name already exists for this repo".into())

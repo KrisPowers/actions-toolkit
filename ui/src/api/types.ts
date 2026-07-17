@@ -49,12 +49,19 @@ export interface WorkflowRow {
   id: string;
   repo_id: string;
   name: string;
+  description: string | null;
   file_path: string;
   yaml_source: string;
   parsed_json: string;
   enabled: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface GithubWorkflowFile {
+  name: string;
+  path: string;
+  sha: string;
 }
 
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";

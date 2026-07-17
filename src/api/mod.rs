@@ -55,6 +55,14 @@ pub fn router(state: AppState) -> Router {
         .route("/repos/{repo_id}/pulls", get(github_proxy::list_pull_requests))
         .route("/repos/{repo_id}/pulls/{number}", get(github_proxy::get_pull_request))
         .route("/repos/{repo_id}/pulls/{number}/comments", post(github_proxy::add_comment))
+        .route(
+            "/repos/{repo_id}/github-workflows",
+            get(github_proxy::list_github_workflows),
+        )
+        .route(
+            "/repos/{repo_id}/github-workflows/import",
+            post(github_proxy::import_github_workflow),
+        )
         .route("/repos/{repo_id}/releases", get(github_proxy::list_releases).post(github_proxy::create_release))
         .route(
             "/repos/{repo_id}/releases/{release_id}",

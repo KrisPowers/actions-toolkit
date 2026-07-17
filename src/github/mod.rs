@@ -1,3 +1,4 @@
+pub mod actions;
 pub mod checkout;
 pub mod client;
 pub mod discovery;
