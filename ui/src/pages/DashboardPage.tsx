@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { ArrowRight, Plus } from "lucide-react";
 import { useRepos } from "../hooks/useRepos";
 import { useAnalyticsSummary, useDurationTrend, useStatusBreakdown } from "../hooks/useAnalytics";
 import { useRuns } from "../hooks/useRuns";
@@ -25,13 +26,14 @@ export default function DashboardPage() {
     return (
       <div>
         <h1 className="text-lg font-semibold text-neutral-100">Dashboard</h1>
-        <p className="mt-4 text-sm text-neutral-500">
-          No repos connected yet.{" "}
-          <Link to="/repos/connect" className="text-accent hover:underline">
-            Connect one
-          </Link>{" "}
-          to see run analytics here.
-        </p>
+        <p className="mt-4 text-sm text-neutral-500">No repos connected yet.</p>
+        <Link
+          to="/repos/connect"
+          className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
+        >
+          <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+          Connect a repo
+        </Link>
       </div>
     );
   }
@@ -43,7 +45,7 @@ export default function DashboardPage() {
         <select
           value={repoId ?? ""}
           onChange={(e) => setRepoId(e.target.value)}
-          className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-200"
+          className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-200 outline-none focus:border-accent"
         >
           {(repos ?? []).map((r) => (
             <option key={r.id} value={r.id}>
@@ -68,8 +70,9 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-neutral-200">Recent runs</h2>
           {repoId && (
-            <Link to={`/repos/${repoId}/runs`} className="text-xs text-accent hover:underline">
-              View all →
+            <Link to={`/repos/${repoId}/runs`} className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+              View all
+              <ArrowRight className="h-3 w-3" strokeWidth={2} />
             </Link>
           )}
         </div>
