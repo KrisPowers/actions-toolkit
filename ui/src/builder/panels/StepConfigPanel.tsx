@@ -20,7 +20,7 @@ export default function StepConfigPanel({ step, availableNeeds, onChange, onRemo
           placeholder="Step name"
           className="min-w-0 flex-1 rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-100"
         />
-        <button type="button" onClick={onRemove} className="text-xs text-red-400 hover:underline">
+        <button type="button" onClick={onRemove} className="text-xs text-[var(--color-status-error)] hover:underline">
           Remove
         </button>
       </div>
