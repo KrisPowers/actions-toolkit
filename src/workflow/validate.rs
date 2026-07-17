@@ -18,8 +18,8 @@ pub fn validate(workflow: &Workflow) -> Result<()> {
                 bail!("job '{job_key}' needs unknown job '{need}'");
             }
         }
-        if job.container.image.trim().is_empty() {
-            bail!("job '{job_key}' must specify a container image");
+        if job.container.as_ref().is_some_and(|c| c.image.trim().is_empty()) {
+            bail!("job '{job_key}' declares a container but its image is empty");
         }
         if job.steps.is_empty() {
             bail!("job '{job_key}' must define at least one step");

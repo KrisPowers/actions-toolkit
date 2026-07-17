@@ -103,7 +103,12 @@ pub struct Job {
     pub name: Option<String>,
     #[serde(default = "default_runs_on")]
     pub runs_on: String,
-    pub container: ContainerSpec,
+    /// `run:` steps execute inside this container (via Docker) when set; when unset they run
+    /// natively via the Bucket sandbox instead, matching real GitHub Actions' own default
+    /// (no `container:` key means the job runs directly on the runner, not inside a container).
+    /// `uses: docker://` steps always use their own one-off container regardless of this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<ContainerSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub needs: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "if")]
