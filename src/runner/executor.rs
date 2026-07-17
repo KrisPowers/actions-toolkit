@@ -2,8 +2,9 @@ use anyhow::Result;
 use bollard::Docker;
 
 use crate::app::AppState;
+use crate::bucket;
 use crate::db::models::now_iso;
-use crate::db::queries::{artifacts as artifact_queries, runs as run_queries};
+use crate::db::queries::{artifacts as artifact_queries, buckets as bucket_queries, runs as run_queries};
 use crate::runner::log_stream::LogLine;
 use crate::runner::{artifact_capture, docker as docker_ops, workspace};
 use crate::workflow::model::Job;
@@ -15,12 +16,21 @@ pub struct CheckoutContext {
     pub git_ref: String,
 }
 
-/// Execute a single job: checkout (if configured), start its container, run each step in
-/// order, capture declared artifacts, and always clean up the container. Returns `true` if
-/// every step succeeded.
+/// Which backend is actually running this job's `run:` steps: Docker exec when the job declares
+/// a `container:`, or the native Bucket sandbox otherwise. Decided once up front so the step loop
+/// and artifact capture don't need to re-derive it. `uses: docker://` steps are unaffected by
+/// this — they always get their own one-off container regardless of which backend the job uses.
+enum RunBackend {
+    Docker { docker: Docker, container_id: String },
+    Bucket { handle: bucket::BucketHandle },
+}
+
+/// Execute a single job: checkout (if configured), start its container or sandbox, run each step
+/// in order, capture declared artifacts, and always clean up afterward. Returns `true` if every
+/// step succeeded.
 pub async fn run_job(
     state: &AppState,
-    docker: &Docker,
+    docker: &Option<Docker>,
     workflow_run_id: &str,
     job_run_id: &str,
     job: &Job,
@@ -63,37 +73,64 @@ pub async fn run_job(
         }
     }
 
-    let env: Vec<String> = job
-        .container
-        .env
-        .as_ref()
-        .map(|m| m.iter().map(|(k, v)| format!("{k}={v}")).collect())
-        .unwrap_or_default();
+    let backend = match &job.container {
+        Some(container_spec) => {
+            let Some(docker) = docker else {
+                emit_system_line(state, job_run_id, "job declares a container: but Docker is not available on this host").await;
+                run_queries::set_job_status(&state.db, job_run_id, "failed", Some(-1), true).await?;
+                return Ok(false);
+            };
 
-    if let Err(e) = docker_ops::pull_image(docker, &job.container.image).await {
-        emit_system_line(state, job_run_id, &format!("failed to pull image '{}': {e}", job.container.image)).await;
-        run_queries::set_job_status(&state.db, job_run_id, "failed", Some(-1), true).await?;
-        return Ok(false);
-    }
+            let env: Vec<String> = container_spec
+                .env
+                .as_ref()
+                .map(|m| m.iter().map(|(k, v)| format!("{k}={v}")).collect())
+                .unwrap_or_default();
 
-    let container_id = match docker_ops::create_job_container(
-        docker,
-        &job.container.image,
-        &workspace_dir,
-        workflow_run_id,
-        job_run_id,
-        &env,
-    )
-    .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            emit_system_line(state, job_run_id, &format!("failed to start job container: {e}")).await;
-            run_queries::set_job_status(&state.db, job_run_id, "failed", Some(-1), true).await?;
-            return Ok(false);
+            if let Err(e) = docker_ops::pull_image(docker, &container_spec.image).await {
+                emit_system_line(state, job_run_id, &format!("failed to pull image '{}': {e}", container_spec.image)).await;
+                run_queries::set_job_status(&state.db, job_run_id, "failed", Some(-1), true).await?;
+                return Ok(false);
+            }
+
+            let container_id = match docker_ops::create_job_container(
+                docker,
+                &container_spec.image,
+                &workspace_dir,
+                workflow_run_id,
+                job_run_id,
+                &env,
+            )
+            .await
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    emit_system_line(state, job_run_id, &format!("failed to start job container: {e}")).await;
+                    run_queries::set_job_status(&state.db, job_run_id, "failed", Some(-1), true).await?;
+                    return Ok(false);
+                }
+            };
+            run_queries::set_job_container(&state.db, job_run_id, &container_id).await?;
+            RunBackend::Docker { docker: docker.clone(), container_id }
+        }
+        None => {
+            let spec = bucket::BucketSpec {
+                workspace_host_path: &workspace_dir,
+                run_id: workflow_run_id,
+                job_run_id,
+                network_enabled: job.network,
+                ttl: bucket::DEFAULT_TTL,
+            };
+            match bucket::create_job_bucket(&state.db, &state.config.buckets_dir(), spec).await {
+                Ok(handle) => RunBackend::Bucket { handle },
+                Err(e) => {
+                    emit_system_line(state, job_run_id, &format!("failed to create sandbox: {e}")).await;
+                    run_queries::set_job_status(&state.db, job_run_id, "failed", Some(-1), true).await?;
+                    return Ok(false);
+                }
+            }
         }
     };
-    run_queries::set_job_container(&state.db, job_run_id, &container_id).await?;
 
     let mut job_succeeded = true;
 
@@ -124,27 +161,28 @@ pub async fn run_job(
             let hub = state.log_hub.clone();
             let pool = state.db.clone();
             let step_run_id = step_run.id.clone();
-            let result = docker_ops::exec_step(docker, &container_id, command, None, &step_env, |stream, message| {
+            let on_line = move |stream: &str, message: String| {
                 let hub = hub.clone();
                 let pool = pool.clone();
                 let step_run_id = step_run_id.clone();
                 let stream = stream.to_string();
                 tokio::spawn(async move {
-                    hub.publish(
-                        &pool,
-                        LogLine {
-                            step_run_id,
-                            ts: now_iso(),
-                            stream,
-                            message,
-                        },
-                    )
-                    .await;
+                    hub.publish(&pool, LogLine { step_run_id, ts: now_iso(), stream, message }).await;
                 });
-            })
-            .await;
+            };
+
+            let result: Result<i64> = match &backend {
+                RunBackend::Docker { docker, container_id } => {
+                    docker_ops::exec_step(docker, container_id, command, step.shell.as_deref(), None, &step_env, on_line)
+                        .await
+                        .map(|r| r.exit_code)
+                }
+                RunBackend::Bucket { handle } => {
+                    bucket::exec_step(handle, command, step.shell.as_deref(), None, &step_env, on_line).await.map(|r| r.exit_code)
+                }
+            };
             match result {
-                Ok(r) => r.exit_code,
+                Ok(exit_code) => exit_code,
                 Err(e) => {
                     emit_system_line(state, job_run_id, &format!("step '{:?}' failed: {e}", step.name)).await;
                     -1
@@ -152,43 +190,19 @@ pub async fn run_job(
             }
         } else if let Some(uses) = &step.uses {
             if let Some(image) = uses.strip_prefix("docker://") {
-                let hub = state.log_hub.clone();
-                let pool = state.db.clone();
-                let step_run_id = step_run.id.clone();
-                let result = docker_ops::run_container_action(
+                exec_docker_action_step(
+                    state,
                     docker,
                     image,
+                    uses,
+                    step.name.as_deref(),
+                    &step_run.id,
                     &workspace_dir,
                     workflow_run_id,
                     job_run_id,
                     &step_env,
-                    |stream, message| {
-                        let hub = hub.clone();
-                        let pool = pool.clone();
-                        let step_run_id = step_run_id.clone();
-                        let stream = stream.to_string();
-                        tokio::spawn(async move {
-                            hub.publish(
-                                &pool,
-                                LogLine {
-                                    step_run_id,
-                                    ts: now_iso(),
-                                    stream,
-                                    message,
-                                },
-                            )
-                            .await;
-                        });
-                    },
                 )
-                .await;
-                match result {
-                    Ok(r) => r.exit_code,
-                    Err(e) => {
-                        emit_system_line(state, job_run_id, &format!("container action '{uses}' failed: {e}")).await;
-                        -1
-                    }
-                }
+                .await
             } else {
                 // "uses: checkout" and any other non-docker `uses` are no-ops beyond the
                 // job-level checkout already performed above.
@@ -208,23 +222,50 @@ pub async fn run_job(
     }
 
     if job_succeeded && !job.artifacts.is_empty() {
-        if let Err(e) = artifact_capture::capture(
-            docker,
-            &state.db,
-            &container_id,
-            &state.config.artifacts_dir(),
-            workflow_run_id,
-            job_run_id,
-            &job.artifacts,
-        )
-        .await
-        {
+        let capture_result = match &backend {
+            RunBackend::Docker { docker, container_id } => {
+                artifact_capture::capture(
+                    docker,
+                    &state.db,
+                    container_id,
+                    &state.config.artifacts_dir(),
+                    workflow_run_id,
+                    job_run_id,
+                    &job.artifacts,
+                )
+                .await
+            }
+            RunBackend::Bucket { .. } => {
+                artifact_capture::capture_from_workspace(
+                    &state.db,
+                    &workspace_dir,
+                    &state.config.artifacts_dir(),
+                    workflow_run_id,
+                    job_run_id,
+                    &job.artifacts,
+                )
+                .await
+            }
+        };
+        if let Err(e) = capture_result {
             emit_system_line(state, job_run_id, &format!("artifact capture failed: {e}")).await;
         }
     }
 
-    if let Err(e) = docker_ops::remove_container(docker, &container_id).await {
-        tracing::warn!(error = %e, container_id, "failed to remove job container");
+    match &backend {
+        RunBackend::Docker { docker, container_id } => {
+            if let Err(e) = docker_ops::remove_container(docker, container_id).await {
+                tracing::warn!(error = %e, container_id, "failed to remove job container");
+            }
+        }
+        RunBackend::Bucket { handle } => {
+            if let Err(e) = bucket::remove_bucket(&state.db, handle).await {
+                tracing::warn!(error = %e, bucket_id = %handle.id, "failed to remove bucket");
+            }
+            if let Err(e) = bucket_queries::mark_reaped(&state.db, &handle.id).await {
+                tracing::warn!(error = %e, bucket_id = %handle.id, "failed to mark bucket reaped");
+            }
+        }
     }
 
     let final_status = if job_succeeded { "succeeded" } else { "failed" };
@@ -232,6 +273,63 @@ pub async fn run_job(
         .await?;
 
     Ok(job_succeeded)
+}
+
+/// Runs a `uses: docker://image` step's one-off container action. Always goes through Docker
+/// regardless of whether the job itself is Docker- or Bucket-backed, since a container action is
+/// its own self-contained container, not tied to the job's `run:` step backend.
+#[allow(clippy::too_many_arguments)]
+async fn exec_docker_action_step(
+    state: &AppState,
+    docker: &Option<Docker>,
+    image: &str,
+    uses: &str,
+    step_name: Option<&str>,
+    step_run_id: &str,
+    workspace_dir: &std::path::Path,
+    workflow_run_id: &str,
+    job_run_id: &str,
+    step_env: &[String],
+) -> i64 {
+    let Some(docker) = docker else {
+        emit_system_line(
+            state,
+            job_run_id,
+            &format!("step '{step_name:?}' uses a docker:// action but Docker is not available on this host"),
+        )
+        .await;
+        return -1;
+    };
+
+    let hub = state.log_hub.clone();
+    let pool = state.db.clone();
+    let step_run_id = step_run_id.to_string();
+    let result = docker_ops::run_container_action(
+        docker,
+        image,
+        workspace_dir,
+        workflow_run_id,
+        job_run_id,
+        step_env,
+        |stream, message| {
+            let hub = hub.clone();
+            let pool = pool.clone();
+            let step_run_id = step_run_id.clone();
+            let stream = stream.to_string();
+            tokio::spawn(async move {
+                hub.publish(&pool, LogLine { step_run_id, ts: now_iso(), stream, message }).await;
+            });
+        },
+    )
+    .await;
+
+    match result {
+        Ok(r) => r.exit_code,
+        Err(e) => {
+            emit_system_line(state, job_run_id, &format!("container action '{uses}' failed: {e}")).await;
+            -1
+        }
+    }
 }
 
 async fn emit_system_line(_state: &AppState, job_run_id: &str, message: &str) {
@@ -255,4 +353,156 @@ fn copy_recursive(src: &std::path::Path, dest: &std::path::Path) -> std::io::Res
         std::fs::copy(src, dest)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use tokio::sync::RwLock;
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::app::AppStateInner;
+    use crate::auth::jwt::JwtCodec;
+    use crate::config::AppConfig;
+    use crate::crypto::EncryptionKey;
+    use crate::runner::log_stream::LogHub;
+    use crate::workflow::model::{ArtifactSpec, Job, Step};
+
+    /// End-to-end: a job with no `container:` should run its `run:` step via the Bucket sandbox
+    /// (not Docker, which is `None` here on purpose) and produce a declared artifact, exercising
+    /// the actual `RunBackend::Bucket` path added when Bucket was wired into the executor rather
+    /// than just its individual pieces in isolation.
+    #[tokio::test]
+    async fn job_without_container_runs_via_bucket_and_captures_artifacts() {
+        let capability = crate::bucket::probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let data_dir = std::env::temp_dir().join(format!("atk-executor-test-{test_id}"));
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let config = AppConfig { data_dir: data_dir.clone() };
+        let db = crate::db::connect(&config.db_path()).await.expect("db connect should succeed");
+        let enc = EncryptionKey::load_or_generate(None, &config.secrets_dir()).expect("encryption key should load");
+        let jwt = JwtCodec::new("test-secret");
+
+        seed_fk_chain(&db, "repo-1", "workflow-1", "run-1", "job-1").await;
+
+        let state = AppState(Arc::new(AppStateInner {
+            db,
+            config,
+            jwt,
+            enc,
+            docker: None,
+            bucket_capability_ok: true,
+            log_hub: Arc::new(LogHub::new()),
+            github_client: RwLock::new(None),
+        }));
+
+        let out_file = "artifact.txt";
+        let write_command = format!("echo hello > {out_file}");
+
+        let job = Job {
+            name: None,
+            runs_on: "self-hosted".to_string(),
+            container: None,
+            needs: vec![],
+            if_condition: None,
+            strategy: None,
+            steps: vec![Step {
+                name: Some("write artifact".to_string()),
+                id: None,
+                run: Some(write_command),
+                uses: None,
+                with: None,
+                env: None,
+                if_condition: None,
+                continue_on_error: false,
+                // `cmd` rather than the pwsh/powershell default on Windows: this test exercises
+                // executor.rs's RunBackend::Bucket wiring (shell resolution itself is covered
+                // separately in bucket::windows::tests), and cmd.exe's simpler inherited-cwd
+                // handling sidesteps a known, separate AppContainer/PowerShell working-directory
+                // gap for deeply nested workspace paths (tracked as a follow-up).
+                shell: if cfg!(windows) { Some("cmd".to_string()) } else { None },
+            }],
+            artifacts: vec![ArtifactSpec { name: "out".to_string(), path: format!("/workspace/{out_file}") }],
+            download_artifacts: vec![],
+            network: false,
+        };
+
+        let succeeded = run_job(&state, &None, "run-1", "job-1", &job, None).await.expect("run_job should not error");
+        assert!(succeeded, "expected the job to succeed running via Bucket");
+
+        // `capture_from_workspace` mirrors the Docker path's convention: `dest_dir` (here
+        // `artifacts_dir/run-1/out`) *is* the artifact's destination, whether the source was a
+        // single file (as here) or a directory, not a container directory named after it.
+        let artifact_path = state.config.artifacts_dir().join("run-1").join("out");
+        assert!(artifact_path.exists(), "expected the artifact to have been captured to {}", artifact_path.display());
+        assert_eq!(std::fs::read_to_string(&artifact_path).unwrap().trim(), "hello");
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    async fn seed_fk_chain(pool: &sqlx::SqlitePool, repo_id: &str, workflow_id: &str, run_id: &str, job_run_id: &str) {
+        let now = crate::db::models::now_iso();
+        sqlx::query(
+            "INSERT INTO users (id, username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, 'admin', ?, ?)",
+        )
+        .bind("user-1")
+        .bind("test-user")
+        .bind("hash")
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO repos (id, owner, name, default_branch, webhook_secret_encrypted, \
+             webhook_secret_nonce, created_by, created_at, updated_at) VALUES (?, 'test-owner', 'test-repo', 'main', \
+             x'00', x'00', 'user-1', ?, ?)",
+        )
+        .bind(repo_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO workflows (id, repo_id, name, file_path, yaml_source, parsed_json, enabled, created_at, updated_at) \
+             VALUES (?, ?, 'test-workflow', 'ci.yml', '', '{}', 1, ?, ?)",
+        )
+        .bind(workflow_id)
+        .bind(repo_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO workflow_runs (id, workflow_id, repo_id, trigger_event, status, created_at) \
+             VALUES (?, ?, ?, 'manual', 'running', ?)",
+        )
+        .bind(run_id)
+        .bind(workflow_id)
+        .bind(repo_id)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query("INSERT INTO job_runs (id, workflow_run_id, job_key, status) VALUES (?, ?, 'build', 'running')")
+            .bind(job_run_id)
+            .bind(run_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
 }

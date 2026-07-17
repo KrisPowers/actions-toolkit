@@ -19,9 +19,16 @@ pub struct AppStateInner {
     pub config: AppConfig,
     pub jwt: JwtCodec,
     pub enc: EncryptionKey,
-    /// `None` when the Docker Engine could not be reached at startup; workflow dispatch
-    /// endpoints return a clear error instead of panicking when this is absent.
+    /// `None` when the Docker Engine could not be reached at startup. `run:` steps no longer
+    /// need this (they run via Bucket by default); it's still required for jobs that declare
+    /// `container:` and for `uses: docker://` steps, which fail with a clear error rather than
+    /// panicking when this is absent.
     pub docker: Option<Docker>,
+    /// Whether Bucket (the native, non-Docker sandbox) actually works on this host, probed once
+    /// at startup. `run:` steps in jobs without a `container:` need this; a scheduler run only
+    /// hard-fails up front when this is `false`, since that means no job lacking `container:` can
+    /// execute at all, unlike a missing Docker connection which only affects specific jobs/steps.
+    pub bucket_capability_ok: bool,
     pub log_hub: Arc<LogHub>,
     /// Cached client for the single account-wide GitHub token set up in the setup wizard.
     /// `None` until a token has been configured, or after `github::client::invalidate` runs

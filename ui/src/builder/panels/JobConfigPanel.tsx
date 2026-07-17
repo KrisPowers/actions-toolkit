@@ -30,13 +30,32 @@ export default function JobConfigPanel({ jobKey, job, onChange, onRemove }: Prop
         className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
       />
 
-      <label className="mt-3 block text-xs font-medium text-neutral-400">Container image</label>
-      <input
-        value={job.container.image}
-        onChange={(e) => onChange({ ...job, container: { ...job.container, image: e.target.value } })}
-        placeholder="node:20-alpine"
-        className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 font-mono text-sm text-neutral-100 outline-none focus:border-accent"
-      />
+      <label className="mt-3 flex items-center gap-2 text-xs font-medium text-neutral-400">
+        <input
+          type="checkbox"
+          checked={job.container != null}
+          onChange={(e) =>
+            onChange({ ...job, container: e.target.checked ? { image: "", volumes: [] } : undefined })
+          }
+        />
+        Run in a Docker container
+      </label>
+      <p className="mt-0.5 text-[11px] text-neutral-600">
+        {job.container
+          ? "run: steps execute inside this container via Docker."
+          : "run: steps execute natively via the Bucket sandbox (no container)."}
+      </p>
+      {job.container && (
+        <>
+          <label className="mt-2 block text-xs font-medium text-neutral-400">Container image</label>
+          <input
+            value={job.container.image}
+            onChange={(e) => onChange({ ...job, container: { ...job.container!, image: e.target.value } })}
+            placeholder="node:20-alpine"
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 font-mono text-sm text-neutral-100 outline-none focus:border-accent"
+          />
+        </>
+      )}
 
       <div className="mt-3 text-xs font-medium text-neutral-400">
         Depends on ({job.needs.length ? job.needs.join(", ") : "none"})

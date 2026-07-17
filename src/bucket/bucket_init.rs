@@ -146,7 +146,20 @@ fn run_pid1(spec: &BucketInitSpec) -> Result<()> {
     let working_dir = spec.working_dir.as_deref().unwrap_or("/workspace");
     chdir(working_dir).with_context(|| format!("failed to chdir into '{working_dir}'"))?;
 
-    exec_shell_command(&spec.shell_command, &spec.env)
+    exec_shell_command(spec.shell.as_deref(), &spec.shell_command, &spec.env)
+}
+
+/// Resolves a step's `shell:` override into the absolute path `execve` needs (unlike `execvp`,
+/// `execve` doesn't search `$PATH`) and the flag that hands it the command inline. Defaults to
+/// `bash` when unset, matching real GitHub Actions' Linux runner default; `sh` is still
+/// recognized for parity with the Docker exec path. Anything else is passed through as a literal
+/// path, best-effort.
+fn resolve_shell(shell: Option<&str>) -> (String, &'static str) {
+    match shell.map(str::to_ascii_lowercase).as_deref() {
+        None | Some("bash") => ("/bin/bash".to_string(), "-c"),
+        Some("sh") => ("/bin/sh".to_string(), "-c"),
+        Some(other) => (other.to_string(), "-c"),
+    }
 }
 
 fn drop_all_capabilities() -> Result<()> {
@@ -159,8 +172,9 @@ fn drop_all_capabilities() -> Result<()> {
     Ok(())
 }
 
-fn exec_shell_command(shell_command: &str, env: &[String]) -> Result<()> {
-    let args = [CString::new("/bin/sh")?, CString::new("-c")?, CString::new(shell_command)?];
+fn exec_shell_command(shell: Option<&str>, shell_command: &str, env: &[String]) -> Result<()> {
+    let (program, flag) = resolve_shell(shell);
+    let args = [CString::new(program.as_str())?, CString::new(flag)?, CString::new(shell_command)?];
 
     let mut env_vars: Vec<String> = env.to_vec();
     if !env_vars.iter().any(|e| e.starts_with("PATH=")) {

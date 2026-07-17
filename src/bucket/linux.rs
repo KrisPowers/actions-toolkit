@@ -16,6 +16,7 @@ use super::{BucketCapability, BucketHandle, BucketInitSpec, BucketSpec, ExecResu
 use crate::db::queries::buckets as bucket_queries;
 
 const CGROUP_ROOT: &str = "/sys/fs/cgroup/actions-toolkit";
+const DELEGATED_SLICE: &str = "actions-toolkit.slice";
 const DEFAULT_PIDS_MAX: &str = "512";
 const DEFAULT_MEMORY_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
@@ -23,8 +24,34 @@ fn root_skeleton_path(buckets_root: &Path, id: &str) -> PathBuf {
     buckets_root.join(id).join("root")
 }
 
+fn scope_unit_name(id: &str) -> String {
+    format!("atk-bucket-{id}.scope")
+}
+
+/// The cgroup path a `systemd --user --scope --slice=actions-toolkit.slice` invocation would
+/// place this bucket's anchor process under, per systemd's own (documented, deterministic) unit
+/// naming rules. Purely a string computation, no I/O.
+fn systemd_user_scope_cgroup_path(id: &str) -> PathBuf {
+    let uid = nix::unistd::getuid().as_raw();
+    PathBuf::from(format!(
+        "/sys/fs/cgroup/user.slice/user-{uid}.slice/user@{uid}.service/{DELEGATED_SLICE}/{}",
+        scope_unit_name(id)
+    ))
+}
+
+/// Which of the two possible cgroup layouts this bucket actually ended up using: the
+/// systemd-delegated path if it exists on disk (meaning `create_delegated_cgroup` successfully
+/// created it), otherwise the bare fallback path directly under `CGROUP_ROOT`. Used both right
+/// after creation and when reconstructing a handle from a DB row after a restart, so it has to be
+/// a plain existence check rather than a host-capability guess: whichever one this specific
+/// bucket actually has on disk is authoritative.
 fn cgroup_path_for(id: &str) -> PathBuf {
-    Path::new(CGROUP_ROOT).join(id)
+    let delegated = systemd_user_scope_cgroup_path(id);
+    if delegated.exists() {
+        delegated
+    } else {
+        Path::new(CGROUP_ROOT).join(id)
+    }
 }
 
 pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &crate::db::models::Bucket) -> BucketHandle {
@@ -32,6 +59,7 @@ pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &crate::db::model
         id: row.id.clone(),
         workspace: PathBuf::from(&row.workspace_path),
         root_skeleton: root_skeleton_path(buckets_root, &row.id),
+        network_enabled: row.network_enabled != 0,
         cgroup_path: cgroup_path_for(&row.id),
     }
 }
@@ -41,8 +69,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     let root_skeleton = root_skeleton_path(buckets_root, &id);
     std::fs::create_dir_all(&root_skeleton).context("failed to create bucket root skeleton")?;
 
-    let cgroup_path = cgroup_path_for(&id);
-    create_cgroup(&cgroup_path).context("failed to create bucket cgroup")?;
+    let cgroup_path = create_delegated_cgroup(&id).await.context("failed to create bucket cgroup")?;
 
     let ttl_expires_at =
         (chrono::Utc::now() + chrono::Duration::seconds(spec.ttl.as_secs() as i64)).to_rfc3339();
@@ -59,12 +86,19 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     .await
     .context("failed to record bucket in database")?;
 
-    Ok(BucketHandle { id, workspace: spec.workspace_host_path.to_path_buf(), root_skeleton, cgroup_path })
+    Ok(BucketHandle {
+        id,
+        workspace: spec.workspace_host_path.to_path_buf(),
+        root_skeleton,
+        network_enabled: spec.network_enabled,
+        cgroup_path,
+    })
 }
 
 pub async fn exec_step<F>(
     handle: &BucketHandle,
     shell_command: &str,
+    shell: Option<&str>,
     working_dir: Option<&str>,
     env: &[String],
     on_line: F,
@@ -72,8 +106,8 @@ pub async fn exec_step<F>(
 where
     F: FnMut(&str, String) + Send,
 {
-    run_in_sandbox(&handle.root_skeleton, &handle.cgroup_path, &handle.workspace, shell_command, working_dir, env, on_line)
-        .await
+    let invocation = StepInvocation { shell_command, shell, working_dir, env };
+    run_in_sandbox(&handle.root_skeleton, &handle.cgroup_path, &handle.workspace, handle.network_enabled, invocation, on_line).await
 }
 
 pub async fn remove_bucket(pool: &SqlitePool, handle: &BucketHandle) -> Result<()> {
@@ -95,10 +129,10 @@ pub async fn probe_capability() -> BucketCapability {
     let buckets_root = std::env::temp_dir().join("actions-toolkit-bucket-probe");
     let id = Uuid::new_v4().to_string();
     let root_skeleton = root_skeleton_path(&buckets_root, &id);
+
+    let result = probe_inner(&id, &root_skeleton).await;
+
     let cgroup_path = cgroup_path_for(&id);
-
-    let result = probe_inner(&root_skeleton, &cgroup_path).await;
-
     let _ = destroy_cgroup(&cgroup_path).await;
     let _ = std::fs::remove_dir_all(&root_skeleton);
 
@@ -108,18 +142,31 @@ pub async fn probe_capability() -> BucketCapability {
     }
 }
 
-async fn probe_inner(root_skeleton: &Path, cgroup_path: &Path) -> Result<()> {
+/// Exercises the same cgroup-creation path (systemd-delegated scope, falling back to a bare
+/// cgroup) that real buckets use, not just the fallback, so the probe actually reflects what a
+/// real bucket will get on this host.
+async fn probe_inner(id: &str, root_skeleton: &Path) -> Result<()> {
     std::fs::create_dir_all(root_skeleton).context("failed to create probe workspace")?;
-    create_cgroup(cgroup_path).context("failed to create probe cgroup")?;
+    let cgroup_path = create_delegated_cgroup(id).await.context("failed to create probe cgroup")?;
 
     let workspace = root_skeleton.join("probe-workspace");
     std::fs::create_dir_all(&workspace)?;
 
-    let result = run_in_sandbox(root_skeleton, cgroup_path, &workspace, "true", None, &[], |_, _| {}).await?;
+    let invocation = StepInvocation { shell_command: "true", shell: None, working_dir: None, env: &[] };
+    let result = run_in_sandbox(root_skeleton, &cgroup_path, &workspace, false, invocation, |_, _| {}).await?;
     if result.exit_code != 0 {
         anyhow::bail!("probe command exited with status {}", result.exit_code);
     }
     Ok(())
+}
+
+/// What to actually run: bundled separately from the sandbox's own identity/config params so
+/// `run_in_sandbox` doesn't grow an unwieldy positional argument list.
+struct StepInvocation<'a> {
+    shell_command: &'a str,
+    shell: Option<&'a str>,
+    working_dir: Option<&'a str>,
+    env: &'a [String],
 }
 
 /// Spawns `__bucket-init` with the namespace-unshare `pre_exec` hook, streams its stdout/stderr
@@ -129,14 +176,14 @@ async fn run_in_sandbox<F>(
     root_skeleton: &Path,
     cgroup_path: &Path,
     workspace: &Path,
-    shell_command: &str,
-    working_dir: Option<&str>,
-    env: &[String],
+    network_enabled: bool,
+    invocation: StepInvocation<'_>,
     mut on_line: F,
 ) -> Result<ExecResult>
 where
     F: FnMut(&str, String) + Send,
 {
+    let StepInvocation { shell_command, shell, working_dir, env } = invocation;
     let ro_mounts: Vec<PathBuf> = DEFAULT_RO_MOUNTS.iter().map(PathBuf::from).filter(|p| p.exists()).collect();
 
     let spec = BucketInitSpec {
@@ -145,6 +192,7 @@ where
         ro_mounts,
         cgroup_path: cgroup_path.to_path_buf(),
         shell_command: shell_command.to_string(),
+        shell: shell.map(str::to_string),
         working_dir: working_dir.map(str::to_string),
         env: env.to_vec(),
     };
@@ -175,6 +223,15 @@ where
     }
 
     let mut child = command.spawn().context("failed to spawn __bucket-init")?;
+
+    if network_enabled {
+        let pid = child.id().context("spawned __bucket-init has no PID (already exited?)")?;
+        if let Err(e) = setup_pasta_networking(pid).await {
+            let _ = child.start_kill(); // don't leave the already-spawned sandbox process running unsupervised
+            return Err(e.context("network: true was requested but pasta networking setup failed"));
+        }
+    }
+
     let stdout = child.stdout.take().expect("stdout was piped");
     let stderr = child.stderr.take().expect("stderr was piped");
 
@@ -281,6 +338,79 @@ fn create_cgroup(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Creates this bucket's cgroup under a systemd-delegated transient scope when a systemd user
+/// session is reachable, falling back to a bare cgroup directly under `CGROUP_ROOT` (today's
+/// only mechanism, still fully supported) when it isn't. A raw cgroup created directly off
+/// `/sys/fs/cgroup` is invisible to systemd's own bookkeeping and, on a systemd-managed host, is
+/// liable to be reaped as "foreign" state systemd doesn't recognize; a delegated scope avoids
+/// that because systemd itself owns the unit and won't touch cgroups it created.
+///
+/// NOTE: the delegated-scope path has been reviewed against documented systemd/cgroup-v2
+/// semantics but has not been exercised end-to-end on a real systemd host (this was implemented
+/// without one available) — treat it as unverified until it's actually run against `systemd-run
+/// --user --scope` on a live system, same as the rest of the Bucket adversarial-validation work.
+async fn create_delegated_cgroup(id: &str) -> Result<PathBuf> {
+    if let Some(path) = try_create_systemd_scope(id).await {
+        return Ok(path);
+    }
+    let path = Path::new(CGROUP_ROOT).join(id);
+    create_cgroup(&path)?;
+    Ok(path)
+}
+
+/// Spawns a long-lived anchor process inside a transient systemd `--user --scope`, keeping the
+/// delegated cgroup populated (and therefore alive) for the bucket's whole lifetime; an empty
+/// scope cgroup is torn down by systemd immediately, so each step's `__bucket-init` process joins
+/// this cgroup (via the existing `join_cgroup` call in `bucket_init.rs`, unchanged) alongside the
+/// anchor rather than instead of it. `cgroup.kill` in `destroy_cgroup` reaps the anchor along with
+/// everything else in the cgroup; `--collect` tells systemd to garbage-collect the transient unit
+/// once its cgroup is empty, so no explicit `systemctl stop` is needed.
+///
+/// The anchor's `Child` handle is deliberately dropped without `.wait()`-ing: tokio reaps
+/// orphaned children in the background once they exit (see the `tokio::process` orphan queue),
+/// and this process is meant to keep running until `cgroup.kill` ends it.
+async fn try_create_systemd_scope(id: &str) -> Option<PathBuf> {
+    let target = systemd_user_scope_cgroup_path(id);
+
+    let args: Vec<String> = vec![
+        "--user".to_string(),
+        "--scope".to_string(),
+        "--collect".to_string(),
+        "--quiet".to_string(),
+        "--unit".to_string(),
+        scope_unit_name(id),
+        "--slice".to_string(),
+        DELEGATED_SLICE.to_string(),
+        "--property".to_string(),
+        format!("TasksMax={DEFAULT_PIDS_MAX}"),
+        "--property".to_string(),
+        format!("MemoryMax={DEFAULT_MEMORY_MAX_BYTES}"),
+        "--".to_string(),
+        "sleep".to_string(),
+        "2147483647".to_string(),
+    ];
+
+    let mut child = Command::new("systemd-run")
+        .args(&args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+
+    for _ in 0..20 {
+        if target.exists() {
+            return Some(target);
+        }
+        if let Ok(Some(_)) = child.try_wait() {
+            return None; // systemd-run exited (most likely: no reachable user session bus)
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let _ = child.start_kill();
+    None
+}
+
 /// Tears down a bucket's cgroup: `cgroup.kill` (Linux 5.14+) atomically SIGKILLs every process
 /// in the cgroup in one write, regardless of how deep a process tree the sandboxed command
 /// forked — this is the guaranteed-cleanup mechanism, not best-effort process tracking.
@@ -297,6 +427,32 @@ async fn destroy_cgroup(path: &Path) -> Result<()> {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
     std::fs::remove_dir(path).context("failed to remove bucket cgroup directory after cgroup.kill")
+}
+
+/// Wires up opt-in network access for one step's already-spawned `__bucket-init` process (which,
+/// by the time this runs, has already `unshare(CLONE_NEWNET)`d into a fresh, otherwise-empty net
+/// namespace via the `pre_exec` hook) via `pasta`: an unprivileged, per-namespace userspace network
+/// stack, rather than hand-rolled veth+NAT+iptables, which would mutate host-global network state
+/// that a fork bomb or crash on our side could leave dangling. `pasta` attaches to the target
+/// PID's network namespace by number and is expected to keep running until that namespace is no
+/// longer referenced by any process, then exit on its own — not waited on here (see below).
+///
+/// NOTE: written from documented `pasta`/`passt` behavior, not exercised against a real `pasta`
+/// binary (none was available while writing this) — treat the exact invocation and the
+/// fire-and-forget assumption below as unverified until run on a live host. In particular: if
+/// `pasta` does *not* actually daemonize/return once attached (this implementation doesn't wait
+/// on it, on the assumption that it does), the step's network may not be ready the instant its
+/// command starts, which is a real race this couldn't be tested against here.
+async fn setup_pasta_networking(target_pid: u32) -> Result<()> {
+    let child = Command::new("pasta")
+        .arg(target_pid.to_string())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .context("pasta is not installed on this host (see https://passt.top); network: true requires it")?;
+    drop(child); // fire-and-forget; tokio reaps it in the background once it exits on its own
+    Ok(())
 }
 
 #[cfg(test)]
@@ -329,6 +485,7 @@ mod tests {
             ro_mounts: vec![PathBuf::from("/usr"), PathBuf::from("/bin")],
             cgroup_path: PathBuf::from("/sys/fs/cgroup/actions-toolkit/bucket-1"),
             shell_command: "echo hello".to_string(),
+            shell: Some("bash".to_string()),
             working_dir: Some("/workspace".to_string()),
             env: vec!["FOO=bar".to_string()],
         };

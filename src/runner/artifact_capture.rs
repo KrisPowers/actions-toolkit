@@ -42,6 +42,65 @@ pub async fn capture(
     Ok(())
 }
 
+/// Same as `capture`, but for jobs running via the Bucket sandbox rather than Docker: the
+/// workspace is already a real host directory (no container to `download_path` out of), so this
+/// is a plain recursive copy instead of a tar-stream download. `spec.path` is authored the same
+/// way either backend expects it (e.g. `/workspace/dist`, matching the Docker container's own
+/// `/workspace` mount point), so it's resolved relative to `workspace_dir` here the same way.
+pub async fn capture_from_workspace(
+    pool: &SqlitePool,
+    workspace_dir: &Path,
+    artifacts_root: &Path,
+    workflow_run_id: &str,
+    job_run_id: &str,
+    specs: &[ArtifactSpec],
+) -> Result<()> {
+    for spec in specs {
+        let src = resolve_workspace_relative_path(workspace_dir, &spec.path);
+        let dest_dir = artifacts_root.join(workflow_run_id).join(&spec.name);
+        if let Err(e) = copy_recursive(&src, &dest_dir) {
+            tracing::warn!(error = %e, artifact = %spec.name, "failed to capture artifact");
+            continue;
+        }
+
+        let size_bytes = dir_size(&dest_dir).unwrap_or(0);
+        artifact_queries::create(
+            pool,
+            workflow_run_id,
+            Some(job_run_id),
+            &spec.name,
+            &dest_dir.to_string_lossy(),
+            size_bytes as i64,
+            None,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Strips a leading `/workspace` (the same in-sandbox mount point both backends use) or a bare
+/// leading `/` from an artifact path, then resolves it relative to the real host workspace dir.
+fn resolve_workspace_relative_path(workspace_dir: &Path, spec_path: &str) -> std::path::PathBuf {
+    let relative = spec_path.strip_prefix("/workspace").unwrap_or(spec_path).trim_start_matches('/');
+    workspace_dir.join(relative)
+}
+
+fn copy_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        std::fs::create_dir_all(dest)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            copy_recursive(&entry.path(), &dest.join(entry.file_name()))?;
+        }
+    } else {
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(src, dest)?;
+    }
+    Ok(())
+}
+
 fn dir_size(dir: &Path) -> std::io::Result<u64> {
     let mut total = 0u64;
     if dir.is_file() {
@@ -71,4 +130,28 @@ fn walk(dir: &Path) -> std::io::Result<Vec<std::path::PathBuf>> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_workspace_relative_path_strips_workspace_prefix() {
+        let workspace = Path::new("/data/workspaces/run-1");
+        assert_eq!(resolve_workspace_relative_path(workspace, "/workspace/dist"), workspace.join("dist"));
+        assert_eq!(resolve_workspace_relative_path(workspace, "/workspace"), workspace.join(""));
+    }
+
+    #[test]
+    fn resolve_workspace_relative_path_strips_bare_leading_slash() {
+        let workspace = Path::new("/data/workspaces/run-1");
+        assert_eq!(resolve_workspace_relative_path(workspace, "/dist"), workspace.join("dist"));
+    }
+
+    #[test]
+    fn resolve_workspace_relative_path_leaves_relative_paths_alone() {
+        let workspace = Path::new("/data/workspaces/run-1");
+        assert_eq!(resolve_workspace_relative_path(workspace, "dist"), workspace.join("dist"));
+    }
 }

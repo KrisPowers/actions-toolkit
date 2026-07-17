@@ -54,6 +54,7 @@ pub struct BucketHandle {
     pub id: String,
     pub workspace: PathBuf,
     pub(crate) root_skeleton: PathBuf,
+    pub(crate) network_enabled: bool,
     #[cfg(target_os = "linux")]
     pub(crate) cgroup_path: PathBuf,
 }
@@ -78,6 +79,7 @@ pub struct BucketInitSpec {
     pub ro_mounts: Vec<PathBuf>,
     pub cgroup_path: PathBuf,
     pub shell_command: String,
+    pub shell: Option<String>,
     pub working_dir: Option<String>,
     pub env: Vec<String>,
 }
@@ -115,6 +117,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
 pub async fn exec_step<F>(
     handle: &BucketHandle,
     shell_command: &str,
+    shell: Option<&str>,
     working_dir: Option<&str>,
     env: &[String],
     on_line: F,
@@ -124,11 +127,11 @@ where
 {
     #[cfg(target_os = "linux")]
     {
-        linux::exec_step(handle, shell_command, working_dir, env, on_line).await
+        linux::exec_step(handle, shell_command, shell, working_dir, env, on_line).await
     }
     #[cfg(target_os = "windows")]
     {
-        windows::exec_step(handle, shell_command, working_dir, env, on_line).await
+        windows::exec_step(handle, shell_command, shell, working_dir, env, on_line).await
     }
 }
 

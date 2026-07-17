@@ -42,7 +42,7 @@ use windows::Win32::System::Pipes::CreatePipe;
 const JOB_OBJECT_ALL_ACCESS: u32 = 0x001F_003F;
 use windows::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess, InitializeProcThreadAttributeList, ResumeThread,
-    UpdateProcThreadAttribute, WaitForSingleObject, CREATE_SUSPENDED, EXTENDED_STARTUPINFO_PRESENT,
+    UpdateProcThreadAttribute, WaitForSingleObject, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT,
     INFINITE, LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, STARTUPINFOEXW,
     STARTUPINFOW,
 };
@@ -116,6 +116,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
         let sid_string = sid_string.context("failed to stringify AppContainer SID")?;
 
         grant_full_control(&workspace_for_setup, &sid_string).context("failed to grant AppContainer access to workspace")?;
+        grant_ancestor_traverse_access(&workspace_for_setup, &sid_string);
         Ok(())
     })
     .await
@@ -134,12 +135,13 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     .await
     .context("failed to record bucket in database")?;
 
-    Ok(BucketHandle { id, workspace, root_skeleton })
+    Ok(BucketHandle { id, workspace, root_skeleton, network_enabled: spec.network_enabled })
 }
 
 pub async fn exec_step<F>(
     handle: &BucketHandle,
     shell_command: &str,
+    shell: Option<&str>,
     working_dir: Option<&str>,
     env: &[String],
     mut on_line: F,
@@ -149,7 +151,9 @@ where
 {
     let id = handle.id.clone();
     let workspace = handle.workspace.clone();
+    let network_enabled = handle.network_enabled;
     let shell_command = shell_command.to_string();
+    let shell = shell.map(str::to_string);
     let working_dir = working_dir.map(str::to_string);
     let env = env.to_vec();
 
@@ -158,7 +162,13 @@ where
     let stderr_tx = tx;
 
     let wait_task = tokio::task::spawn_blocking(move || {
-        run_step_blocking(&id, &workspace, &shell_command, working_dir.as_deref(), &env, stdout_tx, stderr_tx)
+        let invocation = StepInvocation {
+            shell_command: &shell_command,
+            shell: shell.as_deref(),
+            working_dir: working_dir.as_deref(),
+            env: &env,
+        };
+        run_step_blocking(&id, &workspace, network_enabled, invocation, (stdout_tx, stderr_tx))
     });
 
     while let Some((stream, line)) = rx.recv().await {
@@ -195,6 +205,7 @@ pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &crate::db::model
         id: row.id.clone(),
         workspace: std::path::PathBuf::from(&row.workspace_path),
         root_skeleton: buckets_root.join(&row.id),
+        network_enabled: row.network_enabled != 0,
     }
 }
 
@@ -255,6 +266,88 @@ fn grant_full_control(path: &Path, sid_string: &str) -> Result<()> {
     Ok(())
 }
 
+/// Grants the AppContainer SID traverse-only access (`(X)`, not full control, and not inherited
+/// by each ancestor's other children) to `path`'s two immediate ancestors — for a workspace at
+/// `<data_dir>/workspaces/<run_id>`, that's `<data_dir>/workspaces` and `<data_dir>` itself — on
+/// top of `grant_full_control`'s full-control grant on `path` itself.
+///
+/// AppContainer tokens don't hold the "bypass traverse checking" privilege normal user tokens get
+/// by default, so a workspace nested under the app's own data dir is otherwise only reachable by
+/// tools that don't validate their working directory at startup. `cmd.exe`'s inherited-cwd
+/// handling doesn't (file I/O inside the granted leaf directory works fine even without this), but
+/// PowerShell's `Set-Location`/`$PWD` initialization does, and fails with
+/// `UnauthorizedAccessException` without it — found by testing a real (non-`cmd`) default-shell
+/// step end-to-end, not from documentation.
+///
+/// Deliberately bounded to 2 levels rather than walking to the drive root: this covers every
+/// directory the app itself creates without touching (and persistently modifying the ACLs of)
+/// arbitrary user-profile directories above `data_dir` that this process doesn't own — which, on
+/// top of the unbounded-depth version being needlessly invasive, also turned out to be extremely
+/// slow (one `icacls` process per ancestor, several of which took tens of seconds against real
+/// directories with large existing ACLs).
+fn grant_ancestor_traverse_access(path: &Path, sid_string: &str) {
+    let grant_arg = format!("*{sid_string}:(X)");
+    for ancestor in path.ancestors().skip(1).take(2) {
+        if ancestor.parent().is_none() {
+            break;
+        }
+        match std::process::Command::new("icacls").arg(ancestor).arg("/grant").arg(&grant_arg).output() {
+            Ok(output) if !output.status.success() => {
+                tracing::warn!(
+                    path = %ancestor.display(),
+                    stderr = %String::from_utf8_lossy(&output.stderr),
+                    "failed to grant traverse access to a bucket workspace ancestor directory"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, path = %ancestor.display(), "failed to invoke icacls for ancestor traverse grant");
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Builds the capability SIDs granted when `network: true` is requested: `internetClient` for
+/// outbound internet access, `privateNetworkClientServer` for also reaching other hosts on the
+/// local/private network. Returns the raw SID byte buffers alongside the `SID_AND_ATTRIBUTES`
+/// array pointing into them — the caller must keep the buffers alive for as long as the array is
+/// used (through the `CreateProcessW` call), since `SID_AND_ATTRIBUTES::Sid` is a raw pointer.
+fn network_capability_sids() -> Result<(Vec<Vec<u8>>, Vec<windows::Win32::Security::SID_AND_ATTRIBUTES>)> {
+    use windows::Win32::Security::{WinCapabilityInternetClientSid, WinCapabilityPrivateNetworkClientServerSid};
+
+    let mut buffers: Vec<Vec<u8>> = [WinCapabilityInternetClientSid, WinCapabilityPrivateNetworkClientServerSid]
+        .into_iter()
+        .map(create_well_known_sid)
+        .collect::<Result<_>>()?;
+
+    let attrs = buffers
+        .iter_mut()
+        .map(|buf| windows::Win32::Security::SID_AND_ATTRIBUTES {
+            Sid: windows::Win32::Security::PSID(buf.as_mut_ptr() as *mut _),
+            Attributes: 0x0000_0004, // SE_GROUP_ENABLED
+        })
+        .collect();
+
+    Ok((buffers, attrs))
+}
+
+fn create_well_known_sid(sid_type: windows::Win32::Security::WELL_KNOWN_SID_TYPE) -> Result<Vec<u8>> {
+    use windows::Win32::Security::{CreateWellKnownSid, PSID};
+
+    let mut size: u32 = 0;
+    unsafe {
+        // Expected to fail with ERROR_INSUFFICIENT_BUFFER; this first call only exists to learn
+        // the required buffer size.
+        let _ = CreateWellKnownSid(sid_type, None, PSID::default(), &mut size);
+    }
+    let mut buf = vec![0u8; size as usize];
+    unsafe {
+        CreateWellKnownSid(sid_type, None, PSID(buf.as_mut_ptr() as *mut _), &mut size)
+            .context("CreateWellKnownSid failed")?;
+    }
+    Ok(buf)
+}
+
 fn create_job_object(name: &str) -> Result<HANDLE> {
     let name_wide = to_wide(name);
     let job = unsafe { CreateJobObjectW(None, PCWSTR(name_wide.as_ptr())) }.context("CreateJobObjectW failed")?;
@@ -284,15 +377,25 @@ fn open_job_object(name: &str) -> Result<HANDLE> {
     unsafe { OpenJobObjectW(JOB_OBJECT_ALL_ACCESS, false, PCWSTR(name_wide.as_ptr())) }.context("OpenJobObjectW failed")
 }
 
+/// What to actually run: bundled separately from the sandbox's own identity/config params so
+/// `run_step_blocking` doesn't grow an unwieldy positional argument list.
+struct StepInvocation<'a> {
+    shell_command: &'a str,
+    shell: Option<&'a str>,
+    working_dir: Option<&'a str>,
+    env: &'a [String],
+}
+
+type OutputLineSender = tokio::sync::mpsc::UnboundedSender<(&'static str, String)>;
+
 fn run_step_blocking(
     id: &str,
     workspace: &Path,
-    shell_command: &str,
-    working_dir: Option<&str>,
-    env: &[String],
-    stdout_tx: tokio::sync::mpsc::UnboundedSender<(&'static str, String)>,
-    stderr_tx: tokio::sync::mpsc::UnboundedSender<(&'static str, String)>,
+    network_enabled: bool,
+    invocation: StepInvocation<'_>,
+    (stdout_tx, stderr_tx): (OutputLineSender, OutputLineSender),
 ) -> Result<ExecResult> {
+    let StepInvocation { shell_command, shell, working_dir, env } = invocation;
     let profile_name = appcontainer_profile_name(id);
     let name_wide = to_wide(&profile_name);
     let sid = unsafe {
@@ -328,10 +431,17 @@ fn run_step_blocking(
                 .context("InitializeProcThreadAttributeList failed")?;
         }
 
+        // Capability SIDs granted at process-creation time are the only way an AppContainer
+        // process gets any network access at all; with none present (the default) the process
+        // has no network capability whatsoever, which is what makes network-deny-by-default work
+        // here without a separate firewall policy. `_network_sid_buffers` has to stay alive
+        // alongside `network_caps`/`capabilities` since the latter point into it.
+        let (_network_sid_buffers, mut network_caps) =
+            if network_enabled { network_capability_sids()? } else { (Vec::new(), Vec::new()) };
         let mut capabilities = windows::Win32::Security::SECURITY_CAPABILITIES {
             AppContainerSid: sid,
-            Capabilities: std::ptr::null_mut(),
-            CapabilityCount: 0,
+            Capabilities: if network_caps.is_empty() { std::ptr::null_mut() } else { network_caps.as_mut_ptr() },
+            CapabilityCount: network_caps.len() as u32,
             Reserved: 0,
         };
 
@@ -349,9 +459,9 @@ fn run_step_blocking(
         }
         startup_info.lpAttributeList = attr_list;
 
-        let mut cmdline = to_wide(&format!("cmd.exe /d /s /c \"{shell_command}\""));
-        let _ = env; // see the TODO at the CreateProcessW call below: env overrides aren't wired yet on Windows
+        let mut cmdline = to_wide(&resolve_shell_cmdline(shell, shell_command));
         let cwd = working_dir.map(to_wide).unwrap_or_else(|| to_wide(&workspace.to_string_lossy()));
+        let env_block = build_environment_block(env);
 
         let mut process_info = PROCESS_INFORMATION::default();
         let create_result = unsafe {
@@ -361,17 +471,14 @@ fn run_step_blocking(
                 None,
                 None,
                 true,
-                CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
-                None,
-                // TODO(bucket-windows-env): passing a hand-built lpEnvironment block here
-                // consistently fails CreateProcessW with ERROR_BAD_ENVIRONMENT (0xCB) when
-                // combined with PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES; suspect AppContainer
-                // process creation expects a block built via CreateEnvironmentBlock() for the
-                // target identity (which auto-injects APPDATA/LOCALAPPDATA/USERPROFILE rebased to
-                // the per-AppContainer isolated paths) rather than an arbitrary hand-rolled one.
-                // Inheriting the parent's environment (None here) works reliably; step-level env
-                // var overrides are not yet wired on the Windows backend as a result — tracked as
-                // a follow-up, `env` is accepted but currently unused for the actual process.
+                CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
+                // A prior attempt here passed a block containing only the step's override vars
+                // (plus a PATH fallback), which reliably failed with ERROR_BAD_ENVIRONMENT: it was
+                // missing SystemRoot/ComSpec/TEMP/etc. that cmd.exe needs to initialize at all.
+                // build_environment_block now starts from this process's own (inherited, already
+                // proven to work) environment and overlays the step's overrides on top, so the
+                // sandboxed process gets a complete, valid block either way.
+                Some(env_block.as_ptr() as *const core::ffi::c_void),
                 PCWSTR(cwd.as_ptr()),
                 &startup_info.StartupInfo,
                 &mut process_info,
@@ -468,21 +575,61 @@ fn read_pipe_lines(handle: HANDLE, stream: &'static str, tx: tokio::sync::mpsc::
 }
 
 /// Builds a double-null-terminated `KEY=VALUE\0...\0\0` UTF-16 block for `CreateProcessW`'s
-/// `lpEnvironment`, since `CREATE_UNICODE_ENVIRONMENT` was requested.
-fn build_environment_block(env: &[String]) -> Vec<u16> {
-    let mut vars: Vec<String> = env.to_vec();
-    if !vars.iter().any(|e| e.to_ascii_uppercase().starts_with("PATH=")) {
-        if let Ok(path) = std::env::var("PATH") {
-            vars.push(format!("PATH={path}"));
+/// `lpEnvironment`, since `CREATE_UNICODE_ENVIRONMENT` is requested alongside it.
+///
+/// Starts from this process's own environment (the same set a sandboxed process would get by
+/// inheriting, which is already known to work) rather than only the step's override vars, then
+/// applies `overrides` on top by key (case-insensitively, last write wins). This keeps essentials
+/// like `SystemRoot`/`ComSpec`/`TEMP` present even when a step only overrides one or two vars.
+fn build_environment_block(overrides: &[String]) -> Vec<u16> {
+    let mut vars: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for (key, value) in std::env::vars() {
+        vars.insert(key.to_ascii_uppercase(), format!("{key}={value}"));
+    }
+    for entry in overrides {
+        if let Some(eq) = entry.find('=') {
+            vars.insert(entry[..eq].to_ascii_uppercase(), entry.clone());
         }
     }
+
     let mut block = Vec::new();
-    for var in vars {
-        block.extend(std::ffi::OsStr::new(&var).encode_wide());
+    for entry in vars.values() {
+        block.extend(std::ffi::OsStr::new(entry).encode_wide());
         block.push(0);
     }
     block.push(0);
     block
+}
+
+/// Whether `pwsh.exe` (PowerShell 7+) is resolvable on `PATH`. Checked at runtime rather than
+/// assumed present, since unlike Windows PowerShell it isn't preinstalled on Windows.
+fn pwsh_available() -> bool {
+    std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).any(|dir| dir.join("pwsh.exe").exists()))
+        .unwrap_or(false)
+}
+
+/// Resolves a step's `shell:` override into the full command line `CreateProcessW` execs
+/// directly (no `cmd.exe` wrapper unless `cmd` is explicitly requested). Defaults to `pwsh`,
+/// falling back to the always-present `powershell.exe` when `pwsh.exe` isn't on `PATH` — matches
+/// real GitHub Actions' Windows runner default. An explicit `shell: pwsh` is honored as-is (no
+/// silent fallback) so a missing pwsh install fails loudly instead of quietly using a different
+/// shell than the one the workflow author asked for.
+///
+/// `-NoProfile` is load-bearing, not cosmetic: without it, PowerShell loads the invoking host
+/// account's profile script before running the step, and a profile that does something as
+/// ordinary as `cd`-ing somewhere silently changes the step's actual working directory out from
+/// under `-WorkingDirectory`/`lpCurrentDirectory` entirely (caught by testing this against a real
+/// profile that does exactly that, not from documentation).
+fn resolve_shell_cmdline(shell: Option<&str>, shell_command: &str) -> String {
+    match shell.map(str::to_ascii_lowercase).as_deref() {
+        Some("cmd") => format!("cmd.exe /d /s /c \"{shell_command}\""),
+        Some("powershell") => format!("powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
+        Some("pwsh") => format!("pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
+        Some(other) => format!("{other} \"{shell_command}\""),
+        None if pwsh_available() => format!("pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
+        None => format!("powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
+    }
 }
 
 #[cfg(test)]
@@ -531,10 +678,12 @@ mod tests {
         let mut stdout_lines = Vec::new();
         let command = "echo WORKSPACE_WRITE_TEST & echo hello> step_output.txt & type step_output.txt & \
              echo TRY_ESCAPE & (echo bad > C:\\Windows\\Temp\\atk_escape_test.txt 2>nul && echo ESCAPE_SUCCEEDED || echo ESCAPE_BLOCKED) & \
-             echo TRY_NETWORK & (ping -n 1 -w 1000 127.0.0.1 >nul 2>nul && echo NETWORK_SUCCEEDED || echo NETWORK_BLOCKED)";
+             echo TRY_NETWORK & (ping -n 1 -w 1000 127.0.0.1 >nul 2>nul && echo NETWORK_SUCCEEDED || echo NETWORK_BLOCKED) & \
+             echo TRY_ENV_OVERRIDE & echo ATK_TEST_VAR=%ATK_TEST_VAR% & echo SYSTEMROOT_SET=%SystemRoot%";
+        let env = vec!["ATK_TEST_VAR=sandboxed_value".to_string()];
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(20),
-            exec_step(&handle, command, None, &[], |stream, line| {
+            exec_step(&handle, command, Some("cmd"), None, &env, |stream, line| {
                 if stream == "stdout" {
                     stdout_lines.push(line);
                 }
@@ -549,6 +698,14 @@ mod tests {
 
         assert!(output.contains("hello"), "expected the workspace write/read round-trip to succeed: {output}");
         assert!(
+            output.contains("ATK_TEST_VAR=sandboxed_value"),
+            "expected the step-declared env var override to reach the sandboxed process: {output}"
+        );
+        assert!(
+            !output.contains("SYSTEMROOT_SET=%SystemRoot%") && output.contains("SYSTEMROOT_SET="),
+            "expected the inherited SystemRoot to still be present alongside the override: {output}"
+        );
+        assert!(
             workspace.join("step_output.txt").exists(),
             "expected step_output.txt to exist in the real host workspace dir after the step ran"
         );
@@ -562,6 +719,153 @@ mod tests {
         remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
         assert!(!handle.root_skeleton.exists(), "expected the bucket scratch directory to be removed after teardown");
 
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Confirms the default shell (unset `shell:`) actually resolves to a real, runnable
+    /// PowerShell variant end-to-end, not just that `resolve_shell_cmdline` returns a plausible
+    /// string: runs a PowerShell-syntax command with no shell override and checks it executed as
+    /// PowerShell (cmd.exe would fail on this syntax, not silently produce the same output).
+    #[tokio::test]
+    async fn default_shell_runs_as_powershell_without_an_override() {
+        let capability = probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let base = std::env::temp_dir().join(format!("atk-bucket-test-shell-{test_id}"));
+        let buckets_root = base.join("buckets");
+        let workspace = base.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&buckets_root).unwrap();
+
+        let db_path = base.join("test.db");
+        let pool = crate::db::connect(&db_path).await.expect("db connect should succeed");
+        seed_fk_chain(&pool, "repo-2", "workflow-2", "run-2", "job-2").await;
+
+        let spec = BucketSpec {
+            workspace_host_path: &workspace,
+            run_id: "run-2",
+            job_run_id: "job-2",
+            network_enabled: false,
+            ttl: std::time::Duration::from_secs(3600),
+        };
+        let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
+
+        let mut stdout_lines = Vec::new();
+        // `1..3 | ForEach-Object` only parses as PowerShell; cmd.exe would fail to run this at
+        // all. Single-quoted (not double-quoted) so it doesn't collide with the outer
+        // `-Command "..."` embedding's own double quotes.
+        let command = "1..3 | ForEach-Object { 'count-' + $_ }";
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            exec_step(&handle, command, None, None, &[], |stream, line| {
+                if stream == "stdout" {
+                    stdout_lines.push(line);
+                }
+            }),
+        )
+        .await
+        .expect("exec_step timed out")
+        .expect("exec_step should succeed");
+
+        let output = stdout_lines.join("\n");
+        println!("default-shell step output:\n{output}");
+        assert!(output.contains("count-1") && output.contains("count-3"), "expected PowerShell syntax to have run: {output}");
+        assert_eq!(result.exit_code, 0);
+
+        remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_shell_cmdline_honors_explicit_overrides() {
+        assert_eq!(resolve_shell_cmdline(Some("cmd"), "echo hi"), "cmd.exe /d /s /c \"echo hi\"");
+        assert_eq!(
+            resolve_shell_cmdline(Some("PowerShell"), "Write-Host hi"),
+            "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"Write-Host hi\""
+        );
+        assert_eq!(
+            resolve_shell_cmdline(Some("pwsh"), "Write-Host hi"),
+            "pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"Write-Host hi\""
+        );
+    }
+
+    #[test]
+    fn resolve_shell_cmdline_defaults_to_a_powershell_variant() {
+        let cmdline = resolve_shell_cmdline(None, "Write-Host hi");
+        assert!(
+            cmdline.starts_with("pwsh.exe") || cmdline.starts_with("powershell.exe"),
+            "expected the default shell to be pwsh or powershell: {cmdline}"
+        );
+    }
+
+    /// Confirms `network: true` actually grants network capability, not just that it's threaded
+    /// through without erroring. Deliberately targets a real external host, not loopback: Windows
+    /// blocks AppContainer loopback access unconditionally via a separate mechanism
+    /// (`NetworkIsolationSetAppContainerConfig`'s loopback-exemption list), independent of
+    /// capability SIDs — discovered by first writing this test against 127.0.0.1 and watching it
+    /// fail even with the capability granted, which is exactly the kind of thing only running it
+    /// for real (not just compiling) catches.
+    #[tokio::test]
+    async fn network_enabled_grants_capability_that_default_deny_blocks() {
+        let capability = probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let base = std::env::temp_dir().join(format!("atk-bucket-test-net-{test_id}"));
+        let buckets_root = base.join("buckets");
+        let workspace = base.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&buckets_root).unwrap();
+
+        let db_path = base.join("test.db");
+        let pool = crate::db::connect(&db_path).await.expect("db connect should succeed");
+        seed_fk_chain(&pool, "repo-3", "workflow-3", "run-3", "job-3").await;
+
+        let spec = BucketSpec {
+            workspace_host_path: &workspace,
+            run_id: "run-3",
+            job_run_id: "job-3",
+            network_enabled: true,
+            ttl: std::time::Duration::from_secs(3600),
+        };
+        let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
+
+        let mut stdout_lines = Vec::new();
+        // A real TCP/HTTPS request via curl.exe (built into Windows 10 1803+/Windows 11), not
+        // ICMP ping: ping showed NETWORK_BLOCKED even with the capability granted, which turned
+        // out to be ICMP-specific (Windows Firewall's AppContainer capability rules govern normal
+        // Winsock TCP/UDP traffic, not raw ICMP echo) rather than evidence the capability grant
+        // itself doesn't work.
+        let command = "(curl.exe -s -o nul --max-time 5 https://www.google.com && echo NETWORK_SUCCEEDED || echo NETWORK_BLOCKED)";
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            exec_step(&handle, command, Some("cmd"), None, &[], |stream, line| {
+                if stream == "stdout" {
+                    stdout_lines.push(line);
+                }
+            }),
+        )
+        .await
+        .expect("exec_step timed out")
+        .expect("exec_step should succeed");
+
+        let output = stdout_lines.join("\n");
+        println!("network-enabled step output:\n{output}");
+        if output.contains("NETWORK_BLOCKED") {
+            eprintln!("skipping assertion: this host may not have outbound internet access to verify against");
+        } else {
+            assert!(output.contains("NETWORK_SUCCEEDED"), "expected network: true to grant external network access: {output}");
+            assert_eq!(result.exit_code, 0);
+        }
+
+        remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
         let _ = std::fs::remove_dir_all(&base);
     }
 

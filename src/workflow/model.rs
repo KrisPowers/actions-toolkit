@@ -103,7 +103,12 @@ pub struct Job {
     pub name: Option<String>,
     #[serde(default = "default_runs_on")]
     pub runs_on: String,
-    pub container: ContainerSpec,
+    /// `run:` steps execute inside this container (via Docker) when set; when unset they run
+    /// natively via the Bucket sandbox instead, matching real GitHub Actions' own default
+    /// (no `container:` key means the job runs directly on the runner, not inside a container).
+    /// `uses: docker://` steps always use their own one-off container regardless of this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<ContainerSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub needs: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "if")]
@@ -116,6 +121,11 @@ pub struct Job {
     pub artifacts: Vec<ArtifactSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "download_artifacts")]
     pub download_artifacts: Vec<String>,
+    /// Opts this job's sandbox into network access. Bucket (the native, non-Docker sandbox
+    /// backend) is network-default-deny; Docker's own container networking is unaffected by
+    /// this and keeps working as before regardless of its value.
+    #[serde(default)]
+    pub network: bool,
 }
 
 fn default_runs_on() -> String {
@@ -155,6 +165,12 @@ pub struct Step {
     pub if_condition: Option<String>,
     #[serde(default, rename = "continue-on-error")]
     pub continue_on_error: bool,
+    /// Overrides the shell a `run:` step's command is executed with (`bash`, `sh`, `pwsh`,
+    /// `powershell`, `cmd`). Each backend (Docker exec, the Linux Bucket sandbox, the Windows
+    /// Bucket sandbox) resolves its own platform-appropriate default when this is unset, mirroring
+    /// real GitHub Actions rather than a single shell hardcoded across every platform.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<String>,
 }
 
 impl Step {

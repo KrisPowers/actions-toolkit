@@ -152,6 +152,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         jwt,
         enc,
         docker,
+        bucket_capability_ok: bucket_capability.ok,
         log_hub,
         github_client: RwLock::new(None),
     }));
