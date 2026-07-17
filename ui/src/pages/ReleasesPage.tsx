@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Tag, X } from "lucide-react";
 import { githubApi } from "../api/github";
 
 export default function ReleasesPage() {
@@ -37,8 +38,9 @@ export default function ReleasesPage() {
         <button
           type="button"
           onClick={() => setShowForm((v) => !v)}
-          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-dark"
+          className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
         >
+          {showForm ? <X className="h-3.5 w-3.5" strokeWidth={2} /> : <Plus className="h-3.5 w-3.5" strokeWidth={2} />}
           {showForm ? "Cancel" : "New release"}
         </button>
       </div>
@@ -50,20 +52,20 @@ export default function ReleasesPage() {
             value={tagName}
             onChange={(e) => setTagName(e.target.value)}
             placeholder="v1.0.0"
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100"
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
           />
           <label className="mt-3 block text-xs font-medium text-neutral-400">Title</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100"
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
           />
           <label className="mt-3 block text-xs font-medium text-neutral-400">Notes</label>
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={4}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100"
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
           />
           <div className="mt-3 flex gap-4">
             <label className="flex items-center gap-1.5 text-xs text-neutral-400">
@@ -79,7 +81,7 @@ export default function ReleasesPage() {
             type="button"
             disabled={!tagName || createRelease.isPending}
             onClick={() => createRelease.mutate()}
-            className="mt-4 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-50"
+            className="mt-4 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
           >
             {createRelease.isPending ? "Creating…" : "Create release"}
           </button>
@@ -92,10 +94,11 @@ export default function ReleasesPage() {
         {(releases ?? []).map((r: any) => (
           <div key={r.id} className="px-4 py-3">
             <div className="flex items-center gap-2">
+              <Tag className="h-3.5 w-3.5 text-neutral-500" strokeWidth={2} />
               <span className="text-sm font-medium text-neutral-200">{r.name || r.tag_name}</span>
               <span className="text-xs text-neutral-500">{r.tag_name}</span>
-              {r.draft && <span className="text-xs text-amber-400">draft</span>}
-              {r.prerelease && <span className="text-xs text-blue-400">pre-release</span>}
+              {r.draft && <span className="text-xs text-[var(--color-status-warning)]">draft</span>}
+              {r.prerelease && <span className="text-xs text-[var(--color-status-info)]">pre-release</span>}
             </div>
             {r.body && <p className="mt-1 whitespace-pre-wrap text-xs text-neutral-500">{r.body}</p>}
           </div>
