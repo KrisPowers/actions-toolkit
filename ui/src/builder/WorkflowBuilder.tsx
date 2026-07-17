@@ -104,7 +104,6 @@ export default function WorkflowBuilder({ name, initialYaml, onSave, saving, sav
     const jobKey = `job_${i}`;
     const job: Job = {
       runs_on: "self-hosted",
-      container: { image: "alpine:3.20", volumes: [] },
       needs: [],
       steps: [{ name: "Run", run: "echo hello", "continue-on-error": false }],
       artifacts: [],

@@ -10,8 +10,6 @@ on:
     branches: [main]
 jobs:
   build:
-    container:
-      image: alpine:3.20
     steps:
       - name: Say hello
         run: echo "hello from actions-toolkit"

@@ -197,7 +197,10 @@ export interface Step {
 export interface Job {
   name?: string | null;
   runs_on: string;
-  container: ContainerSpec;
+  /** Runs `run:` steps in this container via Docker when set; runs natively via the Bucket
+   * sandbox instead when unset (matches real GitHub Actions: no `container:` key means the job
+   * runs directly on the runner). */
+  container?: ContainerSpec | null;
   needs: string[];
   if?: string | null;
   strategy?: { matrix?: Record<string, string[]> | null } | null;
