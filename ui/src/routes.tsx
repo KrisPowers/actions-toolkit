@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import DashboardPage from "./pages/DashboardPage";
-import RepoListPage from "./pages/RepoListPage";
+import AnalyticsPage from "./pages/AnalyticsPage";
 import RepoConnectPage from "./pages/RepoConnectPage";
 import RepoSettingsPage from "./pages/RepoSettingsPage";
 import WorkflowListPage from "./pages/WorkflowListPage";
@@ -17,7 +17,8 @@ export default function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<DashboardPage />} />
-      <Route path="/repos" element={<RepoListPage />} />
+      <Route path="/analytics/:repoId" element={<AnalyticsPage />} />
+      <Route path="/repos" element={<Navigate to="/" replace />} />
       <Route path="/repos/connect" element={<RepoConnectPage />} />
       <Route path="/repos/:repoId/settings" element={<RepoSettingsPage />} />
       <Route path="/repos/:repoId/workflows" element={<WorkflowListPage />} />
