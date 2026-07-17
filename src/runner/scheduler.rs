@@ -35,10 +35,11 @@ async fn run_inner(
     checkout: Option<CheckoutContext>,
     trigger_event: &str,
 ) -> Result<()> {
-    let Some(docker) = state.docker.clone() else {
+    if !state.bucket_capability_ok {
         run_queries::set_run_status(&state.db, workflow_run_id, "failed", true).await?;
-        anyhow::bail!("Docker is not available on this host; cannot run jobs");
-    };
+        anyhow::bail!("Bucket sandbox is not available on this host; cannot run jobs without a container:");
+    }
+    let docker = state.docker.clone();
 
     run_queries::set_run_status(&state.db, workflow_run_id, "running", false).await?;
 
