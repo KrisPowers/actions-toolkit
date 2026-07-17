@@ -1,6 +1,5 @@
 use axum::body::Body;
-use axum::extract::Path as AxumPath;
-use axum::http::{header, StatusCode};
+use axum::http::{header, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use rust_embed::RustEmbed;
 
@@ -12,8 +11,12 @@ struct FrontendAssets;
 /// client-side routing (SPA fallback). If `ui/dist` doesn't exist at build time (e.g.
 /// during backend-only development), `rust-embed` embeds an empty set and this always 404s,
 /// which is expected when running the UI separately via `npm run dev`.
-pub async fn spa_fallback(AxumPath(path): AxumPath<String>) -> Response {
-    serve_embedded(&path)
+///
+/// Uses `Uri` rather than the `Path` extractor: this handler is wired up via
+/// `Router::fallback`, which has no route pattern to capture path params against, so `Path`
+/// panics on every request here.
+pub async fn spa_fallback(uri: Uri) -> Response {
+    serve_embedded(uri.path())
 }
 
 pub async fn spa_root() -> Response {
