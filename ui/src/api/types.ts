@@ -31,6 +31,11 @@ export interface Settings {
   updated_at: string;
 }
 
+export interface RuntimeStatus {
+  docker_available: boolean;
+  bucket_available: boolean;
+}
+
 export interface UpdateSettingsRequest {
   bind_addr?: string;
   docker_host?: string;
