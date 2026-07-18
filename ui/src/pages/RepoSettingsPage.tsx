@@ -4,7 +4,6 @@ import { AlertTriangle, CheckCircle2, Download, RefreshCw, Trash2, Upload, Webho
 import { useDeleteRepo, useRepo, useTestRepoConnection } from "../hooks/useRepos";
 import { useCreateWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import ConfirmDialog from "../components/common/ConfirmDialog";
-import GithubTokenHelp from "../components/settings/GithubTokenHelp";
 import GithubMark from "../components/common/GithubMark";
 import { workflowsApi } from "../api/workflows";
 
@@ -74,16 +73,15 @@ export default function RepoSettingsPage() {
           </div>
           <code className="mt-2 block break-all rounded bg-neutral-950 px-2 py-1 text-xs text-neutral-400">{repo.webhook_url}</code>
           <p className="mt-2 text-xs text-neutral-600">
-            The webhook secret was shown once when this repo was connected. Disconnect and reconnect for a new one.
+            Created automatically on GitHub when this repo was connected. Disconnect and reconnect to recreate it.
           </p>
 
           <div className="mt-5 flex items-center gap-2 border-t border-neutral-800 pt-4">
             <GithubMark className="h-4 w-4 text-neutral-500" />
             <div className="text-sm font-medium text-neutral-200">GitHub access</div>
-            <GithubTokenHelp />
           </div>
           <p className="mt-1 text-xs text-neutral-500">
-            Uses the account-wide token in{" "}
+            Uses the GitHub connection in{" "}
             <Link to="/settings" className="text-accent hover:underline">
               Settings
             </Link>
