@@ -6,6 +6,12 @@ use sqlx::SqlitePool;
 
 use crate::crypto::EncryptionKey;
 
+/// Client ID of the shared actions-toolkit GitHub App (https://github.com/settings/apps/actionstoolkit).
+/// Public by design: every actions-toolkit install authorizes through this same App via the
+/// OAuth authorization-code + PKCE flow, so no per-user registration or client secret is needed.
+/// Overridable via `GITHUB_APP_CLIENT_ID` for forks that register their own App.
+pub const DEFAULT_GITHUB_APP_CLIENT_ID: &str = "Iv23liCp6juYQps4Dxdu";
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = "actions-toolkit", about = "Local, self-hosted GitHub Actions-compatible runner")]
 pub struct Cli {
@@ -84,6 +90,12 @@ pub struct StartArgs {
     /// updates the stored default.
     #[arg(long, env = "MAX_CONCURRENT_JOBS")]
     pub max_concurrent_jobs: Option<usize>,
+
+    /// Client ID of the GitHub App used for the Connect GitHub OAuth flow. Defaults to the
+    /// shared actions-toolkit App (see `DEFAULT_GITHUB_APP_CLIENT_ID`); only needs overriding by
+    /// forks that register their own App.
+    #[arg(long, env = "GITHUB_APP_CLIENT_ID")]
+    pub github_app_client_id: Option<String>,
 }
 
 /// Resolved, per-process configuration: just where the data lives. Runtime settings that can
@@ -92,6 +104,7 @@ pub struct StartArgs {
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub data_dir: PathBuf,
+    pub github_app_client_id: String,
 }
 
 impl AppConfig {
@@ -141,8 +154,16 @@ pub struct Bootstrapped {
 /// Create the data/workspaces/artifacts directories, open (and migrate) the database, and
 /// load-or-generate the JWT signing secret and encryption key. Shared by `init` and `start` so
 /// both produce an identical, ready-to-serve data directory.
-pub async fn bootstrap(data_dir: PathBuf, jwt_secret: Option<String>, encryption_key: Option<String>) -> Result<Bootstrapped> {
-    let app_config = AppConfig { data_dir };
+pub async fn bootstrap(
+    data_dir: PathBuf,
+    jwt_secret: Option<String>,
+    encryption_key: Option<String>,
+    github_app_client_id: Option<String>,
+) -> Result<Bootstrapped> {
+    let app_config = AppConfig {
+        data_dir,
+        github_app_client_id: github_app_client_id.unwrap_or_else(|| DEFAULT_GITHUB_APP_CLIENT_ID.to_string()),
+    };
     std::fs::create_dir_all(&app_config.data_dir)?;
     std::fs::create_dir_all(app_config.workspaces_dir())?;
     std::fs::create_dir_all(app_config.artifacts_dir())?;

@@ -84,7 +84,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
     let args = match cli.command {
         Command::Init(args) => {
             let data_dir = config::resolve_data_dir(args.data_dir);
-            let boot = config::bootstrap(data_dir, None, None).await?;
+            let boot = config::bootstrap(data_dir, None, None, None).await?;
             println!("actions-toolkit initialized at {}", boot.app_config.data_dir.display());
             return Ok(());
         }
@@ -96,7 +96,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 
     let data_dir = config::resolve_data_dir(args.data_dir.clone());
     let config::Bootstrapped { db, app_config, enc, jwt_secret } =
-        config::bootstrap(data_dir, args.jwt_secret.clone(), args.encryption_key.clone()).await?;
+        config::bootstrap(data_dir, args.jwt_secret.clone(), args.encryption_key.clone(), args.github_app_client_id.clone()).await?;
     let jwt = JwtCodec::new(&jwt_secret);
 
     let settings = settings_queries::get(&db).await?;
