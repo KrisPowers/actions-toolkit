@@ -1,9 +1,26 @@
 import { useEffect, useState } from "react";
-import { Server } from "lucide-react";
-import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
+import { CheckCircle2, Server, XCircle } from "lucide-react";
+import { useRuntimeStatus, useSettings, useUpdateSettings } from "../../hooks/useSettings";
+
+function AvailabilityBadge({ label, available }: { label: string; available: boolean }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium"
+      style={{
+        color: available ? "var(--color-status-success)" : "var(--color-status-error)",
+        borderColor: `color-mix(in srgb, ${available ? "var(--color-status-success)" : "var(--color-status-error)"} 30%, transparent)`,
+        backgroundColor: `color-mix(in srgb, ${available ? "var(--color-status-success)" : "var(--color-status-error)"} 12%, transparent)`,
+      }}
+    >
+      {available ? <CheckCircle2 className="h-3 w-3" strokeWidth={2.5} /> : <XCircle className="h-3 w-3" strokeWidth={2.5} />}
+      {label}
+    </span>
+  );
+}
 
 export default function RuntimeSettingsCard() {
   const { data: settings } = useSettings();
+  const { data: runtimeStatus } = useRuntimeStatus();
   const update = useUpdateSettings();
 
   const [bindAddr, setBindAddr] = useState("");
@@ -25,6 +42,11 @@ export default function RuntimeSettingsCard() {
       <div className="flex items-center gap-2">
         <Server className="h-4 w-4 text-neutral-500" strokeWidth={2} />
         <h2 className="text-sm font-semibold text-neutral-200">Runtime settings</h2>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <AvailabilityBadge label={`Docker ${runtimeStatus?.docker_available ? "available" : "unavailable"}`} available={!!runtimeStatus?.docker_available} />
+        <AvailabilityBadge label={`Bucket ${runtimeStatus?.bucket_available ? "available" : "unavailable"}`} available={!!runtimeStatus?.bucket_available} />
       </div>
 
       <div className="mt-4">
