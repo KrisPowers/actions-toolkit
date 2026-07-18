@@ -1,4 +1,7 @@
+use axum::body::Body;
 use axum::extract::{Path, State};
+use axum::http::header;
+use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
@@ -152,6 +155,65 @@ pub async fn validate_workflow(
             error: Some(e.to_string()),
         }),
     }
+}
+
+fn yaml_filename(file_path: &str) -> String {
+    file_path.rsplit('/').next().unwrap_or(file_path).to_string()
+}
+
+pub async fn export(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    _user: CurrentUser,
+) -> AppResult<Response> {
+    let workflow = workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
+
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, "text/yaml")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", yaml_filename(&workflow.file_path)),
+        )
+        .body(Body::from(workflow.yaml_source))
+        .unwrap()
+        .into_response())
+}
+
+pub async fn export_repo(
+    State(state): State<AppState>,
+    Path(repo_id): Path<String>,
+    _user: CurrentUser,
+) -> AppResult<Response> {
+    let repo = repo_queries::find_by_id(&state.db, &repo_id).await?.ok_or(AppError::NotFound)?;
+    let workflows = workflow_queries::list_for_repo(&state.db, &repo_id).await?;
+
+    let zip_bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let mut writer = zip::ZipWriter::new(&mut buf);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        for workflow in &workflows {
+            writer.start_file(&workflow.file_path, options)?;
+            std::io::Write::write_all(&mut writer, workflow.yaml_source.as_bytes())?;
+        }
+
+        writer.finish()?;
+        Ok(buf.into_inner())
+    })
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?
+    .map_err(AppError::Internal)?;
+
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, "application/zip")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}-{}-workflows.zip\"", repo.owner, repo.name),
+        )
+        .body(Body::from(zip_bytes))
+        .unwrap()
+        .into_response())
 }
 
 pub async fn dispatch(
