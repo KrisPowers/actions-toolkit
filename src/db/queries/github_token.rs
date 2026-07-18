@@ -8,6 +8,11 @@ pub async fn get(pool: &SqlitePool) -> sqlx::Result<Option<GithubToken>> {
         .await
 }
 
+/// Upsert a legacy PAT (`token_type = 'pat'`), via the manual "paste a token" flow this milestone
+/// keeps working. Explicitly resets `token_type`/`needs_reconnect` and clears every App-only
+/// field (refresh token, expiry, installation), so pasting a PAT over what used to be a
+/// `github_app` connection can't leave stale App-token state behind that a later reconnect would
+/// see and get confused by.
 pub async fn upsert(
     pool: &SqlitePool,
     token_encrypted: &[u8],
@@ -17,14 +22,22 @@ pub async fn upsert(
 ) -> sqlx::Result<GithubToken> {
     let now = now_iso();
     sqlx::query(
-        "INSERT INTO github_token (id, token_encrypted, token_nonce, github_login, scopes, created_at, updated_at) \
-         VALUES (1, ?, ?, ?, ?, ?, ?) \
+        "INSERT INTO github_token \
+            (id, token_encrypted, token_nonce, github_login, scopes, created_at, updated_at, \
+             token_type, refresh_token_encrypted, refresh_token_nonce, expires_at, installation_id, needs_reconnect) \
+         VALUES (1, ?, ?, ?, ?, ?, ?, 'pat', NULL, NULL, NULL, NULL, 0) \
          ON CONFLICT(id) DO UPDATE SET \
             token_encrypted = excluded.token_encrypted, \
             token_nonce = excluded.token_nonce, \
             github_login = excluded.github_login, \
             scopes = excluded.scopes, \
-            updated_at = excluded.updated_at",
+            updated_at = excluded.updated_at, \
+            token_type = 'pat', \
+            refresh_token_encrypted = NULL, \
+            refresh_token_nonce = NULL, \
+            expires_at = NULL, \
+            installation_id = NULL, \
+            needs_reconnect = 0",
     )
     .bind(token_encrypted)
     .bind(token_nonce)
@@ -185,5 +198,28 @@ mod tests {
         assert_eq!(row.token_encrypted, b"app-ciphertext");
         assert_eq!(row.needs_reconnect, 0);
         assert_eq!(row.installation_id, Some(7));
+    }
+
+    /// Rule-proving test: pasting a legacy PAT over an existing GitHub App connection (the
+    /// manual `set_token` flow this milestone keeps working) must not leave any App-only field
+    /// behind for a later reconnect to trip over.
+    #[tokio::test]
+    async fn upsert_clears_stale_app_token_fields_when_replacing_a_github_app_row() {
+        let pool = test_pool().await;
+        upsert_app_token(&pool, b"app-ciphertext", b"app-nonce", b"refresh-ciphertext", b"refresh-nonce", "2099-01-01T00:00:00Z", Some(7), "octocat")
+            .await
+            .unwrap();
+        mark_needs_reconnect(&pool).await.unwrap();
+
+        upsert(&pool, b"pat-ciphertext", b"pat-nonce", "octocat", "repo").await.unwrap();
+
+        let row = get(&pool).await.unwrap().unwrap();
+        assert_eq!(row.token_type, "pat");
+        assert_eq!(row.token_encrypted, b"pat-ciphertext");
+        assert_eq!(row.needs_reconnect, 0);
+        assert!(row.refresh_token_encrypted.is_none());
+        assert!(row.refresh_token_nonce.is_none());
+        assert!(row.expires_at.is_none());
+        assert!(row.installation_id.is_none());
     }
 }
