@@ -137,9 +137,8 @@ export default function RepoConnectPage() {
           </h1>
         </div>
         <p className="mt-2 text-sm text-neutral-400">
-          To trigger workflows from push, pull request, and release events, add a webhook on each repo pointing at the
-          URL below. If this machine isn't publicly reachable, tunnel it first (e.g. <code>ngrok http</code>) and use
-          the tunnel URL instead.
+          A webhook was created automatically on each repo below, so push, pull request, and release events reach
+          this instance with no setup on your part.
         </p>
 
         <div className="mt-4 flex flex-col gap-3">
@@ -148,17 +147,9 @@ export default function RepoConnectPage() {
               <div className="text-sm font-medium text-neutral-200">
                 {repo.owner}/{repo.name}
               </div>
-              <div className="mt-2 text-xs font-medium text-neutral-500">Webhook payload URL</div>
-              <code className="mt-1 block break-all rounded bg-neutral-950 px-2 py-1 text-xs text-neutral-200">{repo.webhook_url}</code>
-              <div className="mt-2 text-xs font-medium text-neutral-500">Webhook secret</div>
-              <code className="mt-1 block break-all rounded bg-neutral-950 px-2 py-1 text-xs text-neutral-200">{repo.webhook_secret}</code>
             </div>
           ))}
         </div>
-        <p className="mt-3 text-xs text-neutral-500">
-          In each repo on GitHub: Settings → Webhooks → Add webhook. Set content type to <code>application/json</code>
-          and paste the matching secret above.
-        </p>
 
         <button
           type="button"

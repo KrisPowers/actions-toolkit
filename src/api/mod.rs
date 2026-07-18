@@ -18,6 +18,17 @@ use tower_http::trace::TraceLayer;
 use crate::app::AppState;
 use crate::auth::handlers as auth_handlers;
 
+/// Derives `scheme://host` from the incoming request's own `Host` header (and
+/// `X-Forwarded-Proto`, set by a tunnel/proxy terminating TLS in front of a plain-HTTP backend),
+/// since actions-toolkit runs on whatever host:port the operator chose and has no fixed public
+/// URL of its own to fall back on. Used to build URLs GitHub needs to call back into this
+/// instance: the OAuth callback and a repo's webhook payload URL.
+pub(crate) fn request_origin(headers: &axum::http::HeaderMap) -> String {
+    let host = headers.get(axum::http::header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("localhost:7890");
+    let scheme = headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()).unwrap_or("http");
+    format!("{scheme}://{host}")
+}
+
 pub fn router(state: AppState) -> Router {
     let api_routes = Router::new()
         .route("/auth/status", get(auth_handlers::status))

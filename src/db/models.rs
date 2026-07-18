@@ -33,6 +33,11 @@ pub struct Repo {
     pub created_by: String,
     pub created_at: String,
     pub updated_at: String,
+    /// GitHub's ID for the webhook this instance created on connect. `None` for a repo connected
+    /// before webhook automation existed (manually set up) or one whose automated creation
+    /// failed in a way that still left the repo row behind (shouldn't happen going forward, see
+    /// `api::repos::create`, but kept nullable defensively for exactly that edge case).
+    pub github_hook_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]

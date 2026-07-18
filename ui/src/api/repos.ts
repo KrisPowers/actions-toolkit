@@ -1,9 +1,7 @@
 import { api } from "./client";
 import type { RepoPublic, WebhookEvent } from "./types";
 
-export interface CreateRepoResponse extends RepoPublic {
-  webhook_secret: string;
-}
+export type CreateRepoResponse = RepoPublic;
 
 export const reposApi = {
   list: () => api.get<RepoPublic[]>("/repos"),
