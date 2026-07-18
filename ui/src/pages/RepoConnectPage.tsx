@@ -18,6 +18,32 @@ function colorForOwner(owner: string): string {
   return OWNER_COLORS[hash % OWNER_COLORS.length];
 }
 
+// GitHub serves the org/user avatar at a predictable public URL, no API call needed. Falls back
+// to the colored initial dot (still keyed by colorForOwner, so it stays visually consistent with
+// the rest of the picker) if the image fails to load.
+function OwnerAvatar({ owner, className }: { owner: string; className: string }) {
+  const [errored, setErrored] = useState(false);
+  if (errored) {
+    return (
+      <span
+        className={`${className} flex shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white`}
+        style={{ backgroundColor: colorForOwner(owner) }}
+      >
+        {owner.slice(0, 1).toUpperCase()}
+      </span>
+    );
+  }
+  return (
+    <img
+      src={`https://github.com/${owner}.png?size=40`}
+      alt=""
+      loading="lazy"
+      onError={() => setErrored(true)}
+      className={`${className} shrink-0 rounded-full object-cover`}
+    />
+  );
+}
+
 export default function RepoConnectPage() {
   const { data: tokenStatus } = useGithubTokenStatus();
   const { data: connectedRepos } = useRepos();
@@ -192,7 +218,7 @@ export default function RepoConnectPage() {
                 : "border-neutral-700 text-neutral-300 hover:bg-neutral-800"
             }`}
           >
-            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: colorForOwner(owner) }} />
+            <OwnerAvatar owner={owner} className="h-4 w-4" />
             {owner}
             <span className="text-neutral-500">{count}</span>
           </button>
@@ -218,7 +244,7 @@ export default function RepoConnectPage() {
             className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2 last:border-b-0 hover:bg-neutral-800/50"
           >
             <input type="checkbox" checked={selected.has(r.full_name)} onChange={() => toggle(r.full_name)} />
-            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: colorForOwner(r.owner) }} />
+            <OwnerAvatar owner={r.owner} className="h-5 w-5" />
             <span className="flex-1 text-sm text-neutral-200">{r.full_name}</span>
             {r.private && <Lock className="h-3.5 w-3.5 text-neutral-600" strokeWidth={2} />}
           </label>
