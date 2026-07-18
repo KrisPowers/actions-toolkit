@@ -405,6 +405,7 @@ mod tests {
             bucket_capability_ok: true,
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
+            oauth_states: Default::default(),
         }));
 
         let out_file = "artifact.txt";
