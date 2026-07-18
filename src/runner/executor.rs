@@ -386,7 +386,10 @@ mod tests {
         let data_dir = std::env::temp_dir().join(format!("atk-executor-test-{test_id}"));
         std::fs::create_dir_all(&data_dir).unwrap();
 
-        let config = AppConfig { data_dir: data_dir.clone() };
+        let config = AppConfig {
+            data_dir: data_dir.clone(),
+            github_app_client_id: "test-client-id".to_string(),
+        };
         let db = crate::db::connect(&config.db_path()).await.expect("db connect should succeed");
         let enc = EncryptionKey::load_or_generate(None, &config.secrets_dir()).expect("encryption key should load");
         let jwt = JwtCodec::new("test-secret");

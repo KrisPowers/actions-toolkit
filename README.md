@@ -74,6 +74,17 @@ No prebuilt binary for your OS/architecture yet? Build from source, see below.
   reachable.
 - A GitHub personal access token with repo scope, covering whichever repos you want to connect
 
+## GitHub App
+
+actions-toolkit authenticates to GitHub through a single shared GitHub App,
+[`actionstoolkit`](https://github.com/settings/apps/actionstoolkit), owned by the project
+maintainer. Its client ID is public and compiled into the binary (see `.env.example` and
+`src/config.rs`), so nothing needs registering per install; every instance authorizes through the
+same App via OAuth authorization-code + PKCE, and each user gets their own token scoped to what
+they personally approve. The App's registered callback URL must match your instance's actual
+host:port; the default covers `localhost:7890`, override `GITHUB_APP_CLIENT_ID` if you've
+registered your own App for a fork running elsewhere.
+
 ## Development
 
 ```bash
