@@ -14,19 +14,27 @@ while keeping a workflow-file-driven, trigger-based pipeline you already know.
 
 ## How it works
 
-1. On first run, a setup wizard walks you through creating an admin account and entering a
-   single GitHub personal access token, directly in the browser, never written to an env file.
-2. Pick which repos to connect from a list the token can see (or add one manually by owner/name).
-3. Point a GitHub webhook at this server (or tunnel it, see below) so push/PR/release events
-   reach it.
+1. On first run, a setup wizard walks you through creating an admin account, then a "Connect
+   GitHub" button that sends you to GitHub to authorize the shared actions-toolkit App. No token
+   to generate or paste, and nothing is ever written to an env file.
+2. Pick which repos to connect from the App installation's accessible-repos list (or extend the
+   installation from GitHub's own settings if a repo you want isn't listed yet).
+3. Connecting a repo automatically creates its webhook on GitHub, there's no manual payload
+   URL/secret step. If this server isn't publicly reachable, see "Exposing your webhook" below for
+   what it needs to be reachable at.
 4. Define workflows (`on:` triggers, `jobs:`, `steps:`) either as YAML or visually.
 5. When a matching event arrives (or you click "Run now"), actions-toolkit checks out your repo,
    spins up a Docker container per job, runs each step, streams logs live to the UI, and captures
    any declared artifacts, all on your own hardware.
 
-One token covers every repo the wizard connects; there's no per-repo credential to manage, and
-the token itself is entered only through the setup UI and Settings, never as an environment
-variable.
+One GitHub connection covers every repo the App installation grants access to; there's no
+per-repo credential to manage, and the underlying token is never entered, displayed, or stored as
+an environment variable.
+
+If you're upgrading an existing install that was still using the old personal-access-token flow,
+Settings will show a persistent "Reconnect" banner after upgrading. Your existing token keeps
+working exactly as before until you click it; reconnecting swaps it for an App connection with no
+other downtime.
 
 ## Install
 
@@ -72,7 +80,8 @@ No prebuilt binary for your OS/architecture yet? Build from source, see below.
 - [Docker](https://www.docker.com/) running locally. This is what actually executes workflow
   jobs. The server starts without it, but dispatching a workflow will fail until Docker is
   reachable.
-- A GitHub personal access token with repo scope, covering whichever repos you want to connect
+- A GitHub account that can install the shared actions-toolkit App (see below) on whichever repos
+  you want to connect. No token to generate ahead of time.
 
 ## GitHub App
 
@@ -80,10 +89,10 @@ actions-toolkit authenticates to GitHub through a single shared GitHub App,
 [`actionstoolkit`](https://github.com/settings/apps/actionstoolkit), owned by the project
 maintainer. Its client ID is public and compiled into the binary (see `.env.example` and
 `src/config.rs`), so nothing needs registering per install; every instance authorizes through the
-same App via OAuth authorization-code + PKCE, and each user gets their own token scoped to what
-they personally approve. The App's registered callback URL must match your instance's actual
-host:port; the default covers `localhost:7890`, override `GITHUB_APP_CLIENT_ID` if you've
-registered your own App for a fork running elsewhere.
+same App via the "Connect GitHub" button in Settings, and each user gets their own token scoped to
+exactly what they personally approve, an install of the App on the repos they choose. Override
+`GITHUB_APP_CLIENT_ID` (and register your own App) only if you're running a fork you want
+authenticating independently of the shared one.
 
 ## Development
 
@@ -123,16 +132,16 @@ advanced overrides: a custom data directory, and recovery of the JWT/encryption 
 
 ## Exposing your webhook
 
-GitHub needs to reach this server to deliver push/PR/release events. If the machine running
-actions-toolkit isn't publicly reachable:
+GitHub needs to reach this server to deliver push/PR/release events. Connecting a repo creates its
+webhook automatically, pointed at this instance's own address, so this only matters if that
+address isn't reachable from the internet:
 
-- Use a tunnel such as `ngrok http 7890` or `cloudflared tunnel --url http://localhost:7890` and
-  register the tunnel's HTTPS URL as the webhook payload URL.
-- Or run actions-toolkit on a host that's already reachable on your network/VPN and point the
-  webhook there directly.
+- Use a tunnel such as `ngrok http 7890` or `cloudflared tunnel --url http://localhost:7890`
+  *before* connecting the repo, so the webhook actions-toolkit creates points at a reachable URL
+  from the start.
+- Or run actions-toolkit on a host that's already reachable on your network/VPN.
 
-When you connect a repo in the UI, it generates a per-repo webhook secret and shows you the exact
-payload URL and setup steps for GitHub's Settings > Webhooks page.
+There's no manual payload URL or secret to copy anywhere, connecting the repo is the whole step.
 
 ## Layout
 
@@ -160,10 +169,10 @@ sequentially, just like GitHub's own runners.
 
 ## Known limitations
 
-- **One token for the whole account.** There's no per-repo or per-org credential; the single
-  configured token needs access to every repo you connect. Removing the token in Settings stops
-  workflow dispatch, webhook processing, and issue/PR/release actions for every connected repo
-  until a new one is added.
+- **One GitHub connection for the whole instance.** There's no per-repo or per-org credential;
+  every connected repo authenticates through the same App connection. Disconnecting it in Settings
+  stops workflow dispatch, webhook processing, and issue/PR/release actions for every connected
+  repo until it's reconnected.
 - The accessible-repos picker lists up to a few hundred repos (a handful of paginated requests);
   very large orgs may not see their entire repo list there, but can still connect a repo by exact
   owner/name via the manual fallback.
