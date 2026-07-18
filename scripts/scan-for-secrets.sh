@@ -25,9 +25,14 @@ fi
 
 if [ "${1:-}" != "" ]; then
   binary="$1"
-  echo "Scanning built binary ($binary) for a private key..."
-  if grep -a -E -- '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' "$binary"; then
-    echo "ERROR: found a private-key marker embedded in the built binary." >&2
+  echo "Scanning built binary ($binary) for an embedded private key..."
+  # A plain marker-string match isn't enough here: git2 links libssh2, which carries the same
+  # "-----BEGIN ... PRIVATE KEY-----" text as its own compiled-in PEM-parsing recognition
+  # constant, with nothing but a few NUL bytes between BEGIN and END. Requiring a real run of
+  # base64 body content between the markers is what tells an actual embedded key apart from that
+  # constant, confirmed against this exact false positive before landing this check.
+  if grep -Pzao -- '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----[\x00\s]{0,8}[A-Za-z0-9+/=]{40,}' "$binary"; then
+    echo "ERROR: found what looks like a real private key embedded in the built binary." >&2
     fail=1
   fi
 fi
