@@ -7,7 +7,7 @@ export const workflowsApi = {
   create: (
     repoId: string,
     name: string,
-    source: { yaml_source?: string; workflow_json?: WorkflowModel; description?: string },
+    source: { yaml_source?: string; workflow_json?: WorkflowModel; description?: string; file_path?: string },
   ) => api.post<WorkflowRow>(`/repos/${repoId}/workflows`, { name, ...source }),
   update: (id: string, source: { yaml_source?: string; workflow_json?: WorkflowModel }) =>
     api.patch<{ workflow: WorkflowRow }>(`/workflows/${id}`, source),
@@ -19,4 +19,6 @@ export const workflowsApi = {
   listGithubWorkflows: (repoId: string) => api.get<GithubWorkflowFile[]>(`/repos/${repoId}/github-workflows`),
   importGithubWorkflow: (repoId: string, path: string) =>
     api.post<WorkflowRow>(`/repos/${repoId}/github-workflows/import`, { path }),
+  exportUrl: (id: string) => `/api/workflows/${id}/export`,
+  exportAllUrl: (repoId: string) => `/api/repos/${repoId}/workflows/export`,
 };
