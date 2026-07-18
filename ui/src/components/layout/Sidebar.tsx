@@ -1,6 +1,19 @@
 import { NavLink, useParams } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
-import { CircleDot, FolderGit2, GitPullRequest, LayoutDashboard, PlayCircle, Settings, SlidersHorizontal, Tag, Workflow } from "lucide-react";
+import {
+  AlertTriangle,
+  CircleDot,
+  FolderGit2,
+  GitPullRequest,
+  LayoutDashboard,
+  Package,
+  PlayCircle,
+  ScrollText,
+  Settings,
+  SlidersHorizontal,
+  Tag,
+  Workflow,
+} from "lucide-react";
 import { useRepos } from "../../hooks/useRepos";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -43,6 +56,15 @@ export default function Sidebar() {
             </NavItem>
             <NavItem to={`/repos/${repoId}/runs`} icon={PlayCircle}>
               Runs
+            </NavItem>
+            <NavItem to={`/repos/${repoId}/logs`} icon={ScrollText}>
+              Logs
+            </NavItem>
+            <NavItem to={`/repos/${repoId}/artifacts`} icon={Package}>
+              Artifacts
+            </NavItem>
+            <NavItem to={`/repos/${repoId}/events`} icon={AlertTriangle}>
+              Flagged Events
             </NavItem>
             <NavItem to={`/repos/${repoId}/issues`} icon={CircleDot}>
               Issues
