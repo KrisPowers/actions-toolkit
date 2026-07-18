@@ -1,6 +1,6 @@
 use axum::extract::State;
 use axum::Json;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
 use crate::auth::middleware::CurrentUser;
@@ -10,6 +10,26 @@ use crate::error::AppResult;
 
 pub async fn get(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<Settings>> {
     Ok(Json(settings_queries::get(&state.db).await?))
+}
+
+#[derive(Serialize)]
+pub struct RuntimeStatus {
+    pub docker_available: bool,
+    pub bucket_available: bool,
+}
+
+/// Re-checks Docker live rather than trusting the value captured at startup, so starting (or
+/// stopping) the Docker daemon while the app is already running is reflected without a restart.
+/// Bucket's capability isn't re-probed here: unlike Docker it isn't a service the user starts or
+/// stops, and the real probe actually spins up a throwaway sandbox, too heavy to run on every
+/// poll from the UI.
+pub async fn runtime_status(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<RuntimeStatus>> {
+    let settings = settings_queries::get(&state.db).await?;
+    let docker_available = match crate::runner::docker::connect(settings.docker_host.as_deref()) {
+        Ok(client) => crate::runner::docker::ping(&client).await.is_ok(),
+        Err(_) => false,
+    };
+    Ok(Json(RuntimeStatus { docker_available, bucket_available: state.bucket_capability_ok }))
 }
 
 /// `port` is deliberately not accepted here: changing it always requires a restart to take

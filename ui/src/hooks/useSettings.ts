@@ -13,3 +13,9 @@ export function useUpdateSettings() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
   });
 }
+
+// Polls so that starting (or stopping) the Docker daemon while a page is open is picked up
+// without the user needing to reload.
+export function useRuntimeStatus() {
+  return useQuery({ queryKey: ["settings", "runtime-status"], queryFn: settingsApi.runtimeStatus, refetchInterval: 5000 });
+}
