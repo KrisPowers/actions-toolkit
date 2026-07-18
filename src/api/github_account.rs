@@ -17,12 +17,18 @@ pub async fn status(State(state): State<AppState>, _user: CurrentUser) -> AppRes
             github_login: Some(t.github_login),
             scopes: Some(t.scopes),
             connected_at: Some(t.updated_at),
+            token_type: Some(t.token_type.clone()),
+            // The full "a `pat` row always needs reconnect" policy lands in the migration issue
+            // that follows this one; for now this reflects the stored flag as-is.
+            needs_reconnect: t.needs_reconnect != 0,
         },
         None => GithubTokenStatus {
             connected: false,
             github_login: None,
             scopes: None,
             connected_at: None,
+            token_type: None,
+            needs_reconnect: false,
         },
     }))
 }
@@ -56,6 +62,8 @@ pub async fn set_token(
         github_login: Some(login),
         scopes: Some(String::new()),
         connected_at: None,
+        token_type: Some("pat".to_string()),
+        needs_reconnect: false,
     }))
 }
 
