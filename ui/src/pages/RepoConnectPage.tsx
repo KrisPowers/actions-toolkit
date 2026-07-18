@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { CheckCircle2, ChevronDown, ChevronUp, LayoutGrid, Lock, Search } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { CheckCircle2, ChevronDown, ChevronUp, ExternalLink, LayoutGrid, Lock, Search } from "lucide-react";
 import { useCreateRepo, useRepos } from "../hooks/useRepos";
 import { useAccessibleRepos, useGithubTokenStatus } from "../hooks/useGithubAccount";
-import GithubTokenHelp from "../components/settings/GithubTokenHelp";
+import GithubConnectButton from "../components/settings/GithubConnectButton";
 import GithubMark from "../components/common/GithubMark";
 import type { CreateRepoResponse } from "../api/repos";
 
@@ -169,13 +169,10 @@ export default function RepoConnectPage() {
           <GithubMark className="h-5 w-5 text-neutral-500" />
           <h1 className="text-lg font-semibold text-neutral-100">Connect a repo</h1>
         </div>
-        <p className="mt-3 flex items-center gap-1.5 text-sm text-neutral-400">
-          You need a GitHub token first.
-          <GithubTokenHelp />
-        </p>
-        <Link to="/settings" className="mt-3 inline-block text-sm text-accent hover:underline">
-          Add one in Settings →
-        </Link>
+        <p className="mt-3 text-sm text-neutral-400">Connect your GitHub account first to pick repos to run workflows for.</p>
+        <div className="mt-4">
+          <GithubConnectButton />
+        </div>
       </div>
     );
   }
@@ -183,7 +180,20 @@ export default function RepoConnectPage() {
   return (
     <div className="max-w-lg">
       <h1 className="text-lg font-semibold text-neutral-100">Connect a repo</h1>
-      <p className="mt-1 text-sm text-neutral-400">Connected as @{tokenStatus.github_login}. Pick from repos this token can see.</p>
+      <p className="mt-1 text-sm text-neutral-400">
+        Connected as @{tokenStatus.github_login}. Pick from repos the actions-toolkit GitHub App can access.
+      </p>
+      {tokenStatus.token_type === "github_app" && (
+        <a
+          href="https://github.com/settings/installations"
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1.5 inline-flex items-center gap-1 text-xs text-accent hover:underline"
+        >
+          Not seeing a repo? Manage which repos the App can access on GitHub
+          <ExternalLink className="h-3 w-3" strokeWidth={2} />
+        </a>
+      )}
 
       <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1">
         <button
