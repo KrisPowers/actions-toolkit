@@ -19,6 +19,8 @@ export interface GithubTokenStatus {
   github_login: string | null;
   scopes: string | null;
   connected_at: string | null;
+  token_type: "pat" | "github_app" | null;
+  needs_reconnect: boolean;
 }
 
 export interface Settings {
