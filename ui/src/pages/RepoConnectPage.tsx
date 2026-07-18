@@ -102,7 +102,7 @@ export default function RepoConnectPage() {
 
   async function connectSelected() {
     setConnecting(true);
-    const chosen = filtered.filter((r) => selected.has(r.full_name));
+    const chosen = connectable.filter((r) => selected.has(r.full_name));
     const results: CreateRepoResponse[] = [];
     for (const repo of chosen) {
       try {
