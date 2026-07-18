@@ -227,4 +227,73 @@ mod tests {
         let token = decrypted_token(&state).await.unwrap();
         assert_eq!(token, "my-legacy-pat");
     }
+
+    #[derive(Clone)]
+    struct BufWriter(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for BufWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for BufWriter {
+        type Writer = BufWriter;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    /// Rule-proving test for milestone #1's storage rule: a token refresh (success case, since
+    /// that's the path that actually handles a live access/refresh token pair) never writes
+    /// either token to a log line at any level, checked by capturing every tracing event emitted
+    /// during the call and asserting the raw values never appear in it, not just checking for
+    /// specific field names a future log line could easily bypass.
+    #[tokio::test]
+    async fn refreshing_a_token_never_logs_the_access_or_refresh_token() {
+        let plaintext_old_access = "stale-access-token-should-never-be-logged";
+        let plaintext_new_access = "refreshed-access-token-should-never-be-logged";
+        let plaintext_new_refresh = "refreshed-refresh-token-should-never-be-logged";
+        let plaintext_old_refresh = "old-refresh-token-should-never-be-logged";
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": plaintext_new_access,
+                "refresh_token": plaintext_new_refresh,
+                "expires_in": 28800
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let state = test_state(mock_server.uri()).await;
+        let (token_encrypted, token_nonce) = state.enc.encrypt_str(plaintext_old_access).unwrap();
+        let (refresh_encrypted, refresh_nonce) = state.enc.encrypt_str(plaintext_old_refresh).unwrap();
+        let already_expired = (chrono::Utc::now() - chrono::Duration::minutes(1)).to_rfc3339();
+        token_queries::upsert_app_token(
+            &state.db, &token_encrypted, &token_nonce, &refresh_encrypted, &refresh_nonce, &already_expired, None, "octocat",
+        )
+        .await
+        .unwrap();
+
+        let buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(BufWriter(buf.clone()))
+            .with_max_level(tracing::Level::TRACE)
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        shared(&state).await.unwrap();
+
+        drop(_guard);
+        let captured = String::from_utf8_lossy(&buf.lock().unwrap()).to_string();
+        assert!(!captured.contains(plaintext_old_access));
+        assert!(!captured.contains(plaintext_new_access));
+        assert!(!captured.contains(plaintext_new_refresh));
+        assert!(!captured.contains(plaintext_old_refresh));
+    }
 }

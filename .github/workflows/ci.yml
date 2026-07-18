@@ -6,6 +6,12 @@ on:
   pull_request:
 
 jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh scripts/scan-for-secrets.sh
+
   ui:
     runs-on: ubuntu-latest
     defaults:
@@ -38,3 +44,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --all-targets
       - run: cargo test
+      - name: Build binary for the embedded-secret scan
+        run: cargo build
+      - run: sh scripts/scan-for-secrets.sh target/debug/actions-toolkit
