@@ -48,7 +48,9 @@ pub struct RepoPublic {
 
 /// Singleton row (id is always 1) holding the one account-wide GitHub token entered during
 /// setup. Replaces the old per-repo PAT model so connecting a repo no longer requires its own
-/// credential.
+/// credential. `token_type` is `"pat"` for the legacy manually-pasted token or `"github_app"`
+/// for a token obtained through the OAuth + PKCE connect flow; the refresh/expiry/installation
+/// fields are only ever populated for `"github_app"` rows.
 #[derive(Debug, Clone, FromRow)]
 pub struct GithubToken {
     pub id: i64,
@@ -58,14 +60,59 @@ pub struct GithubToken {
     pub scopes: String,
     pub created_at: String,
     pub updated_at: String,
+    pub token_type: String,
+    pub refresh_token_encrypted: Option<Vec<u8>>,
+    pub refresh_token_nonce: Option<Vec<u8>>,
+    pub expires_at: Option<String>,
+    pub installation_id: Option<i64>,
+    pub needs_reconnect: i64,
 }
 
+/// Client-facing connection status. Deliberately never carries a token or refresh-token field,
+/// raw or otherwise, so adding a field here later can't silently start leaking one: see
+/// `models::tests::github_token_status_never_serializes_secrets`.
 #[derive(Debug, Clone, Serialize)]
 pub struct GithubTokenStatus {
     pub connected: bool,
     pub github_login: Option<String>,
     pub scopes: Option<String>,
     pub connected_at: Option<String>,
+    /// `"pat"` or `"github_app"`; `None` when `connected` is `false`.
+    pub token_type: Option<String>,
+    /// `true` for any `"pat"` row (always prompt reconnect) or a `"github_app"` row whose last
+    /// refresh attempt failed. `false` when there's no connection at all.
+    pub needs_reconnect: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Rule-proving test for milestone #1's storage rule: `GithubTokenStatus` must never
+    /// serialize a raw access or refresh token, even if a future field addition tries to smuggle
+    /// one in under an unexpected name. Asserts against the actual fake-secret-shaped values, not
+    /// just key names, so a bug that renames the field but still emits the value still fails this.
+    #[test]
+    fn github_token_status_never_serializes_secrets() {
+        let fake_access_token = "ghu_should_never_appear_in_json_1234567890";
+        let fake_refresh_token = "ghr_should_never_appear_in_json_0987654321";
+
+        let status = GithubTokenStatus {
+            connected: true,
+            github_login: Some("octocat".to_string()),
+            scopes: Some(String::new()),
+            connected_at: Some(now_iso()),
+            token_type: Some("github_app".to_string()),
+            needs_reconnect: false,
+        };
+        let json = serde_json::to_string(&status).unwrap();
+
+        assert!(!json.contains(fake_access_token));
+        assert!(!json.contains(fake_refresh_token));
+        assert!(!json.to_lowercase().contains("refresh_token"));
+        assert!(!json.to_lowercase().contains("\"token\""));
+        assert!(!json.to_lowercase().contains("token_encrypted"));
+    }
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]
