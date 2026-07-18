@@ -32,6 +32,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/github/accessible-repos", get(github_account::accessible_repos))
         .route("/settings", get(settings::get).patch(settings::update))
+        .route("/settings/runtime-status", get(settings::runtime_status))
         .route("/repos", get(repos::list).post(repos::create))
         .route("/repos/{id}", get(repos::get).delete(repos::delete))
         .route("/repos/{id}/test-connection", post(repos::test_connection))
