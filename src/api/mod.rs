@@ -48,6 +48,7 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/logs", get(runs::logs))
         .route("/runs/{id}/logs/ws", get(crate::ws::run_logs_ws))
         .route("/runs/{id}/artifacts", get(artifacts::list_for_run))
+        .route("/repos/{repo_id}/artifacts", get(artifacts::list_for_repo))
         .route("/artifacts/{id}/download", get(artifacts::download))
         .route("/repos/{repo_id}/issues", get(github_proxy::list_issues))
         .route("/repos/{repo_id}/issues/{number}", get(github_proxy::get_issue).patch(github_proxy::update_issue))

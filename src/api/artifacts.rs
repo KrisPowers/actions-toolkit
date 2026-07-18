@@ -8,7 +8,7 @@ use tokio_util::io::ReaderStream;
 use crate::app::AppState;
 use crate::auth::middleware::CurrentUser;
 use crate::db::models::Artifact;
-use crate::db::queries::artifacts as artifact_queries;
+use crate::db::queries::artifacts::{self as artifact_queries, ArtifactWithContext};
 use crate::error::{AppError, AppResult};
 
 pub async fn list_for_run(
@@ -17,6 +17,14 @@ pub async fn list_for_run(
     _user: CurrentUser,
 ) -> AppResult<Json<Vec<Artifact>>> {
     Ok(Json(artifact_queries::list_for_run(&state.db, &run_id).await?))
+}
+
+pub async fn list_for_repo(
+    State(state): State<AppState>,
+    Path(repo_id): Path<String>,
+    _user: CurrentUser,
+) -> AppResult<Json<Vec<ArtifactWithContext>>> {
+    Ok(Json(artifact_queries::list_for_repo(&state.db, &repo_id, 200).await?))
 }
 
 pub async fn download(
