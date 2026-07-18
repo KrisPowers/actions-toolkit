@@ -93,7 +93,9 @@ async fn complete(state: &AppState, headers: &HeaderMap, q: CallbackQuery) -> Re
     let code = q.code.ok_or_else(|| anyhow::anyhow!("callback had no code parameter"))?;
 
     let redirect_uri = callback_redirect_uri(headers);
-    let exchanged = oauth::exchange_code(&state.config.github_app_client_id, &code, &pending.code_verifier, &redirect_uri).await?;
+    let exchanged =
+        oauth::exchange_code(&state.config.github_oauth_token_url, &state.config.github_app_client_id, &code, &pending.code_verifier, &redirect_uri)
+            .await?;
 
     let github_client = client::for_token(&exchanged.access_token)?;
     let login = discovery::validate_token(&github_client).await?;

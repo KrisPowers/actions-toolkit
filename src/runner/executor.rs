@@ -389,6 +389,7 @@ mod tests {
         let config = AppConfig {
             data_dir: data_dir.clone(),
             github_app_client_id: "test-client-id".to_string(),
+            github_oauth_token_url: crate::github::oauth::GITHUB_TOKEN_URL.to_string(),
         };
         let db = crate::db::connect(&config.db_path()).await.expect("db connect should succeed");
         let enc = EncryptionKey::load_or_generate(None, &config.secrets_dir()).expect("encryption key should load");

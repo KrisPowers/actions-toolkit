@@ -7,7 +7,10 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const GITHUB_AUTHORIZE_URL: &str = "https://github.com/login/oauth/authorize";
-const GITHUB_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
+/// GitHub's OAuth token endpoint, used for both the initial code exchange and refresh grants.
+/// Default value of `AppConfig::github_oauth_token_url`; tests override that config field to
+/// point at a mock server instead of hardcoding around this constant.
+pub const GITHUB_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
 
 /// How long an unused authorize attempt (state + PKCE verifier) stays valid before a callback
 /// using it is rejected as stale.
@@ -99,21 +102,18 @@ struct TokenResponse {
     error_description: Option<String>,
 }
 
-/// Exchanges an authorization `code` and its PKCE `code_verifier` for an access token. No
-/// client secret is sent: the App is a public OAuth client and PKCE is the only proof required.
-/// GitHub reports failures (denied, expired code) as a 200 with an `error` field rather than a
-/// non-2xx status, so that's checked explicitly rather than relying on HTTP status alone.
-pub async fn exchange_code(client_id: &str, code: &str, code_verifier: &str, redirect_uri: &str) -> Result<ExchangedToken> {
+/// POSTs a token-endpoint request and validates the response shape. `token_url` is a parameter
+/// (not the `GITHUB_TOKEN_URL` constant baked in directly) so tests can point it at a mock
+/// server instead of the real GitHub endpoint; production callers pass
+/// `AppConfig::github_oauth_token_url`, which defaults to `GITHUB_TOKEN_URL`. GitHub reports
+/// failures (denied, expired code, revoked refresh token) as a 200 with an `error` field rather
+/// than a non-2xx status, so that's checked explicitly rather than relying on HTTP status alone.
+async fn post_token_request(token_url: &str, params: &[(&str, &str)]) -> Result<ExchangedToken> {
     let client = reqwest::Client::new();
     let resp: TokenResponse = client
-        .post(GITHUB_TOKEN_URL)
+        .post(token_url)
         .header("Accept", "application/json")
-        .form(&[
-            ("client_id", client_id),
-            ("code", code),
-            ("code_verifier", code_verifier),
-            ("redirect_uri", redirect_uri),
-        ])
+        .form(params)
         .send()
         .await
         .context("failed to reach GitHub's token endpoint")?
@@ -122,7 +122,7 @@ pub async fn exchange_code(client_id: &str, code: &str, code_verifier: &str, red
         .context("failed to parse GitHub's token response")?;
 
     if let Some(err) = resp.error {
-        anyhow::bail!("GitHub rejected the code exchange: {err} ({})", resp.error_description.unwrap_or_default());
+        anyhow::bail!("GitHub rejected the request: {err} ({})", resp.error_description.unwrap_or_default());
     }
 
     let access_token = resp.access_token.context("GitHub's token response had no access_token")?;
@@ -134,6 +134,22 @@ pub async fn exchange_code(client_id: &str, code: &str, code_verifier: &str, red
         .context("GitHub's token response had no expires_in; is 'Expire user authorization tokens' enabled on the App?")?;
 
     Ok(ExchangedToken { access_token, refresh_token, expires_in })
+}
+
+/// Exchanges an authorization `code` and its PKCE `code_verifier` for an access token. No
+/// client secret is sent: the App is a public OAuth client and PKCE is the only proof required.
+pub async fn exchange_code(token_url: &str, client_id: &str, code: &str, code_verifier: &str, redirect_uri: &str) -> Result<ExchangedToken> {
+    post_token_request(
+        token_url,
+        &[("client_id", client_id), ("code", code), ("code_verifier", code_verifier), ("redirect_uri", redirect_uri)],
+    )
+    .await
+}
+
+/// Refreshes an expiring GitHub App user-to-server access token using the stored refresh token.
+/// Same no-client-secret shape as `exchange_code`.
+pub async fn refresh_access_token(token_url: &str, client_id: &str, refresh_token: &str) -> Result<ExchangedToken> {
+    post_token_request(token_url, &[("client_id", client_id), ("grant_type", "refresh_token"), ("refresh_token", refresh_token)]).await
 }
 
 #[cfg(test)]
