@@ -78,6 +78,16 @@ pub async fn accessible_repos(
     _user: CurrentUser,
 ) -> AppResult<Json<Vec<discovery::AccessibleRepo>>> {
     let client = client::shared(&state).await?;
-    let repos = discovery::list_accessible_repos(&client).await.map_err(AppError::Internal)?;
+
+    // A `github_app` connection with an installation ID lists exactly what that installation
+    // was granted; everything else (a legacy PAT, or an App connection without one, e.g. an
+    // older install) falls back to the account-wide listing the token can see.
+    let row = token_queries::get(&state.db).await?;
+    let repos = match row.as_ref().and_then(|t| (t.token_type == "github_app").then_some(t.installation_id).flatten()) {
+        Some(installation_id) => discovery::list_accessible_repos_for_installation(&client, installation_id)
+            .await
+            .map_err(AppError::Internal)?,
+        None => discovery::list_accessible_repos(&client).await.map_err(AppError::Internal)?,
+    };
     Ok(Json(repos))
 }

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use octocrab::Octocrab;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Validate a token by asking GitHub who it belongs to. Returns the authenticated login.
 pub async fn validate_token(client: &Octocrab) -> Result<String> {
@@ -36,6 +36,44 @@ pub async fn list_accessible_repos(client: &Octocrab) -> Result<Vec<AccessibleRe
 
         let page_len = response.items.len();
         for repo in response.items {
+            let Some(full_name) = repo.full_name else { continue };
+            let Some((owner, name)) = full_name.split_once('/') else { continue };
+            repos.push(AccessibleRepo {
+                owner: owner.to_string(),
+                name: name.to_string(),
+                full_name: full_name.clone(),
+                private: repo.private.unwrap_or(false),
+                default_branch: repo.default_branch.unwrap_or_else(|| "main".to_string()),
+            });
+        }
+
+        if page_len < 100 {
+            break;
+        }
+    }
+    Ok(repos)
+}
+
+#[derive(Debug, Deserialize)]
+struct InstallationRepositories {
+    repositories: Vec<octocrab::models::Repository>,
+}
+
+/// List repos a GitHub App installation was actually granted, for a `github_app`-connected
+/// token. Unlike `list_accessible_repos` (which lists everything the token's account can see),
+/// this reflects exactly what the installation picker on GitHub granted, so a repo the user
+/// didn't select during install correctly doesn't show up here.
+pub async fn list_accessible_repos_for_installation(client: &Octocrab, installation_id: i64) -> Result<Vec<AccessibleRepo>> {
+    let mut repos = Vec::new();
+    for page in 1..=3u8 {
+        let route = format!("/user/installations/{installation_id}/repositories?per_page=100&page={page}");
+        let response: InstallationRepositories = client
+            .get(route, None::<&()>)
+            .await
+            .context("failed to list repos for this installation")?;
+
+        let page_len = response.repositories.len();
+        for repo in response.repositories {
             let Some(full_name) = repo.full_name else { continue };
             let Some((owner, name)) = full_name.split_once('/') else { continue };
             repos.push(AccessibleRepo {

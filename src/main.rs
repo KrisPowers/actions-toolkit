@@ -155,6 +155,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         bucket_capability_ok: bucket_capability.ok,
         log_hub,
         github_client: RwLock::new(None),
+        oauth_states: Default::default(),
     }));
 
     let app = api::router(state);

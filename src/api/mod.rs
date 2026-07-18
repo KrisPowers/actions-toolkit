@@ -1,6 +1,7 @@
 pub mod analytics;
 pub mod artifacts;
 pub mod github_account;
+pub mod github_oauth;
 pub mod github_proxy;
 pub mod repos;
 pub mod runs;
@@ -24,6 +25,8 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/login", post(auth_handlers::login))
         .route("/auth/logout", post(auth_handlers::logout))
         .route("/auth/me", get(auth_handlers::me))
+        .route("/auth/github/authorize", get(github_oauth::authorize))
+        .route("/auth/github/callback", get(github_oauth::callback))
         .route("/users", get(auth_handlers::list_users).post(auth_handlers::create_user))
         .route("/users/{id}", delete(auth_handlers::delete_user))
         .route(
