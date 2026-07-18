@@ -6,7 +6,7 @@ import "reactflow/dist/style.css";
 import { Plus, Save } from "lucide-react";
 import { useTheme } from "../theme/ThemeProvider";
 
-import type { Job, WorkflowModel } from "../api/types";
+import type { Job, TriggerConfig, WorkflowModel } from "../api/types";
 import YamlCodeEditor from "./YamlCodeEditor";
 import TriggerNode from "./nodes/TriggerNode";
 import JobNode from "./nodes/JobNode";
@@ -29,11 +29,40 @@ function emptyModel(name: string): WorkflowModel {
   return { name, on: { workflow_dispatch: {} }, jobs: {} };
 }
 
+// The backend omits empty arrays from its canonical yaml (e.g. a job with no `needs:` has no
+// `needs` key at all), and hand-edited yaml in the code editor can omit them too. Every other
+// part of the builder (toReactFlow, JobConfigPanel, TriggerConfigPanel, ...) assumes these
+// arrays are always present per the WorkflowModel/Job types, so this is the one place that
+// re-defaults them right after a raw yaml parse.
+function normalizeJob(job: Job): Job {
+  return {
+    ...job,
+    needs: job.needs ?? [],
+    steps: (job.steps ?? []).map((s) => ({ ...s, "continue-on-error": s["continue-on-error"] ?? false })),
+    artifacts: job.artifacts ?? [],
+    download_artifacts: job.download_artifacts ?? [],
+  };
+}
+
+function normalizeTrigger(on: TriggerConfig): TriggerConfig {
+  return {
+    ...on,
+    push: on.push
+      ? { branches: on.push.branches ?? [], tags: on.push.tags ?? [], paths: on.push.paths ?? [] }
+      : on.push,
+    pull_request: on.pull_request
+      ? { types: on.pull_request.types ?? [], branches: on.pull_request.branches ?? [] }
+      : on.pull_request,
+    release: on.release ? { types: on.release.types ?? [] } : on.release,
+  };
+}
+
 function parseYaml(source: string, fallbackName: string): { model: WorkflowModel | null; error: string | null } {
   try {
     const parsed = yaml.load(source) as WorkflowModel;
     if (!parsed || typeof parsed !== "object") return { model: emptyModel(fallbackName), error: null };
-    return { model: { ...parsed, jobs: parsed.jobs ?? {}, on: parsed.on ?? {} }, error: null };
+    const jobs = Object.fromEntries(Object.entries(parsed.jobs ?? {}).map(([key, job]) => [key, normalizeJob(job)]));
+    return { model: { ...parsed, jobs, on: normalizeTrigger(parsed.on ?? {}) }, error: null };
   } catch (e) {
     return { model: null, error: (e as Error).message };
   }

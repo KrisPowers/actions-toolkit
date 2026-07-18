@@ -29,3 +29,11 @@ export function useDeleteRepo() {
 export function useTestRepoConnection() {
   return useMutation({ mutationFn: (id: string) => reposApi.testConnection(id) });
 }
+
+export function useRepoWebhookEvents(repoId: string | undefined) {
+  return useQuery({
+    queryKey: ["repos", repoId, "webhook-events"],
+    queryFn: () => reposApi.webhookEvents(repoId as string),
+    enabled: !!repoId,
+  });
+}

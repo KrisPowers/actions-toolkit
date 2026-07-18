@@ -22,12 +22,14 @@ export function useCreateWorkflow(repoId: string) {
       description,
       yaml_source,
       workflow_json,
+      file_path,
     }: {
       name: string;
       description?: string;
       yaml_source?: string;
       workflow_json?: WorkflowModel;
-    }) => workflowsApi.create(repoId, name, { description, yaml_source, workflow_json }),
+      file_path?: string;
+    }) => workflowsApi.create(repoId, name, { description, yaml_source, workflow_json, file_path }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["workflows", "repo", repoId] }),
   });
 }

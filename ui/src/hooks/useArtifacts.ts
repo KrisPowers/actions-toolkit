@@ -8,3 +8,11 @@ export function useArtifacts(runId: string | undefined) {
     enabled: !!runId,
   });
 }
+
+export function useRepoArtifacts(repoId: string | undefined) {
+  return useQuery({
+    queryKey: ["artifacts", "repo", repoId],
+    queryFn: () => artifactsApi.listForRepo(repoId as string),
+    enabled: !!repoId,
+  });
+}
