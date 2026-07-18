@@ -90,11 +90,17 @@ pub fn for_token(token: &str) -> Result<Octocrab> {
 }
 
 /// Decrypt and return the raw configured token string, e.g. for git checkout auth where an
-/// octocrab client isn't usable directly.
+/// octocrab client isn't usable directly. Goes through the same refresh check as `shared` for a
+/// `github_app` row, so checkout doesn't hand git a token that's about to expire mid-clone.
 pub async fn decrypted_token(state: &AppState) -> Result<String> {
     let row = token_queries::get(&state.db)
         .await?
         .ok_or_else(|| anyhow::anyhow!(NO_TOKEN_MESSAGE))?;
+
+    if row.token_type == "github_app" {
+        return Ok(ensure_fresh_app_token(state, &row).await?);
+    }
+
     state.enc.decrypt_str(&row.token_encrypted, &row.token_nonce)
 }
 
@@ -179,5 +185,46 @@ mod tests {
             .unwrap();
 
         assert!(shared(&state).await.is_ok());
+    }
+
+    /// `decrypted_token` (used for git checkout auth) must not hand out a token that's about to
+    /// expire mid-clone: for a `github_app` row it goes through the same refresh check as
+    /// `shared`, and the caller shouldn't need to know or care which token type is active.
+    #[tokio::test]
+    async fn decrypted_token_refreshes_an_expiring_app_token_transparently() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "refreshed-access-token",
+                "refresh_token": "refreshed-refresh-token",
+                "expires_in": 28800
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let state = test_state(mock_server.uri()).await;
+        let (token_encrypted, token_nonce) = state.enc.encrypt_str("stale-access-token").unwrap();
+        let (refresh_encrypted, refresh_nonce) = state.enc.encrypt_str("still-valid-refresh-token").unwrap();
+        let already_expired = (chrono::Utc::now() - chrono::Duration::minutes(1)).to_rfc3339();
+        token_queries::upsert_app_token(
+            &state.db, &token_encrypted, &token_nonce, &refresh_encrypted, &refresh_nonce, &already_expired, None, "octocat",
+        )
+        .await
+        .unwrap();
+
+        let token = decrypted_token(&state).await.unwrap();
+        assert_eq!(token, "refreshed-access-token");
+    }
+
+    #[tokio::test]
+    async fn decrypted_token_passes_a_pat_row_through_without_touching_the_refresh_endpoint() {
+        // No mock registered: a PAT row must never call the token endpoint at all.
+        let mock_server = MockServer::start().await;
+        let state = test_state(mock_server.uri()).await;
+        let (token_encrypted, token_nonce) = state.enc.encrypt_str("my-legacy-pat").unwrap();
+        token_queries::upsert(&state.db, &token_encrypted, &token_nonce, "octocat", "repo").await.unwrap();
+
+        let token = decrypted_token(&state).await.unwrap();
+        assert_eq!(token, "my-legacy-pat");
     }
 }
