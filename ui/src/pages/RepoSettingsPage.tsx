@@ -1,20 +1,64 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, RefreshCw, Trash2, Webhook } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, RefreshCw, Trash2, Upload, Webhook, XCircle } from "lucide-react";
 import { useDeleteRepo, useRepo, useTestRepoConnection } from "../hooks/useRepos";
+import { useCreateWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import GithubTokenHelp from "../components/settings/GithubTokenHelp";
 import GithubMark from "../components/common/GithubMark";
+import { workflowsApi } from "../api/workflows";
+
+function nameFromYaml(text: string, fallback: string): string {
+  const match = text.match(/^name:\s*(.+)$/m);
+  const raw = match?.[1]?.trim().replace(/^["']|["']$/g, "");
+  return raw || fallback;
+}
+
+interface ImportResult {
+  fileName: string;
+  ok: boolean;
+  message: string;
+}
 
 export default function RepoSettingsPage() {
   const { repoId } = useParams();
   const { data: repo } = useRepo(repoId);
+  const { data: workflows } = useWorkflows(repoId);
   const testConnection = useTestRepoConnection();
   const deleteRepo = useDeleteRepo();
+  const createWorkflow = useCreateWorkflow(repoId as string);
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResults, setImportResults] = useState<ImportResult[]>([]);
 
   if (!repo) return null;
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+
+    setImporting(true);
+    const results: ImportResult[] = [];
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        const fallbackName = file.name.replace(/\.ya?ml$/i, "");
+        await createWorkflow.mutateAsync({
+          name: nameFromYaml(text, fallbackName),
+          yaml_source: text,
+          file_path: file.name,
+        });
+        results.push({ fileName: file.name, ok: true, message: "imported" });
+      } catch (err) {
+        results.push({ fileName: file.name, ok: false, message: (err as Error).message });
+      }
+    }
+    setImporting(false);
+    setImportResults(results);
+  }
 
   return (
     <div className="max-w-6xl">
@@ -67,7 +111,64 @@ export default function RepoSettingsPage() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-[var(--color-status-error)]/30 bg-[var(--color-status-error)]/5 p-5">
+        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
+          <div className="flex items-center gap-2">
+            <Download className="h-4 w-4 text-neutral-500" strokeWidth={2} />
+            <div className="text-sm font-medium text-neutral-200">Import &amp; export</div>
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">
+            Export the raw workflow YAML files this tool has saved, or upload <code>.yml</code> files to create new
+            local-runner workflows.
+          </p>
+
+          <a
+            href={workflowsApi.exportAllUrl(repo.id)}
+            className={`mt-4 inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-800 ${
+              (workflows ?? []).length === 0 ? "pointer-events-none opacity-50" : ""
+            }`}
+          >
+            <Download className="h-3.5 w-3.5" strokeWidth={2} />
+            Export all workflows (.zip)
+          </a>
+
+          <div className="mt-5 border-t border-neutral-800 pt-4">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".yml,.yaml"
+              multiple
+              className="hidden"
+              onChange={handleImport}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-800 disabled:opacity-60"
+            >
+              <Upload className="h-3.5 w-3.5" strokeWidth={2} />
+              {importing ? "Importing…" : "Import workflow files"}
+            </button>
+
+            {importResults.length > 0 && (
+              <ul className="mt-3 flex flex-col gap-1">
+                {importResults.map((r, i) => (
+                  <li key={`${r.fileName}-${i}`} className="flex items-center gap-1.5 text-xs">
+                    {r.ok ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[var(--color-status-success)]" strokeWidth={2} />
+                    ) : (
+                      <XCircle className="h-3.5 w-3.5 shrink-0 text-[var(--color-status-error)]" strokeWidth={2} />
+                    )}
+                    <span className="text-neutral-300">{r.fileName}</span>
+                    {!r.ok && <span className="text-neutral-500">— {r.message}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-[var(--color-status-error)]/30 bg-[var(--color-status-error)]/5 p-5 xl:col-span-2">
           <div className="flex items-center gap-2 text-[var(--color-status-error)]">
             <AlertTriangle className="h-4 w-4" strokeWidth={2} />
             <div className="text-sm font-medium">Danger zone</div>
