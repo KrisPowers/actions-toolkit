@@ -8,18 +8,11 @@ use crate::auth::middleware::CurrentUser;
 use crate::db::queries::github_token as token_queries;
 use crate::github::{client, discovery, oauth};
 
-/// Builds this instance's OAuth callback URL from the request's own `Host` header (and
-/// `X-Forwarded-Proto` if this is behind a tunnel/proxy terminating TLS) rather than a fixed
-/// config value, since actions-toolkit runs on whatever host:port the operator chose. That value
-/// must match one of the callback URLs registered on the GitHub App, or GitHub rejects the
-/// authorize/exchange request outright.
+/// This instance's OAuth callback URL, derived from the request's own origin (see
+/// `api::request_origin`). Must match one of the callback URLs registered on the GitHub App, or
+/// GitHub rejects the authorize/exchange request outright.
 fn callback_redirect_uri(headers: &HeaderMap) -> String {
-    let host = headers
-        .get(axum::http::header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("localhost:7890");
-    let scheme = headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()).unwrap_or("http");
-    format!("{scheme}://{host}/api/auth/github/callback")
+    format!("{}/api/auth/github/callback", crate::api::request_origin(headers))
 }
 
 /// Starts a connect attempt: generates a fresh PKCE verifier/challenge and CSRF state, stashes

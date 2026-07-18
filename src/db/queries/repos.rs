@@ -50,3 +50,13 @@ pub async fn delete(pool: &SqlitePool, id: &str) -> sqlx::Result<()> {
     sqlx::query("DELETE FROM repos WHERE id = ?").bind(id).execute(pool).await?;
     Ok(())
 }
+
+pub async fn set_github_hook_id(pool: &SqlitePool, id: &str, github_hook_id: i64) -> sqlx::Result<()> {
+    sqlx::query("UPDATE repos SET github_hook_id = ?, updated_at = ? WHERE id = ?")
+        .bind(github_hook_id)
+        .bind(now_iso())
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
