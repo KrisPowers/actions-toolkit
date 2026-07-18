@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { LogOut } from "lucide-react";
 import Sidebar from "./Sidebar";
 import ThemeToggle from "../common/ThemeToggle";
+import GithubReconnectBanner from "../settings/GithubReconnectBanner";
 import { useLogout } from "../../hooks/useAuth";
 import type { User } from "../../api/types";
 
@@ -26,6 +27,7 @@ export default function AppShell({ user, children }: { user: User; children: Rea
             Log out
           </button>
         </header>
+        <GithubReconnectBanner />
         <main className="min-w-0 flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>

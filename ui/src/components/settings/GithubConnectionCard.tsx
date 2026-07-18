@@ -1,55 +1,83 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ShieldCheck, Trash2 } from "lucide-react";
-import { useDeleteGithubToken, useGithubTokenStatus, useSetGithubToken } from "../../hooks/useGithubAccount";
+import { useDeleteGithubToken, useGithubTokenStatus } from "../../hooks/useGithubAccount";
 import ConfirmDialog from "../common/ConfirmDialog";
-import GithubTokenHelp from "./GithubTokenHelp";
+import GithubConnectButton from "./GithubConnectButton";
 import GithubMark from "../common/GithubMark";
+
+const RETURN_MESSAGES: Record<string, { tone: "success" | "error"; text: string }> = {
+  connected: { tone: "success", text: "GitHub connected successfully." },
+  denied: { tone: "error", text: "GitHub authorization was denied, so nothing was connected." },
+  error: { tone: "error", text: "Something went wrong connecting to GitHub. Please try again." },
+};
 
 export default function GithubConnectionCard() {
   const { data: status } = useGithubTokenStatus();
-  const setToken = useSetGithubToken();
   const deleteToken = useDeleteGithubToken();
-  const [newToken, setNewToken] = useState("");
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const returnState = searchParams.get("github");
+  const returnMessage = returnState ? RETURN_MESSAGES[returnState] : undefined;
+
+  // Strip the one-shot ?github=... param from the URL once it's been read, so refreshing the
+  // page (or coming back to Settings later) doesn't keep re-showing a stale connect result.
+  useEffect(() => {
+    if (!returnState) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("github");
+    setSearchParams(next, { replace: true });
+    // Only re-run when the param we're consuming actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnState]);
 
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
       <div className="flex items-center gap-2">
         <GithubMark className="h-4 w-4 text-neutral-500" />
         <h2 className="text-sm font-semibold text-neutral-200">GitHub connection</h2>
-        <GithubTokenHelp />
       </div>
 
-      {status?.connected ? (
-        <p className="mt-2 flex items-center gap-1.5 text-sm text-neutral-300">
-          <ShieldCheck className="h-4 w-4 text-[var(--color-status-success)]" strokeWidth={2} />
-          Connected as <span className="font-medium text-neutral-100">@{status.github_login}</span>
+      {returnMessage && (
+        <p
+          className={`mt-2 rounded-md px-2.5 py-1.5 text-xs ${
+            returnMessage.tone === "success"
+              ? "bg-[var(--color-status-success)]/10 text-[var(--color-status-success)]"
+              : "bg-[var(--color-status-error)]/10 text-[var(--color-status-error)]"
+          }`}
+        >
+          {returnMessage.text}
         </p>
-      ) : (
-        <p className="mt-2 text-sm text-neutral-500">No GitHub token configured yet.</p>
       )}
 
-      <div className="mt-4">
-        <div className="text-xs font-medium text-neutral-400">{status?.connected ? "Rotate token" : "Add a token"}</div>
-        <div className="mt-2 flex gap-2">
-          <input
-            type="password"
-            value={newToken}
-            onChange={(e) => setNewToken(e.target.value)}
-            placeholder="ghp_…"
-            className="flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
-          />
-          <button
-            type="button"
-            disabled={!newToken || setToken.isPending}
-            onClick={() => setToken.mutate(newToken, { onSuccess: () => setNewToken("") })}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-          >
-            {setToken.isPending ? "Verifying…" : "Save"}
-          </button>
-        </div>
-        {setToken.isError && <p className="mt-2 text-xs text-[var(--color-status-error)]">{(setToken.error as Error).message}</p>}
-      </div>
+      {status?.connected ? (
+        <>
+          <p className="mt-2 flex items-center gap-1.5 text-sm text-neutral-300">
+            <ShieldCheck className="h-4 w-4 text-[var(--color-status-success)]" strokeWidth={2} />
+            Connected as <span className="font-medium text-neutral-100">@{status.github_login}</span>
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            {status.token_type === "github_app"
+              ? "Connected via the actions-toolkit GitHub App."
+              : "Connected via a legacy personal access token."}
+            {status.needs_reconnect && " Reconnect through the GitHub App below to clear the banner above."}
+          </p>
+
+          {status.needs_reconnect && (
+            <div className="mt-3">
+              <GithubConnectButton label="Reconnect" variant="outline" />
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="mt-2 text-sm text-neutral-500">No GitHub connection yet.</p>
+          <div className="mt-4">
+            <GithubConnectButton />
+          </div>
+        </>
+      )}
 
       {status?.connected && (
         <div className="mt-4 border-t border-neutral-800 pt-4">
@@ -59,16 +87,16 @@ export default function GithubConnectionCard() {
             className="inline-flex items-center gap-1.5 text-xs text-[var(--color-status-error)] hover:underline"
           >
             <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
-            Remove token
+            Disconnect
           </button>
         </div>
       )}
 
       <ConfirmDialog
         open={confirmRemove}
-        title="Remove GitHub token"
-        message="Workflow dispatch, webhooks, and issue/PR/release actions stop working until a new token is added."
-        confirmLabel="Remove"
+        title="Disconnect GitHub"
+        message="Workflow dispatch, webhooks, and issue/PR/release actions stop working until you reconnect."
+        confirmLabel="Disconnect"
         danger
         onCancel={() => setConfirmRemove(false)}
         onConfirm={() => {
