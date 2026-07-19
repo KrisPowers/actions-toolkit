@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useLogin } from "../hooks/useAuth";
+import Button from "../components/common/Button";
+import Input from "../components/common/Input";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -19,31 +21,22 @@ export default function LoginPage() {
         <p className="mt-1 text-sm text-neutral-400">actions-toolkit</p>
 
         <label className="mt-5 block text-xs font-medium text-neutral-400">Username</label>
-        <input
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent"
-          autoComplete="username"
-        />
+        <Input value={username} onChange={(e) => setUsername(e.target.value)} className="mt-1 w-full" autoComplete="username" />
 
         <label className="mt-4 block text-xs font-medium text-neutral-400">Password</label>
-        <input
+        <Input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent"
+          className="mt-1 w-full"
           autoComplete="current-password"
         />
 
         {login.isError && <p className="mt-3 text-sm text-[var(--color-status-error)]">{(login.error as Error).message}</p>}
 
-        <button
-          type="submit"
-          disabled={login.isPending}
-          className="mt-5 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
-        >
+        <Button type="submit" variant="primary" disabled={login.isPending} className="mt-5 w-full">
           {login.isPending ? "Signing in…" : "Sign in"}
-        </button>
+        </Button>
       </form>
     </div>
   );
