@@ -3,7 +3,6 @@ mod app;
 mod auth;
 mod bucket;
 mod config;
-mod crypto;
 mod db;
 mod error;
 mod github;
@@ -11,6 +10,8 @@ mod runner;
 mod telemetry;
 mod workflow;
 mod ws;
+
+pub use atk_crypto as crypto;
 
 use std::sync::Arc;
 
