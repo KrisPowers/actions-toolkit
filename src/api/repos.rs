@@ -185,6 +185,7 @@ mod tests {
             data_dir,
             github_app_client_id: "test-client-id".to_string(),
             github_oauth_token_url: crate::github::oauth::GITHUB_TOKEN_URL.to_string(),
+            github_device_code_url: crate::github::oauth::GITHUB_DEVICE_CODE_URL.to_string(),
         };
         let user = user_queries::create(&db, "tester", "hash", "admin").await.unwrap();
 
@@ -197,7 +198,7 @@ mod tests {
             bucket_capability_ok: true,
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
-            oauth_states: Default::default(),
+            pending_device_flow: RwLock::new(None),
         }));
 
         // Pre-seed the cached client pointed at the mock server, since client::shared() would

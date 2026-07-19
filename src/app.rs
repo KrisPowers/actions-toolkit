@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use axum::extract::FromRef;
 use bollard::Docker;
-use dashmap::DashMap;
 use octocrab::Octocrab;
 use sqlx::SqlitePool;
 use tokio::sync::RwLock;
@@ -10,7 +9,7 @@ use tokio::sync::RwLock;
 use crate::auth::jwt::JwtCodec;
 use crate::config::AppConfig;
 use crate::crypto::EncryptionKey;
-use crate::github::oauth::PendingAuthorize;
+use crate::github::oauth::PendingDeviceFlow;
 use crate::runner::log_stream::LogHub;
 
 #[derive(Clone)]
@@ -36,11 +35,11 @@ pub struct AppStateInner {
     /// `None` until a token has been configured, or after `github::client::invalidate` runs
     /// following a rotation/removal.
     pub github_client: RwLock<Option<Octocrab>>,
-    /// In-flight OAuth authorize attempts (PKCE verifier), keyed by the CSRF state value, for
-    /// `/auth/github/authorize` and `/auth/github/callback`. Entries are removed the moment a
-    /// callback consumes them and swept for staleness on each new authorize call, so this stays
-    /// bounded even if a user starts a connect flow and never finishes it.
-    pub oauth_states: DashMap<String, PendingAuthorize>,
+    /// The in-flight device-flow connect attempt, if any (`/auth/github/device/start` sets it,
+    /// `/auth/github/device/poll` consumes it). At most one at a time: a single-operator,
+    /// single-instance tool never has two connect attempts in flight together, so a new `start`
+    /// simply replaces whatever was here.
+    pub pending_device_flow: RwLock<Option<PendingDeviceFlow>>,
 }
 
 impl FromRef<AppState> for SqlitePool {
