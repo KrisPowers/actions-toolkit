@@ -62,6 +62,7 @@ tokio-util = { version = "0.7", features = ["io"] }
 tar = "0.4"
 zip = "2"
 
+atk-auth = { path = "../crates/atk-auth" }
 atk-config = { path = "../crates/atk-config" }
 atk-crypto = { path = "../crates/atk-crypto" }
 atk-db = { path = "../crates/atk-db" }
