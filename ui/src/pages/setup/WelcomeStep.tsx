@@ -1,9 +1,10 @@
 import Button from "../../components/common/Button";
+import BrandMark from "../../components/common/BrandMark";
 
 export default function WelcomeStep({ onNext }: { onNext: () => void }) {
   return (
     <div>
-      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-accent text-sm font-bold text-white">A</div>
+      <BrandMark size={36} />
       <h1 className="mt-4 text-lg font-semibold text-neutral-100">Welcome to actions-toolkit</h1>
       <p className="mt-2 text-sm text-neutral-400">
         Run CI/CD workflows on your own hardware. This takes about a minute: create an admin account, connect

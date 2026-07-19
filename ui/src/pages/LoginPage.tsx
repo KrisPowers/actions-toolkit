@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useLogin } from "../hooks/useAuth";
 import Button from "../components/common/Button";
 import Input from "../components/common/Input";
+import BrandMark from "../components/common/BrandMark";
+import { cardClass } from "../components/common/Card";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -15,8 +17,8 @@ export default function LoginPage() {
 
   return (
     <div className="flex h-full w-full items-center justify-center">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-lg border border-neutral-800 bg-neutral-900 p-6">
-        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-accent text-sm font-bold text-white">A</div>
+      <form onSubmit={submit} className={cardClass("w-full max-w-sm p-6")}>
+        <BrandMark size={36} />
         <h1 className="mt-4 text-lg font-semibold text-neutral-100">Sign in</h1>
         <p className="mt-1 text-sm text-neutral-400">actions-toolkit</p>
 

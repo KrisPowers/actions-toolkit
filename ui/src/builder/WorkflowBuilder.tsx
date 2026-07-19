@@ -6,6 +6,7 @@ import "reactflow/dist/style.css";
 import { Plus, Save } from "lucide-react";
 import { useTheme } from "../theme/ThemeProvider";
 import Button from "../components/common/Button";
+import { TabButton } from "../components/common/Tabs";
 
 import type { Job, TriggerConfig, WorkflowModel } from "../api/types";
 import YamlCodeEditor from "./YamlCodeEditor";
@@ -189,24 +190,12 @@ export default function WorkflowBuilder({ name, initialYaml, onSave, saving, sav
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-neutral-800 pb-0">
         <div className="flex gap-4">
-          <button
-            type="button"
-            onClick={switchToVisual}
-            className={`-mb-px border-b-2 pb-3 text-xs font-medium transition-colors ${
-              mode === "visual" ? "border-accent text-neutral-100" : "border-transparent text-neutral-500 hover:text-neutral-300"
-            }`}
-          >
+          <TabButton active={mode === "visual"} onClick={switchToVisual}>
             Visual builder
-          </button>
-          <button
-            type="button"
-            onClick={switchToCode}
-            className={`-mb-px border-b-2 pb-3 text-xs font-medium transition-colors ${
-              mode === "code" ? "border-accent text-neutral-100" : "border-transparent text-neutral-500 hover:text-neutral-300"
-            }`}
-          >
+          </TabButton>
+          <TabButton active={mode === "code"} onClick={switchToCode}>
             YAML
-          </button>
+          </TabButton>
         </div>
         <div className="mb-3 flex items-center gap-3">
           {saveError && <span className="text-xs text-[var(--color-status-error)]">{saveError}</span>}
