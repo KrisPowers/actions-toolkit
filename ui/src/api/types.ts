@@ -149,6 +149,62 @@ export interface ArtifactWithContext extends Artifact {
   run_created_at: string;
 }
 
+// --- GitHub REST models (subset), proxied through by src/github/issues.rs and
+// src/github/releases.rs via octocrab, which serializes GitHub's REST API shape directly. ---
+
+export interface GithubUser {
+  login: string;
+  avatar_url: string;
+}
+
+export interface GithubLabel {
+  name: string;
+  color: string;
+}
+
+export interface GithubIssue {
+  id: number;
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  user: GithubUser | null;
+  labels: GithubLabel[];
+  pull_request?: unknown;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GithubPullRequestRef {
+  ref: string;
+  sha: string;
+}
+
+export interface GithubPullRequest {
+  id: number;
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  draft: boolean;
+  merged_at: string | null;
+  user: GithubUser | null;
+  labels: GithubLabel[];
+  head: GithubPullRequestRef;
+  base: GithubPullRequestRef;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GithubRelease {
+  id: number;
+  tag_name: string;
+  name: string | null;
+  body: string | null;
+  draft: boolean;
+  prerelease: boolean;
+  created_at: string;
+  published_at: string | null;
+}
+
 export interface WebhookEvent {
   id: string;
   repo_id: string | null;
