@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleDot, MessageSquare } from "lucide-react";
 import { githubApi } from "../api/github";
+import { useRuns } from "../hooks/useRuns";
 import StatusBadge from "../components/common/StatusBadge";
 import LabelPill from "../components/common/LabelPill";
 import Avatar from "../components/common/Avatar";
@@ -12,6 +13,7 @@ import PageHeader from "../components/common/PageHeader";
 import { listCardClass } from "../components/common/Card";
 import EmptyState from "../components/common/EmptyState";
 import { TabList, TabButton } from "../components/common/Tabs";
+import ItemWorkflowRuns from "../components/runs/ItemWorkflowRuns";
 import { relativeTime } from "../lib/relativeTime";
 
 export default function IssuesPage() {
@@ -27,18 +29,15 @@ export default function IssuesPage() {
     enabled: !!repoId,
   });
 
+  const { data: runs } = useRuns(repoId, 200);
+  const runsForIssue = (number: number) => (runs ?? []).filter((r) => r.ref_name === `refs/issues/${number}`);
+
   const addComment = useMutation({
     mutationFn: (number: number) => githubApi.addIssueComment(repoId as string, number, comment),
     onSuccess: () => {
       setComment("");
       qc.invalidateQueries({ queryKey: ["issues", repoId] });
     },
-  });
-
-  const updateIssue = useMutation({
-    mutationFn: ({ number, targetState }: { number: number; targetState: "open" | "closed" }) =>
-      githubApi.updateIssue(repoId as string, number, { state: targetState }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["issues", repoId] }),
   });
 
   return (
@@ -89,26 +88,29 @@ export default function IssuesPage() {
                   <Button
                     variant="default"
                     size="sm"
-                    onClick={() => updateIssue.mutate({ number: issue.number, targetState: issue.state === "open" ? "closed" : "open" })}
+                    onClick={() => setExpanded(expanded === issue.number ? null : issue.number)}
                   >
-                    {issue.state === "open" ? "Close" : "Reopen"}
+                    Workflows{runsForIssue(issue.number).length > 0 ? ` (${runsForIssue(issue.number).length})` : ""}
                   </Button>
                 </div>
               </div>
 
               {expanded === issue.number && (
-                <div className="mt-3 flex gap-2">
-                  <Input
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    placeholder="Write a comment…"
-                    className="flex-1"
-                  />
-                  <Button variant="primary" disabled={!comment || addComment.isPending} onClick={() => addComment.mutate(issue.number)}>
-                    <MessageSquare className="h-3.5 w-3.5" strokeWidth={2} />
-                    Comment
-                  </Button>
-                </div>
+                <>
+                  <ItemWorkflowRuns repoId={repoId as string} runs={runsForIssue(issue.number)} emptyLabel="issue" />
+                  <div className="mt-3 flex gap-2">
+                    <Input
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                      placeholder="Write a comment…"
+                      className="flex-1"
+                    />
+                    <Button variant="primary" disabled={!comment || addComment.isPending} onClick={() => addComment.mutate(issue.number)}>
+                      <MessageSquare className="h-3.5 w-3.5" strokeWidth={2} />
+                      Comment
+                    </Button>
+                  </div>
+                </>
               )}
             </div>
           ))}
