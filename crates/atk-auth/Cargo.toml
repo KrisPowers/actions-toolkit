@@ -1,0 +1,12 @@
+[package]
+name = "atk-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1"
+argon2 = "0.5"
+chrono = { version = "0.4", features = ["serde"] }
+jsonwebtoken = "9"
+serde = { version = "1", features = ["derive"] }

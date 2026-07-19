@@ -30,7 +30,7 @@ export default function RepoHeaderNav() {
   if (!repoId) return null;
 
   return (
-    <div className="border-b border-neutral-800 bg-neutral-950 px-4 pt-2">
+    <div className="mt-3 border-b border-neutral-800 bg-neutral-950 px-4 pt-2">
       <nav className="flex gap-5 overflow-x-auto">
         {TABS.map((tab) => (
           <TabLink key={tab.path} to={`/repos/${repoId}/${tab.path}`} icon={tab.icon}>

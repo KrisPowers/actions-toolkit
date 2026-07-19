@@ -1,0 +1,12 @@
+[package]
+name = "atk-crypto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aes-gcm = "0.10"
+rand = "0.8"
+base64 = "0.22"
+anyhow = "1"
+tracing = "0.1"

@@ -88,7 +88,7 @@ No prebuilt binary for your OS/architecture yet? Build from source, see below.
 actions-toolkit authenticates to GitHub through a single shared GitHub App,
 [`actionstoolkit`](https://github.com/settings/apps/actionstoolkit), owned by the project
 maintainer. Its client ID is public and compiled into the binary (see `.env.example` and
-`src/config.rs`), so nothing needs registering per install; every instance authorizes through the
+`crates/atk-config/src/lib.rs`), so nothing needs registering per install; every instance authorizes through the
 same App via the "Connect GitHub" button in Settings, and each user gets their own token scoped to
 exactly what they personally approve, an install of the App on the repos they choose. Override
 `GITHUB_APP_CLIENT_ID` (and register your own App) only if you're running a fork you want
@@ -146,20 +146,35 @@ There's no manual payload URL or secret to copy anywhere, connecting the repo is
 ## Layout
 
 ```
-Cargo.toml, src/, migrations/, build.rs   Rust backend (axum): REST + WebSocket API, SQLite via
-                                           sqlx, Docker execution via bollard, GitHub REST via
-                                           octocrab, workflow YAML parsing/validation/scheduling
-ui/                                        React + TypeScript UI (Vite, Tailwind): dashboard,
-                                           repo/workflow management, dual-mode workflow editor
-                                           (Monaco + React Flow), live logs, analytics
-install.sh, install.ps1,                  cURL/PowerShell installers, Homebrew formula, and the
-Formula/, scripts/                        script that refreshes the formula's checksums after a
-                                           release
+core/                  Binary crate: axum HTTP/WebSocket API, app state, auth handlers,
+                        Docker/Bucket job orchestration, GitHub client glue. Depends on
+                        every crate below.
+crates/atk-crypto/      Encryption-at-rest primitives (PATs, webhook secrets)
+crates/atk-auth/        JWT signing, password hashing
+crates/atk-config/      CLI args and resolved on-disk config, no other internal deps
+crates/atk-db/          SQLite pool, models, and the query layer (sqlx), plus migrations/
+crates/atk-workflow/    Workflow YAML parsing, expression eval, trigger matching, validation
+crates/atk-github/      GitHub REST API surface: checkout, releases, issues, webhooks, OAuth
+crates/atk-bucket/      Native per-step sandbox (Linux namespaces/cgroups, Windows AppContainer)
+ui/                     React + TypeScript UI (Vite, Tailwind): dashboard, repo/workflow
+                        management, dual-mode workflow editor (Monaco + React Flow), live
+                        logs, analytics
+mcp/                    MCP server exposing actions-toolkit to AI agents (see mcp/README.md)
+docs/                   Additional guides beyond this README
+install.sh, install.ps1,   cURL/PowerShell installers, Homebrew formula, and the script that
+Formula/, scripts/         refreshes the formula's checksums after a release
 ```
 
-The backend lives at the repo root rather than in its own subdirectory since it's the primary
-artifact this project ships; the UI gets its own `ui/` directory since it's a separate build
-toolchain (npm/Vite) that produces static assets the backend embeds.
+`core` depends on every crate under `crates/`, never the other way around; each `crates/atk-*`
+crate is a focused, independently-testable slice with no dependency on app state. A crate only
+exists if its code was already decoupled from `core::app::AppState` in practice: modules that
+still need the live app state (HTTP handlers, the Docker/Bucket dispatch loop, the GitHub client's
+token-refresh glue) stay in `core`, re-exported under their old module paths (`crate::db`,
+`crate::auth::jwt`, etc.) so callers don't need to know which piece moved where. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full dependency graph.
+
+The UI gets its own `ui/` directory since it's a separate build toolchain (npm/Vite) that produces
+static assets the backend embeds.
 
 Workflow YAML is a scoped-down, GitHub-Actions-flavored syntax: `on:` triggers (`push`,
 `pull_request`, `release`, `workflow_dispatch`), `jobs:` with a `container:` image and `needs:`
