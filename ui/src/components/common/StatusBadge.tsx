@@ -17,16 +17,16 @@ const STATUS: Record<string, { color: string; icon: LucideIcon; spin?: boolean }
   skipped: { color: "var(--color-status-muted)", icon: CircleSlash },
 };
 
-export default function StatusBadge({ status }: { status: string }) {
+export default function StatusBadge({ status, label }: { status: string; label?: string }) {
   const entry = STATUS[status] ?? { color: "var(--color-status-muted)", icon: CircleDashed };
   const Icon = entry.icon;
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize"
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium${label ? "" : " capitalize"}`}
       style={{ color: entry.color, borderColor: `color-mix(in srgb, ${entry.color} 30%, transparent)`, backgroundColor: `color-mix(in srgb, ${entry.color} 12%, transparent)` }}
     >
       <Icon className={entry.spin ? "h-3 w-3 animate-spin" : "h-3 w-3"} strokeWidth={2.5} />
-      {status}
+      {label ?? status}
     </span>
   );
 }
