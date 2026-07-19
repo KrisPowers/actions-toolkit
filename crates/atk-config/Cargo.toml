@@ -1,0 +1,10 @@
+[package]
+name = "atk-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+dirs = "5"
+tracing = "0.1"

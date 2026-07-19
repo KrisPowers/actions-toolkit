@@ -1,7 +1,7 @@
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use crate::db::models::{now_iso, JobRun, JobRunTree, RunLog, RunTree, StepRun, WorkflowRun};
+use crate::models::{now_iso, JobRun, JobRunTree, RunLog, RunTree, StepRun, WorkflowRun};
 
 pub async fn create_run(
     pool: &SqlitePool,

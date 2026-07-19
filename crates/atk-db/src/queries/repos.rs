@@ -1,7 +1,7 @@
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use crate::db::models::{now_iso, Repo};
+use crate::models::{now_iso, Repo};
 
 pub async fn create(
     pool: &SqlitePool,

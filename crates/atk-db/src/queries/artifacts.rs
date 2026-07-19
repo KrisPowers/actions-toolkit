@@ -2,7 +2,7 @@ use serde::Serialize;
 use sqlx::{FromRow, SqlitePool};
 use uuid::Uuid;
 
-use crate::db::models::{now_iso, Artifact};
+use crate::models::{now_iso, Artifact};
 
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct ArtifactWithContext {

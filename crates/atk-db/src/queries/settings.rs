@@ -1,6 +1,6 @@
 use sqlx::SqlitePool;
 
-use crate::db::models::{now_iso, Settings};
+use crate::models::{now_iso, Settings};
 
 pub async fn get(pool: &SqlitePool) -> sqlx::Result<Settings> {
     sqlx::query_as::<_, Settings>("SELECT * FROM settings WHERE id = 1").fetch_one(pool).await

@@ -1,7 +1,7 @@
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use crate::db::models::{now_iso, User};
+use crate::models::{now_iso, User};
 
 pub async fn count(pool: &SqlitePool) -> sqlx::Result<i64> {
     let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users").fetch_one(pool).await?;
@@ -82,7 +82,7 @@ pub async fn session_valid(pool: &SqlitePool, session_id: &str) -> sqlx::Result<
             .fetch_optional(pool)
             .await?;
     Ok(match row {
-        Some((expires_at,)) => crate::db::models::parse_iso(&expires_at) > chrono::Utc::now(),
+        Some((expires_at,)) => crate::models::parse_iso(&expires_at) > chrono::Utc::now(),
         None => false,
     })
 }

@@ -1,6 +1,6 @@
 use sqlx::SqlitePool;
 
-use crate::db::models::{now_iso, GithubToken};
+use crate::models::{now_iso, GithubToken};
 
 pub async fn get(pool: &SqlitePool) -> sqlx::Result<Option<GithubToken>> {
     sqlx::query_as::<_, GithubToken>("SELECT * FROM github_token WHERE id = 1")
@@ -146,7 +146,7 @@ pub async fn mark_needs_reconnect(pool: &SqlitePool) -> sqlx::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::EncryptionKey;
+    use atk_crypto::EncryptionKey;
     use sqlx::sqlite::SqlitePoolOptions;
 
     async fn test_pool() -> SqlitePool {

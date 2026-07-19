@@ -1,6 +1,6 @@
 use sqlx::SqlitePool;
 
-use crate::db::models::{now_iso, Bucket};
+use crate::models::{now_iso, Bucket};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn create(
@@ -145,7 +145,7 @@ mod tests {
 
     async fn test_pool() -> SqlitePool {
         let dir = std::env::temp_dir().join(format!("atk-bucket-queries-test-{}", uuid::Uuid::new_v4()));
-        crate::db::connect(&dir.join("test.db")).await.expect("db connect should succeed")
+        crate::connect(&dir.join("test.db")).await.expect("db connect should succeed")
     }
 
     #[tokio::test]
