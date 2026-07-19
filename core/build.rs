@@ -6,7 +6,7 @@ use std::path::Path;
 /// a placeholder so the backend can always be built on its own; running `npm run build` in
 /// ui/ afterward replaces the placeholder with the real UI.
 fn main() {
-    let dist = Path::new("ui/dist");
+    let dist = Path::new("../ui/dist");
     if !dist.exists() {
         std::fs::create_dir_all(dist).expect("failed to create ui/dist placeholder");
         std::fs::write(
@@ -15,5 +15,5 @@ fn main() {
         )
         .expect("failed to write ui/dist placeholder index.html");
     }
-    println!("cargo:rerun-if-changed=ui/dist");
+    println!("cargo:rerun-if-changed=../ui/dist");
 }

@@ -4,7 +4,7 @@ use axum::response::{IntoResponse, Response};
 use rust_embed::RustEmbed;
 
 #[derive(RustEmbed)]
-#[folder = "ui/dist"]
+#[folder = "../ui/dist"]
 struct FrontendAssets;
 
 /// Serve the embedded Vite build for any non-API path, falling back to `index.html` for
