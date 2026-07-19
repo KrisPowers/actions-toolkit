@@ -5,6 +5,7 @@ export default function TriggerNode({ data }: { data: { on: TriggerConfig } }) {
   if (data.on.push) events.push("push");
   if (data.on.pull_request) events.push("pull_request");
   if (data.on.release) events.push("release");
+  if (data.on.issues) events.push("issues");
   if (data.on.workflow_dispatch) events.push("manual");
   if (data.on.schedule?.length) events.push("schedule");
 

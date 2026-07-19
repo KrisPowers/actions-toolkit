@@ -257,6 +257,20 @@ export interface ReleaseTrigger {
   types: ReleaseEventType[];
 }
 
+export type IssuesEventType =
+  | "opened"
+  | "edited"
+  | "closed"
+  | "reopened"
+  | "labeled"
+  | "unlabeled"
+  | "assigned"
+  | "unassigned";
+
+export interface IssuesTrigger {
+  types: IssuesEventType[];
+}
+
 export interface ManualTrigger {
   inputs?: Record<string, WorkflowInput> | null;
 }
@@ -269,6 +283,7 @@ export interface TriggerConfig {
   push?: PushTrigger | null;
   pull_request?: PullRequestTrigger | null;
   release?: ReleaseTrigger | null;
+  issues?: IssuesTrigger | null;
   workflow_dispatch?: ManualTrigger | null;
   schedule?: CronTrigger[] | null;
 }
