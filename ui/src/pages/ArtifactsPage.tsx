@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Download, Package } from "lucide-react";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { artifactsApi } from "../api/artifacts";
+import { buttonClass } from "../components/common/Button";
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -33,10 +34,7 @@ export default function ArtifactsPage() {
                 <div className="mt-0.5 text-xs text-neutral-500">{formatBytes(a.size_bytes)}</div>
               </div>
             </div>
-            <a
-              href={artifactsApi.downloadUrl(a.id)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-800"
-            >
+            <a href={artifactsApi.downloadUrl(a.id)} className={buttonClass("default", "sm")}>
               <Download className="h-3.5 w-3.5" strokeWidth={2} />
               Download
             </a>
