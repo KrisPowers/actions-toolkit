@@ -6,6 +6,8 @@ import { useCreateWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import GithubMark from "../components/common/GithubMark";
 import Button, { buttonClass } from "../components/common/Button";
+import Card from "../components/common/Card";
+import PageHeader from "../components/common/PageHeader";
 import { workflowsApi } from "../api/workflows";
 
 function nameFromYaml(text: string, fallback: string): string {
@@ -62,12 +64,10 @@ export default function RepoSettingsPage() {
 
   return (
     <div className="max-w-6xl">
-      <h1 className="text-lg font-semibold text-neutral-100">
-        {repo.owner}/{repo.name} settings
-      </h1>
+      <PageHeader title={`${repo.owner}/${repo.name} settings`} />
 
       <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
+        <Card className="p-5">
           <div className="flex items-center gap-2">
             <Webhook className="h-4 w-4 text-neutral-500" strokeWidth={2} />
             <div className="text-sm font-medium text-neutral-200">Webhook</div>
@@ -95,17 +95,14 @@ export default function RepoSettingsPage() {
               {testConnection.isPending ? "Testing…" : "Test connection"}
             </Button>
             {testConnection.data && (
-              <p
-                className="mt-2 text-sm"
-                style={{ color: testConnection.data.ok ? "var(--color-status-success)" : "var(--color-status-error)" }}
-              >
+              <p className={`mt-2 text-sm ${testConnection.data.ok ? "text-[var(--color-status-success)]" : "text-[var(--color-status-error)]"}`}>
                 {testConnection.data.message}
               </p>
             )}
           </div>
-        </div>
+        </Card>
 
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
+        <Card className="p-5">
           <div className="flex items-center gap-2">
             <Download className="h-4 w-4 text-neutral-500" strokeWidth={2} />
             <div className="text-sm font-medium text-neutral-200">Import &amp; export</div>
@@ -153,9 +150,9 @@ export default function RepoSettingsPage() {
               </ul>
             )}
           </div>
-        </div>
+        </Card>
 
-        <div className="rounded-lg border border-[var(--color-status-error)]/30 bg-[var(--color-status-error)]/5 p-5 xl:col-span-2">
+        <Card className="border-[var(--color-status-error)]/30 bg-[var(--color-status-error)]/5 p-5 xl:col-span-2">
           <div className="flex items-center gap-2 text-[var(--color-status-error)]">
             <AlertTriangle className="h-4 w-4" strokeWidth={2} />
             <div className="text-sm font-medium">Danger zone</div>
@@ -165,7 +162,7 @@ export default function RepoSettingsPage() {
             <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
             Disconnect repo
           </Button>
-        </div>
+        </Card>
       </div>
 
       <ConfirmDialog

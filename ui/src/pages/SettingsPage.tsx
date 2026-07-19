@@ -7,6 +7,8 @@ import GithubConnectionCard from "../components/settings/GithubConnectionCard";
 import RuntimeSettingsCard from "../components/settings/RuntimeSettingsCard";
 import Button from "../components/common/Button";
 import Input from "../components/common/Input";
+import Card from "../components/common/Card";
+import PageHeader from "../components/common/PageHeader";
 
 export default function SettingsPage() {
   const { data: me } = useMe();
@@ -31,14 +33,14 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-6xl">
-      <h1 className="text-lg font-semibold text-neutral-100">Settings</h1>
+      <PageHeader title="Settings" />
 
       <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
         <GithubConnectionCard />
         <RuntimeSettingsCard />
       </div>
 
-      <div className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900 p-5">
+      <Card className="mt-5 p-5">
         <div className="flex items-center gap-2">
           <Users className="h-4 w-4 text-neutral-500" strokeWidth={2} />
           <h2 className="text-sm font-semibold text-neutral-200">Users</h2>
@@ -79,7 +81,7 @@ export default function SettingsPage() {
             {createUser.isError && <p className="mt-2 text-xs text-[var(--color-status-error)]">{(createUser.error as Error).message}</p>}
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
