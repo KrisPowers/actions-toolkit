@@ -3,52 +3,57 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-accent: #3654d6;
-  --color-accent-hover: #2c46b8;
+  --color-accent: #0969da;
+  --color-accent-hover: #0860ca;
   --color-accent-fg: #ffffff;
 
-  --color-status-success: #157347;
-  --color-status-error: #d33a3a;
-  --color-status-warning: #a15c00;
-  --color-status-info: #2f6fdb;
-  --color-status-muted: #6b7280;
+  --color-status-success: #1a7f37;
+  --color-status-error: #d1242f;
+  --color-status-warning: #9a6700;
+  --color-status-info: #0969da;
+  --color-status-merged: #8250df;
+  --color-status-muted: #656d76;
+
+  --font-mono:
+    ui-monospace, "SF Mono", "Segoe UI Mono", "Cascadia Code", Consolas, monospace;
 
   /* Neutral scale, light by default: 950/900 are surfaces, 100 is primary text. */
   --color-neutral-50: #ffffff;
-  --color-neutral-100: #14161b;
-  --color-neutral-200: #262931;
-  --color-neutral-300: #3f434d;
-  --color-neutral-400: #5a5f6b;
-  --color-neutral-500: #7b8291;
-  --color-neutral-600: #9aa0ab;
-  --color-neutral-700: #d3d6dc;
-  --color-neutral-800: #e8eaee;
+  --color-neutral-100: #1f2328;
+  --color-neutral-200: #2f3439;
+  --color-neutral-300: #424a53;
+  --color-neutral-400: #57606a;
+  --color-neutral-500: #656d76;
+  --color-neutral-600: #8c959f;
+  --color-neutral-700: #afb8c1;
+  --color-neutral-800: #d0d7de;
   --color-neutral-900: #ffffff;
-  --color-neutral-950: #f5f6f8;
+  --color-neutral-950: #f6f8fa;
 }
 
 .dark {
-  --color-accent: #5b72f0;
-  --color-accent-hover: #7288ff;
+  --color-accent: #2f81f7;
+  --color-accent-hover: #1f6feb;
   --color-accent-fg: #ffffff;
 
-  --color-status-success: #34d399;
-  --color-status-error: #f87171;
-  --color-status-warning: #fbbf24;
-  --color-status-info: #60a5fa;
-  --color-status-muted: #8b8f99;
+  --color-status-success: #3fb950;
+  --color-status-error: #f85149;
+  --color-status-warning: #d29922;
+  --color-status-info: #58a6ff;
+  --color-status-merged: #a371f7;
+  --color-status-muted: #848d97;
 
-  --color-neutral-50: #0b0d12;
-  --color-neutral-100: #f0f1f4;
-  --color-neutral-200: #dde0e6;
-  --color-neutral-300: #c2c6cf;
-  --color-neutral-400: #9aa0ab;
-  --color-neutral-500: #757a87;
-  --color-neutral-600: #4b4f59;
-  --color-neutral-700: #34373f;
-  --color-neutral-800: #22252d;
-  --color-neutral-900: #14161c;
-  --color-neutral-950: #0b0d12;
+  --color-neutral-50: #010409;
+  --color-neutral-100: #e6edf3;
+  --color-neutral-200: #c9d1d9;
+  --color-neutral-300: #adbac7;
+  --color-neutral-400: #9198a1;
+  --color-neutral-500: #848d97;
+  --color-neutral-600: #6e7681;
+  --color-neutral-700: #373e47;
+  --color-neutral-800: #30363d;
+  --color-neutral-900: #161b22;
+  --color-neutral-950: #0d1117;
 }
 
 :root {
@@ -73,9 +78,14 @@ body {
     ui-sans-serif,
     system-ui,
     -apple-system,
+    BlinkMacSystemFont,
     "Segoe UI",
-    Roboto,
-    sans-serif;
+    "Noto Sans",
+    Helvetica,
+    Arial,
+    sans-serif,
+    "Apple Color Emoji",
+    "Segoe UI Emoji";
 }
 
 ::-webkit-scrollbar {

@@ -11,7 +11,7 @@ export default function GithubReconnectBanner() {
   if (!status?.needs_reconnect) return null;
 
   return (
-    <div className="flex shrink-0 items-center gap-3 border-b border-amber-700/50 bg-amber-500/10 px-4 py-2 text-xs text-amber-300">
+    <div className="flex shrink-0 items-center gap-3 border-b border-[var(--color-status-warning)]/40 bg-[var(--color-status-warning)]/10 px-4 py-2 text-xs text-[var(--color-status-warning)]">
       <ShieldAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
       <span className="flex-1">
         Your GitHub connection needs to be reconnected

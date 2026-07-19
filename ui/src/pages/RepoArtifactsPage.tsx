@@ -3,6 +3,7 @@ import { Package } from "lucide-react";
 import { useRepoArtifacts } from "../hooks/useArtifacts";
 import { artifactsApi } from "../api/artifacts";
 import StatusBadge from "../components/common/StatusBadge";
+import { buttonClass } from "../components/common/Button";
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -41,10 +42,7 @@ export default function RepoArtifactsPage() {
             </div>
             <div className="flex shrink-0 items-center gap-3">
               <StatusBadge status={a.run_status} />
-              <a
-                href={artifactsApi.downloadUrl(a.id)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-800"
-              >
+              <a href={artifactsApi.downloadUrl(a.id)} className={buttonClass("default", "sm")}>
                 Download
               </a>
             </div>

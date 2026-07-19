@@ -5,6 +5,7 @@ import { useDeleteRepo, useRepo, useTestRepoConnection } from "../hooks/useRepos
 import { useCreateWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import GithubMark from "../components/common/GithubMark";
+import Button, { buttonClass } from "../components/common/Button";
 import { workflowsApi } from "../api/workflows";
 
 function nameFromYaml(text: string, fallback: string): string {
@@ -89,15 +90,10 @@ export default function RepoSettingsPage() {
           </p>
 
           <div className="mt-4 border-t border-neutral-800 pt-4">
-            <button
-              type="button"
-              onClick={() => testConnection.mutate(repo.id)}
-              disabled={testConnection.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-800"
-            >
+            <Button variant="default" onClick={() => testConnection.mutate(repo.id)} disabled={testConnection.isPending}>
               <RefreshCw className={`h-3.5 w-3.5 ${testConnection.isPending ? "animate-spin" : ""}`} strokeWidth={2} />
               {testConnection.isPending ? "Testing…" : "Test connection"}
-            </button>
+            </Button>
             {testConnection.data && (
               <p
                 className="mt-2 text-sm"
@@ -121,9 +117,7 @@ export default function RepoSettingsPage() {
 
           <a
             href={workflowsApi.exportAllUrl(repo.id)}
-            className={`mt-4 inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-800 ${
-              (workflows ?? []).length === 0 ? "pointer-events-none opacity-50" : ""
-            }`}
+            className={buttonClass("default", "md", `mt-4 ${(workflows ?? []).length === 0 ? "pointer-events-none opacity-50" : ""}`)}
           >
             <Download className="h-3.5 w-3.5" strokeWidth={2} />
             Export all workflows (.zip)
@@ -138,15 +132,10 @@ export default function RepoSettingsPage() {
               className="hidden"
               onChange={handleImport}
             />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={importing}
-              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-800 disabled:opacity-60"
-            >
+            <Button variant="default" onClick={() => fileInputRef.current?.click()} disabled={importing}>
               <Upload className="h-3.5 w-3.5" strokeWidth={2} />
               {importing ? "Importing…" : "Import workflow files"}
-            </button>
+            </Button>
 
             {importResults.length > 0 && (
               <ul className="mt-3 flex flex-col gap-1">
@@ -172,14 +161,10 @@ export default function RepoSettingsPage() {
             <div className="text-sm font-medium">Danger zone</div>
           </div>
           <p className="mt-2 text-xs text-neutral-500">Disconnecting removes this repo, its workflows, and run history.</p>
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-[var(--color-status-error)]/40 px-3 py-1.5 text-sm text-[var(--color-status-error)] hover:bg-[var(--color-status-error)]/10"
-          >
+          <Button variant="danger-primary" onClick={() => setConfirmDelete(true)} className="mt-3">
             <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
             Disconnect repo
-          </button>
+          </Button>
         </div>
       </div>
 

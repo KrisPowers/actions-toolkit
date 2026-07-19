@@ -19,7 +19,14 @@ export default function RunListPage() {
             <div>
               <div className="text-sm text-neutral-200">
                 {run.trigger_event}
-                {run.ref_name ? ` · ${run.ref_name}` : ""}
+                {run.ref_name ? (
+                  <>
+                    {" · "}
+                    <span className="font-mono">{run.ref_name}</span>
+                  </>
+                ) : (
+                  ""
+                )}
               </div>
               <div className="mt-0.5 flex items-center gap-1 text-xs text-neutral-500">
                 <Clock className="h-3 w-3" strokeWidth={2} />

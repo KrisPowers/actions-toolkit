@@ -5,44 +5,10 @@ import { useCreateRepo, useRepos } from "../hooks/useRepos";
 import { useAccessibleRepos, useGithubTokenStatus } from "../hooks/useGithubAccount";
 import GithubConnectButton from "../components/settings/GithubConnectButton";
 import GithubMark from "../components/common/GithubMark";
+import Avatar from "../components/common/Avatar";
+import Button from "../components/common/Button";
+import Input from "../components/common/Input";
 import type { CreateRepoResponse } from "../api/repos";
-
-// A small fixed palette so each org/account gets a consistent, distinguishable color across the
-// picker (pill + repo row swatch), the same way GitHub's contribution graph uses color to make
-// groupings scannable at a glance.
-const OWNER_COLORS = ["#3654d6", "#a15c00", "#157347", "#7b2ff7", "#d33a3a", "#0f766e", "#b45309", "#4338ca"];
-
-function colorForOwner(owner: string): string {
-  let hash = 0;
-  for (let i = 0; i < owner.length; i++) hash = (hash * 31 + owner.charCodeAt(i)) >>> 0;
-  return OWNER_COLORS[hash % OWNER_COLORS.length];
-}
-
-// GitHub serves the org/user avatar at a predictable public URL, no API call needed. Falls back
-// to the colored initial dot (still keyed by colorForOwner, so it stays visually consistent with
-// the rest of the picker) if the image fails to load.
-function OwnerAvatar({ owner, className }: { owner: string; className: string }) {
-  const [errored, setErrored] = useState(false);
-  if (errored) {
-    return (
-      <span
-        className={`${className} flex shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white`}
-        style={{ backgroundColor: colorForOwner(owner) }}
-      >
-        {owner.slice(0, 1).toUpperCase()}
-      </span>
-    );
-  }
-  return (
-    <img
-      src={`https://github.com/${owner}.png?size=40`}
-      alt=""
-      loading="lazy"
-      onError={() => setErrored(true)}
-      className={`${className} shrink-0 rounded-full object-cover`}
-    />
-  );
-}
 
 export default function RepoConnectPage() {
   const { data: tokenStatus } = useGithubTokenStatus();
@@ -151,13 +117,9 @@ export default function RepoConnectPage() {
           ))}
         </div>
 
-        <button
-          type="button"
-          onClick={() => navigate("/repos")}
-          className="mt-5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
-        >
+        <Button variant="primary" onClick={() => navigate("/repos")} className="mt-5">
           Done
-        </button>
+        </Button>
       </div>
     );
   }
@@ -219,7 +181,7 @@ export default function RepoConnectPage() {
                 : "border-neutral-700 text-neutral-300 hover:bg-neutral-800"
             }`}
           >
-            <OwnerAvatar owner={owner} className="h-4 w-4" />
+            <Avatar login={owner} size={16} />
             {owner}
             <span className="text-neutral-500">{count}</span>
           </button>
@@ -228,12 +190,7 @@ export default function RepoConnectPage() {
 
       <div className="relative mt-3">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" strokeWidth={2} />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search repos…"
-          className="w-full rounded-md border border-neutral-700 bg-neutral-950 py-2 pl-9 pr-3 text-sm text-neutral-100 outline-none focus:border-accent"
-        />
+        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search repos…" className="w-full py-2 pl-9 pr-3" />
       </div>
 
       <div className="mt-3 max-h-72 overflow-y-auto rounded-md border border-neutral-800">
@@ -245,21 +202,16 @@ export default function RepoConnectPage() {
             className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2 last:border-b-0 hover:bg-neutral-800/50"
           >
             <input type="checkbox" checked={selected.has(r.full_name)} onChange={() => toggle(r.full_name)} />
-            <OwnerAvatar owner={r.owner} className="h-5 w-5" />
+            <Avatar login={r.owner} size={20} />
             <span className="flex-1 text-sm text-neutral-200">{r.full_name}</span>
             {r.private && <Lock className="h-3.5 w-3.5 text-neutral-600" strokeWidth={2} />}
           </label>
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={connectSelected}
-        disabled={selected.size === 0 || connecting}
-        className="mt-4 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
-      >
+      <Button variant="primary" onClick={connectSelected} disabled={selected.size === 0 || connecting} className="mt-4 w-full">
         {connecting ? "Connecting…" : `Connect ${selected.size || ""} repo${selected.size === 1 ? "" : "s"}`.trim()}
-      </button>
+      </Button>
 
       <button
         type="button"
@@ -273,30 +225,14 @@ export default function RepoConnectPage() {
       {showManual && (
         <form onSubmit={connectManual} className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
           <label className="block text-xs font-medium text-neutral-400">Owner</label>
-          <input
-            value={manualOwner}
-            onChange={(e) => setManualOwner(e.target.value)}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent"
-          />
+          <Input value={manualOwner} onChange={(e) => setManualOwner(e.target.value)} className="mt-1 w-full" />
           <label className="mt-3 block text-xs font-medium text-neutral-400">Repository name</label>
-          <input
-            value={manualName}
-            onChange={(e) => setManualName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent"
-          />
+          <Input value={manualName} onChange={(e) => setManualName(e.target.value)} className="mt-1 w-full" />
           <label className="mt-3 block text-xs font-medium text-neutral-400">Default branch</label>
-          <input
-            value={manualBranch}
-            onChange={(e) => setManualBranch(e.target.value)}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent"
-          />
-          <button
-            type="submit"
-            disabled={!manualOwner || !manualName || connecting}
-            className="mt-4 w-full rounded-md border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
-          >
+          <Input value={manualBranch} onChange={(e) => setManualBranch(e.target.value)} className="mt-1 w-full font-mono" />
+          <Button type="submit" variant="default" disabled={!manualOwner || !manualName || connecting} className="mt-4 w-full">
             Connect repo
-          </button>
+          </Button>
         </form>
       )}
     </div>

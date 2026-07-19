@@ -4,6 +4,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, MessageSquare } from "lucide-react";
 import { githubApi } from "../api/github";
 import StatusBadge from "../components/common/StatusBadge";
+import LabelPill from "../components/common/LabelPill";
+import Avatar from "../components/common/Avatar";
+import Button from "../components/common/Button";
+import Input from "../components/common/Input";
+import Select from "../components/common/Select";
+import { relativeTime } from "../lib/relativeTime";
 
 export default function PullRequestsPage() {
   const { repoId } = useParams();
@@ -26,61 +32,63 @@ export default function PullRequestsPage() {
     },
   });
 
+  function prStatus(pr: { state: string; draft: boolean; merged_at: string | null }): string {
+    if (pr.merged_at) return "merged";
+    if (pr.draft) return "draft";
+    return pr.state;
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-neutral-100">Pull Requests</h1>
-        <select
-          value={state}
-          onChange={(e) => setState(e.target.value as typeof state)}
-          className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm text-neutral-200 outline-none focus:border-accent"
-        >
+        <Select value={state} onChange={(e) => setState(e.target.value as typeof state)} className="py-1">
           <option value="open">Open</option>
           <option value="closed">Closed</option>
           <option value="all">All</option>
-        </select>
+        </Select>
       </div>
 
       {isLoading && <p className="mt-6 text-sm text-neutral-500">Loading…</p>}
 
       <div className="mt-4 divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900">
-        {(pulls ?? []).map((pr: any) => (
+        {(pulls ?? []).map((pr) => (
           <div key={pr.number} className="px-4 py-3">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setExpanded(expanded === pr.number ? null : pr.number)}
-                className="text-left text-sm text-neutral-200 hover:text-accent"
-              >
-                #{pr.number} {pr.title}
-              </button>
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 text-xs text-neutral-500">
-                  {pr.head?.ref}
-                  <ArrowRight className="h-3 w-3" strokeWidth={2} />
-                  {pr.base?.ref}
-                </span>
-                <StatusBadge status={pr.merged_at ? "merged" : pr.state} />
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setExpanded(expanded === pr.number ? null : pr.number)}
+                  className="text-left text-sm text-neutral-200 hover:text-accent"
+                >
+                  #{pr.number} {pr.title}
+                </button>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <span className="flex items-center gap-1.5 text-xs text-neutral-500">
+                    {pr.user && <Avatar login={pr.user.login} src={pr.user.avatar_url} size={16} />}
+                    opened {relativeTime(pr.created_at)}
+                    {pr.user ? ` by ${pr.user.login}` : ""}
+                  </span>
+                  <span className="inline-flex items-center gap-1 font-mono text-xs text-neutral-500">
+                    {pr.head?.ref}
+                    <ArrowRight className="h-3 w-3" strokeWidth={2} />
+                    {pr.base?.ref}
+                  </span>
+                  {pr.labels.map((l) => (
+                    <LabelPill key={l.name} name={l.name} color={l.color} />
+                  ))}
+                </div>
               </div>
+              <StatusBadge status={prStatus(pr)} />
             </div>
 
             {expanded === pr.number && (
               <div className="mt-3 flex gap-2">
-                <input
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Write a comment…"
-                  className="flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
-                />
-                <button
-                  type="button"
-                  disabled={!comment || addComment.isPending}
-                  onClick={() => addComment.mutate(pr.number)}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-                >
+                <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write a comment…" className="flex-1" />
+                <Button variant="primary" disabled={!comment || addComment.isPending} onClick={() => addComment.mutate(pr.number)}>
                   <MessageSquare className="h-3.5 w-3.5" strokeWidth={2} />
                   Comment
-                </button>
+                </Button>
               </div>
             )}
           </div>

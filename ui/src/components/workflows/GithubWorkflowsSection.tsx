@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Download } from "lucide-react";
 import GithubMark from "../common/GithubMark";
+import Button from "../common/Button";
 import { useGithubWorkflows, useImportGithubWorkflow } from "../../hooks/useWorkflows";
 
 export default function GithubWorkflowsSection({ repoId }: { repoId: string }) {
@@ -43,17 +44,12 @@ export default function GithubWorkflowsSection({ repoId }: { repoId: string }) {
           <div key={f.path} className="flex items-center justify-between px-4 py-3">
             <div>
               <div className="text-sm font-medium text-neutral-100">{f.name}</div>
-              <div className="mt-0.5 text-xs text-neutral-500">{f.path}</div>
+              <div className="mt-0.5 font-mono text-xs text-neutral-500">{f.path}</div>
             </div>
-            <button
-              type="button"
-              onClick={() => convert(f.path)}
-              disabled={importingPath === f.path}
-              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-60"
-            >
+            <Button variant="default" size="sm" onClick={() => convert(f.path)} disabled={importingPath === f.path}>
               <Download className="h-3 w-3" strokeWidth={2} />
               {importingPath === f.path ? "Converting…" : "Convert to local runner"}
-            </button>
+            </Button>
           </div>
         ))}
       </div>

@@ -2,6 +2,9 @@ import { useMemo, useState } from "react";
 import { Lock, Search } from "lucide-react";
 import { useAccessibleRepos } from "../../hooks/useGithubAccount";
 import { useCreateRepo } from "../../hooks/useRepos";
+import Avatar from "../../components/common/Avatar";
+import Button from "../../components/common/Button";
+import Input from "../../components/common/Input";
 
 export default function ReposStep({ onNext }: { onNext: () => void }) {
   const { data: repos, isLoading } = useAccessibleRepos(true);
@@ -46,12 +49,7 @@ export default function ReposStep({ onNext }: { onNext: () => void }) {
 
       <div className="relative mt-4">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" strokeWidth={2} />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search repos…"
-          className="w-full rounded-md border border-neutral-700 bg-neutral-950 py-2 pl-9 pr-3 text-sm text-neutral-100 outline-none focus:border-accent"
-        />
+        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search repos…" className="w-full py-2 pl-9 pr-3" />
       </div>
 
       <div className="mt-3 max-h-56 overflow-y-auto rounded-md border border-neutral-800">
@@ -59,21 +57,17 @@ export default function ReposStep({ onNext }: { onNext: () => void }) {
         {!isLoading && filtered.length === 0 && <p className="p-3 text-sm text-neutral-500">No repos found.</p>}
         {filtered.map((r) => (
           <label key={r.full_name} className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2 last:border-b-0 hover:bg-neutral-800/50">
-            <input type="checkbox" checked={selected.has(r.full_name)} onChange={() => toggle(r.full_name)} />
+            <input type="checkbox" checked={selected.has(r.full_name)} onChange={() => toggle(r.full_name)} className="accent-accent" />
+            <Avatar login={r.owner} size={18} />
             <span className="flex-1 text-sm text-neutral-200">{r.full_name}</span>
             {r.private && <Lock className="h-3.5 w-3.5 text-neutral-600" strokeWidth={2} />}
           </label>
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={connectSelected}
-        disabled={selected.size === 0 || connecting}
-        className="mt-5 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
-      >
+      <Button variant="primary" onClick={connectSelected} disabled={selected.size === 0 || connecting} className="mt-5 w-full">
         {connecting ? "Connecting…" : `Connect ${selected.size || ""} repo${selected.size === 1 ? "" : "s"}`.trim()}
-      </button>
+      </Button>
       <button type="button" onClick={onNext} className="mt-2 w-full rounded-md px-3 py-2 text-xs text-neutral-500 hover:text-neutral-300">
         Skip for now
       </button>

@@ -6,6 +6,7 @@ import { useDispatchWorkflow } from "../hooks/useWorkflows";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import AddWorkflowModal from "../components/workflows/AddWorkflowModal";
 import GithubWorkflowsSection from "../components/workflows/GithubWorkflowsSection";
+import Button from "../components/common/Button";
 
 export default function WorkflowListPage() {
   const { repoId } = useParams();
@@ -24,14 +25,10 @@ export default function WorkflowListPage() {
             View runs
             <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
           </Link>
-          <button
-            type="button"
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
-          >
+          <Button variant="primary" onClick={() => setShowAddModal(true)}>
             <Plus className="h-3.5 w-3.5" strokeWidth={2} />
             Add workflow
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -42,27 +39,20 @@ export default function WorkflowListPage() {
               <Link to={`/repos/${repoId}/workflows/${w.id}`} className="text-sm font-medium text-neutral-100 hover:text-accent">
                 {w.name}
               </Link>
-              <div className="mt-0.5 text-xs text-neutral-500">{w.enabled ? "enabled" : "disabled"} · {w.file_path}</div>
+              <div className="mt-0.5 text-xs text-neutral-500">
+                {w.enabled ? "enabled" : "disabled"} · <span className="font-mono">{w.file_path}</span>
+              </div>
               {w.description && <div className="mt-1 max-w-md text-xs text-neutral-400">{w.description}</div>}
             </div>
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => dispatch.mutate(w.id)}
-                className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-800"
-              >
+              <Button variant="default" size="sm" onClick={() => dispatch.mutate(w.id)}>
                 <Play className="h-3 w-3" strokeWidth={2} />
                 Run now
-              </button>
-              <button
-                type="button"
-                onClick={() => setPendingDelete(w.id)}
-                aria-label={`Delete ${w.name}`}
-                className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-[var(--color-status-error)] hover:bg-[var(--color-status-error)]/10"
-              >
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => setPendingDelete(w.id)} aria-label={`Delete ${w.name}`}>
                 <Trash2 className="h-3 w-3" strokeWidth={2} />
                 Delete
-              </button>
+              </Button>
             </div>
           </div>
         ))}

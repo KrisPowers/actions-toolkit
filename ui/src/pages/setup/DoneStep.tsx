@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import Button from "../../components/common/Button";
 
 export default function DoneStep({ onFinish }: { onFinish: () => void }) {
   return (
@@ -10,13 +11,9 @@ export default function DoneStep({ onFinish }: { onFinish: () => void }) {
       <p className="mt-2 text-sm text-neutral-400">
         Create workflows for your connected repos, or connect more from the Repos page at any time.
       </p>
-      <button
-        type="button"
-        onClick={onFinish}
-        className="mt-6 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover"
-      >
+      <Button variant="primary" onClick={onFinish} className="mt-6 w-full">
         Go to dashboard
-      </button>
+      </Button>
     </div>
   );
 }

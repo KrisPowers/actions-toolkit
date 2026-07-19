@@ -1,4 +1,5 @@
 import type { TriggerConfig } from "../../api/types";
+import Input from "../../components/common/Input";
 
 interface Props {
   on: TriggerConfig;
@@ -9,11 +10,11 @@ function listInput(label: string, value: string[], onChange: (v: string[]) => vo
   return (
     <div className="mt-3">
       <label className="block text-xs font-medium text-neutral-400">{label}</label>
-      <input
+      <Input
         value={value.join(", ")}
         onChange={(e) => onChange(e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
         placeholder={placeholder}
-        className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
+        className="mt-1 w-full font-mono"
       />
     </div>
   );
@@ -27,6 +28,7 @@ export default function TriggerConfigPanel({ on, onChange }: Props) {
       <label className="mt-4 flex items-center gap-2 text-sm text-neutral-200">
         <input
           type="checkbox"
+          className="accent-accent"
           checked={!!on.push}
           onChange={(e) => onChange({ ...on, push: e.target.checked ? { branches: [], tags: [], paths: [] } : null })}
         />
@@ -43,6 +45,7 @@ export default function TriggerConfigPanel({ on, onChange }: Props) {
       <label className="mt-4 flex items-center gap-2 text-sm text-neutral-200">
         <input
           type="checkbox"
+          className="accent-accent"
           checked={!!on.pull_request}
           onChange={(e) => onChange({ ...on, pull_request: e.target.checked ? { types: ["opened", "synchronize"], branches: [] } : null })}
         />
@@ -62,6 +65,7 @@ export default function TriggerConfigPanel({ on, onChange }: Props) {
       <label className="mt-4 flex items-center gap-2 text-sm text-neutral-200">
         <input
           type="checkbox"
+          className="accent-accent"
           checked={!!on.release}
           onChange={(e) => onChange({ ...on, release: e.target.checked ? { types: ["published"] } : null })}
         />
@@ -71,6 +75,7 @@ export default function TriggerConfigPanel({ on, onChange }: Props) {
       <label className="mt-4 flex items-center gap-2 text-sm text-neutral-200">
         <input
           type="checkbox"
+          className="accent-accent"
           checked={!!on.workflow_dispatch}
           onChange={(e) => onChange({ ...on, workflow_dispatch: e.target.checked ? {} : null })}
         />

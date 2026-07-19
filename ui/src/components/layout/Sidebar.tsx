@@ -3,7 +3,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
   CircleDot,
-  FolderGit2,
   GitPullRequest,
   LayoutDashboard,
   Package,
@@ -15,10 +14,15 @@ import {
   Workflow,
 } from "lucide-react";
 import { useRepos } from "../../hooks/useRepos";
+import Avatar from "../common/Avatar";
 
+// A left border on the active item, rather than a fully-rounded filled pill, mirrors GitHub's
+// own left-nav idiom (used in github.com's Settings and notification sidebars).
 const linkClass = ({ isActive }: { isActive: boolean }) =>
-  `flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors ${
-    isActive ? "bg-accent/15 text-accent" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+  `flex items-center gap-2 rounded-md border-l-2 py-1.5 pl-2.5 pr-3 text-sm transition-colors ${
+    isActive
+      ? "border-accent bg-accent/10 font-medium text-neutral-100"
+      : "border-transparent text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
   }`;
 
 function NavItem({ to, end, icon: Icon, children }: { to: string; end?: boolean; icon: LucideIcon; children: React.ReactNode }) {
@@ -33,6 +37,7 @@ function NavItem({ to, end, icon: Icon, children }: { to: string; end?: boolean;
 export default function Sidebar() {
   const { data: repos } = useRepos();
   const { repoId } = useParams();
+  const currentRepo = repos?.find((r) => r.id === repoId);
 
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-neutral-800 bg-neutral-950 p-3">
@@ -49,7 +54,16 @@ export default function Sidebar() {
 
       {repoId && (
         <div className="mt-6">
-          <div className="px-2 text-xs font-semibold uppercase tracking-wide text-neutral-600">This repo</div>
+          {currentRepo ? (
+            <div className="flex items-center gap-2 px-2">
+              <Avatar login={currentRepo.owner} size={16} className="shrink-0" />
+              <span className="truncate text-xs font-semibold text-neutral-300">
+                {currentRepo.owner}/{currentRepo.name}
+              </span>
+            </div>
+          ) : (
+            <div className="px-2 text-xs font-semibold uppercase tracking-wide text-neutral-600">This repo</div>
+          )}
           <nav className="mt-2 flex flex-col gap-1">
             <NavItem to={`/repos/${repoId}/workflows`} icon={Workflow}>
               Workflows
@@ -86,9 +100,12 @@ export default function Sidebar() {
         <div className="px-2 text-xs font-semibold uppercase tracking-wide text-neutral-600">Connected repos</div>
         <nav className="mt-2 flex flex-col gap-1">
           {(repos ?? []).map((r) => (
-            <NavItem key={r.id} to={`/repos/${r.id}/workflows`} icon={FolderGit2}>
-              {r.owner}/{r.name}
-            </NavItem>
+            <NavLink key={r.id} to={`/repos/${r.id}/workflows`} className={linkClass}>
+              <Avatar login={r.owner} size={16} className="shrink-0" />
+              <span className="truncate">
+                {r.owner}/{r.name}
+              </span>
+            </NavLink>
           ))}
         </nav>
       </div>

@@ -5,6 +5,7 @@ import { useCancelRun, useRerun, useRun } from "../hooks/useRuns";
 import { useLiveLogs } from "../hooks/useLiveLogs";
 import StatusBadge from "../components/common/StatusBadge";
 import LogViewer from "../components/logs/LogViewer";
+import Button, { buttonClass } from "../components/common/Button";
 
 const ACTIVE_STATUSES = new Set(["queued", "running", "pending"]);
 
@@ -35,32 +36,21 @@ export default function RunDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Link
-            to={`/runs/${tree.run.id}/artifacts`}
-            className="inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-800"
-          >
+          <Link to={`/runs/${tree.run.id}/artifacts`} className={buttonClass("default")}>
             <Package className="h-3.5 w-3.5" strokeWidth={2} />
             Artifacts
           </Link>
           {runActive && (
-            <button
-              type="button"
-              onClick={() => cancel.mutate(tree.run.id)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-status-error)]/40 px-3 py-1.5 text-sm text-[var(--color-status-error)] hover:bg-[var(--color-status-error)]/10"
-            >
+            <Button variant="danger" onClick={() => cancel.mutate(tree.run.id)}>
               <XCircle className="h-3.5 w-3.5" strokeWidth={2} />
               Cancel
-            </button>
+            </Button>
           )}
           {!runActive && (
-            <button
-              type="button"
-              onClick={() => rerun.mutate(tree.run.id)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-800"
-            >
+            <Button variant="default" onClick={() => rerun.mutate(tree.run.id)}>
               <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
               Re-run
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -70,7 +60,9 @@ export default function RunDetailPage() {
           <button
             type="button"
             onClick={() => setSelectedStepId(null)}
-            className={`mb-2 w-full rounded px-2 py-1 text-left text-xs ${!selectedStepId ? "bg-accent/15 text-accent" : "text-neutral-400 hover:bg-neutral-800"}`}
+            className={`mb-2 w-full rounded border-l-2 px-2 py-1 text-left text-xs ${
+              !selectedStepId ? "border-accent bg-accent/10 font-medium text-neutral-100" : "border-transparent text-neutral-400 hover:bg-neutral-800"
+            }`}
           >
             All output
           </button>
@@ -85,8 +77,10 @@ export default function RunDetailPage() {
                   key={step.id}
                   type="button"
                   onClick={() => setSelectedStepId(step.id)}
-                  className={`flex w-full items-center justify-between rounded px-3 py-1 text-left text-xs ${
-                    selectedStepId === step.id ? "bg-accent/15 text-accent" : "text-neutral-400 hover:bg-neutral-800"
+                  className={`flex w-full items-center justify-between rounded border-l-2 px-3 py-1 text-left text-xs ${
+                    selectedStepId === step.id
+                      ? "border-accent bg-accent/10 font-medium text-neutral-100"
+                      : "border-transparent text-neutral-400 hover:bg-neutral-800"
                   }`}
                 >
                   <span className="truncate">{step.name ?? `step ${step.step_index + 1}`}</span>

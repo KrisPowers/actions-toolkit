@@ -1,22 +1,9 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Server, XCircle } from "lucide-react";
+import { Server } from "lucide-react";
 import { useRuntimeStatus, useSettings, useUpdateSettings } from "../../hooks/useSettings";
-
-function AvailabilityBadge({ label, available }: { label: string; available: boolean }) {
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium"
-      style={{
-        color: available ? "var(--color-status-success)" : "var(--color-status-error)",
-        borderColor: `color-mix(in srgb, ${available ? "var(--color-status-success)" : "var(--color-status-error)"} 30%, transparent)`,
-        backgroundColor: `color-mix(in srgb, ${available ? "var(--color-status-success)" : "var(--color-status-error)"} 12%, transparent)`,
-      }}
-    >
-      {available ? <CheckCircle2 className="h-3 w-3" strokeWidth={2.5} /> : <XCircle className="h-3 w-3" strokeWidth={2.5} />}
-      {label}
-    </span>
-  );
-}
+import StatusBadge from "../common/StatusBadge";
+import Input from "../common/Input";
+import Button from "../common/Button";
 
 export default function RuntimeSettingsCard() {
   const { data: settings } = useSettings();
@@ -45,8 +32,14 @@ export default function RuntimeSettingsCard() {
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <AvailabilityBadge label={`Docker ${runtimeStatus?.docker_available ? "available" : "unavailable"}`} available={!!runtimeStatus?.docker_available} />
-        <AvailabilityBadge label={`Bucket ${runtimeStatus?.bucket_available ? "available" : "unavailable"}`} available={!!runtimeStatus?.bucket_available} />
+        <StatusBadge
+          status={runtimeStatus?.docker_available ? "succeeded" : "failed"}
+          label={`Docker ${runtimeStatus?.docker_available ? "available" : "unavailable"}`}
+        />
+        <StatusBadge
+          status={runtimeStatus?.bucket_available ? "succeeded" : "failed"}
+          label={`Bucket ${runtimeStatus?.bucket_available ? "available" : "unavailable"}`}
+        />
       </div>
 
       <div className="mt-4">
@@ -61,25 +54,19 @@ export default function RuntimeSettingsCard() {
         <label className="text-xs font-medium text-neutral-400" htmlFor="bind-addr">
           Bind address
         </label>
-        <input
-          id="bind-addr"
-          value={bindAddr}
-          onChange={(e) => setBindAddr(e.target.value)}
-          placeholder="0.0.0.0"
-          className="mt-1.5 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
-        />
+        <Input id="bind-addr" value={bindAddr} onChange={(e) => setBindAddr(e.target.value)} placeholder="0.0.0.0" className="mt-1.5 w-full" />
       </div>
 
       <div className="mt-4">
         <label className="text-xs font-medium text-neutral-400" htmlFor="docker-host">
           Docker host override
         </label>
-        <input
+        <Input
           id="docker-host"
           value={dockerHost}
           onChange={(e) => setDockerHost(e.target.value)}
           placeholder="leave blank to auto-detect"
-          className="mt-1.5 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
+          className="mt-1.5 w-full"
         />
       </div>
 
@@ -87,13 +74,13 @@ export default function RuntimeSettingsCard() {
         <label className="text-xs font-medium text-neutral-400" htmlFor="max-jobs">
           Max concurrent jobs
         </label>
-        <input
+        <Input
           id="max-jobs"
           type="number"
           min={1}
           value={maxConcurrentJobs}
           onChange={(e) => setMaxConcurrentJobs(e.target.value)}
-          className="mt-1.5 w-24 rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
+          className="mt-1.5 w-24"
         />
       </div>
       <p className="mt-2 text-xs text-neutral-600">
@@ -101,8 +88,8 @@ export default function RuntimeSettingsCard() {
       </p>
 
       <div className="mt-4 border-t border-neutral-800 pt-4">
-        <button
-          type="button"
+        <Button
+          variant="primary"
           disabled={!jobsValid || update.isPending}
           onClick={() =>
             update.mutate({
@@ -111,10 +98,9 @@ export default function RuntimeSettingsCard() {
               max_concurrent_jobs: jobsValue,
             })
           }
-          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
         >
           {update.isPending ? "Saving…" : "Save"}
-        </button>
+        </Button>
         {update.isError && <p className="mt-2 text-xs text-[var(--color-status-error)]">{(update.error as Error).message}</p>}
         {update.isSuccess && <p className="mt-2 text-xs text-neutral-500">Saved.</p>}
       </div>

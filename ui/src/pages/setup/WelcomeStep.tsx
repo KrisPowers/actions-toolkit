@@ -1,3 +1,5 @@
+import Button from "../../components/common/Button";
+
 export default function WelcomeStep({ onNext }: { onNext: () => void }) {
   return (
     <div>
@@ -8,13 +10,9 @@ export default function WelcomeStep({ onNext }: { onNext: () => void }) {
         GitHub, and pick the repos to run workflows for. Everything you enter is stored encrypted, never in an env
         file.
       </p>
-      <button
-        type="button"
-        onClick={onNext}
-        className="mt-6 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover"
-      >
+      <Button variant="primary" onClick={onNext} className="mt-6 w-full">
         Get started
-      </button>
+      </Button>
     </div>
   );
 }

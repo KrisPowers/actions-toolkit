@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Loader2 } from "lucide-react";
 import GithubMark from "../common/GithubMark";
+import Button from "../common/Button";
 import { githubAccountApi } from "../../api/githubAccount";
 
 type FlowState =
@@ -72,17 +73,12 @@ export default function GithubConnectButton({
     }
   }
 
-  const buttonClassName =
-    variant === "primary"
-      ? "inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
-      : "inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-800 disabled:opacity-60";
-
   if (state.phase === "idle" || state.phase === "starting") {
     return (
-      <button type="button" onClick={start} disabled={state.phase === "starting"} className={buttonClassName}>
+      <Button variant={variant === "primary" ? "primary" : "default"} onClick={start} disabled={state.phase === "starting"}>
         <GithubMark className="h-4 w-4" />
         {state.phase === "starting" ? "Starting…" : label}
-      </button>
+      </Button>
     );
   }
 
@@ -133,9 +129,9 @@ export default function GithubConnectButton({
           <code className="mt-1 block rounded bg-neutral-900 px-2 py-1.5 text-center text-base font-semibold tracking-widest text-neutral-100">
             {state.userCode}
           </code>
-          <button type="button" onClick={() => setState({ phase: "idle" })} className="mt-2 text-xs text-neutral-500 hover:text-neutral-300">
+          <Button variant="invisible" size="sm" onClick={() => setState({ phase: "idle" })} className="mt-2 text-xs">
             Cancel
-          </button>
+          </Button>
         </>
       )}
       {state.phase === "denied" && (

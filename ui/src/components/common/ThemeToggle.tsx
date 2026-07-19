@@ -1,5 +1,6 @@
 import { Check, Monitor, Moon, Sun } from "lucide-react";
 import Menu from "./Menu";
+import { buttonClass } from "./Button";
 import { useTheme } from "../../theme/ThemeProvider";
 
 const OPTIONS = [
@@ -21,7 +22,7 @@ export default function ThemeToggle() {
           onClick={toggle}
           aria-expanded={open}
           aria-label="Change theme"
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+          className={buttonClass("invisible", "icon")}
         >
           <ActiveIcon className="h-4 w-4" strokeWidth={2} />
         </button>
