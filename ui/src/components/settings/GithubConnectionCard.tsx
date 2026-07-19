@@ -1,36 +1,14 @@
-import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useState } from "react";
 import { ShieldCheck, Trash2 } from "lucide-react";
 import { useDeleteGithubToken, useGithubTokenStatus } from "../../hooks/useGithubAccount";
 import ConfirmDialog from "../common/ConfirmDialog";
 import GithubConnectButton from "./GithubConnectButton";
 import GithubMark from "../common/GithubMark";
 
-const RETURN_MESSAGES: Record<string, { tone: "success" | "error"; text: string }> = {
-  connected: { tone: "success", text: "GitHub connected successfully." },
-  denied: { tone: "error", text: "GitHub authorization was denied, so nothing was connected." },
-  error: { tone: "error", text: "Something went wrong connecting to GitHub. Please try again." },
-};
-
 export default function GithubConnectionCard() {
   const { data: status } = useGithubTokenStatus();
   const deleteToken = useDeleteGithubToken();
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  const returnState = searchParams.get("github");
-  const returnMessage = returnState ? RETURN_MESSAGES[returnState] : undefined;
-
-  // Strip the one-shot ?github=... param from the URL once it's been read, so refreshing the
-  // page (or coming back to Settings later) doesn't keep re-showing a stale connect result.
-  useEffect(() => {
-    if (!returnState) return;
-    const next = new URLSearchParams(searchParams);
-    next.delete("github");
-    setSearchParams(next, { replace: true });
-    // Only re-run when the param we're consuming actually changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [returnState]);
 
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
@@ -38,18 +16,6 @@ export default function GithubConnectionCard() {
         <GithubMark className="h-4 w-4 text-neutral-500" />
         <h2 className="text-sm font-semibold text-neutral-200">GitHub connection</h2>
       </div>
-
-      {returnMessage && (
-        <p
-          className={`mt-2 rounded-md px-2.5 py-1.5 text-xs ${
-            returnMessage.tone === "success"
-              ? "bg-[var(--color-status-success)]/10 text-[var(--color-status-success)]"
-              : "bg-[var(--color-status-error)]/10 text-[var(--color-status-error)]"
-          }`}
-        >
-          {returnMessage.text}
-        </p>
-      )}
 
       {status?.connected ? (
         <>
