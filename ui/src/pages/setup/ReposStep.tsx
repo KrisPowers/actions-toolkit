@@ -11,6 +11,7 @@ export default function ReposStep({ onNext }: { onNext: () => void }) {
   const createRepo = useCreateRepo();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -30,13 +31,21 @@ export default function ReposStep({ onNext }: { onNext: () => void }) {
 
   async function connectSelected() {
     setConnecting(true);
+    setError(null);
     const chosen = (repos ?? []).filter((r) => selected.has(r.full_name));
+    const failures: string[] = [];
     for (const repo of chosen) {
-      await createRepo.mutateAsync({ owner: repo.owner, name: repo.name, defaultBranch: repo.default_branch }).catch(() => {
-        // continue connecting the rest even if one repo (e.g. already connected) fails
+      await createRepo.mutateAsync({ owner: repo.owner, name: repo.name, defaultBranch: repo.default_branch }).catch((e) => {
+        // continue connecting the rest even if one repo (e.g. already connected) fails, but
+        // still surface it instead of silently advancing past a failed connection
+        failures.push(`${repo.full_name}: ${e instanceof Error ? e.message : "failed to connect"}`);
       });
     }
     setConnecting(false);
+    if (failures.length > 0) {
+      setError(failures.join("\n"));
+      return;
+    }
     onNext();
   }
 
@@ -68,6 +77,7 @@ export default function ReposStep({ onNext }: { onNext: () => void }) {
       <Button variant="primary" onClick={connectSelected} disabled={selected.size === 0 || connecting} className="mt-5 w-full">
         {connecting ? "Connecting…" : `Connect ${selected.size || ""} repo${selected.size === 1 ? "" : "s"}`.trim()}
       </Button>
+      {error && <p className="mt-2 whitespace-pre-line text-sm text-[var(--color-status-error)]">{error}</p>}
       <button type="button" onClick={onNext} className="mt-2 w-full rounded-md px-3 py-2 text-xs text-neutral-500 hover:text-neutral-300">
         Skip for now
       </button>
