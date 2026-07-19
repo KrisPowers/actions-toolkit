@@ -1,8 +1,11 @@
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Download, Package } from "lucide-react";
+import { useParams } from "react-router-dom";
+import { Download, Package } from "lucide-react";
 import { useArtifacts } from "../hooks/useArtifacts";
 import { artifactsApi } from "../api/artifacts";
 import { buttonClass } from "../components/common/Button";
+import PageHeader from "../components/common/PageHeader";
+import { listCardClass } from "../components/common/Card";
+import EmptyState from "../components/common/EmptyState";
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -16,15 +19,11 @@ export default function ArtifactsPage() {
 
   return (
     <div>
-      <Link to={`/runs/${runId}`} className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-300">
-        <ArrowLeft className="h-3 w-3" strokeWidth={2} />
-        Back to run
-      </Link>
-      <h1 className="mt-1 text-lg font-semibold text-neutral-100">Artifacts</h1>
+      <PageHeader title="Artifacts" backTo={`/runs/${runId}`} backLabel="Back to run" />
 
       {isLoading && <p className="mt-6 text-sm text-neutral-500">Loading…</p>}
 
-      <div className="mt-4 divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900">
+      <div className={listCardClass("mt-4")}>
         {(artifacts ?? []).map((a) => (
           <div key={a.id} className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-2">
@@ -40,7 +39,7 @@ export default function ArtifactsPage() {
             </a>
           </div>
         ))}
-        {(artifacts ?? []).length === 0 && !isLoading && <div className="px-4 py-6 text-sm text-neutral-500">No artifacts produced by this run.</div>}
+        {(artifacts ?? []).length === 0 && !isLoading && <EmptyState icon={Package} message="No artifacts produced by this run." />}
       </div>
     </div>
   );

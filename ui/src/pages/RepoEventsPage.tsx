@@ -3,6 +3,9 @@ import { useParams } from "react-router-dom";
 import { AlertTriangle, ChevronDown, ChevronRight, ShieldCheck, ShieldX } from "lucide-react";
 import { useRepoWebhookEvents } from "../hooks/useRepos";
 import type { WebhookEvent } from "../api/types";
+import PageHeader from "../components/common/PageHeader";
+import { listCardClass } from "../components/common/Card";
+import EmptyState from "../components/common/EmptyState";
 
 function matchedCount(event: WebhookEvent): number {
   try {
@@ -28,15 +31,14 @@ export default function RepoEventsPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold text-neutral-100">Flagged events</h1>
-      <p className="mt-1 text-sm text-neutral-400">
-        Recent webhook deliveries from GitHub. Rejected signatures or deliveries that matched no workflow are
-        flagged, since those are the ones most likely to need attention.
-      </p>
+      <PageHeader
+        title="Flagged events"
+        subtitle="Recent webhook deliveries from GitHub. Rejected signatures or deliveries that matched no workflow are flagged, since those are the ones most likely to need attention."
+      />
 
       {isLoading && <p className="mt-6 text-sm text-neutral-500">Loading…</p>}
 
-      <div className="mt-4 divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900">
+      <div className={listCardClass("mt-4")}>
         {(events ?? []).map((event) => {
           const flagged = !event.signature_valid || matchedCount(event) === 0;
           const expanded = expandedId === event.id;
@@ -85,7 +87,7 @@ export default function RepoEventsPage() {
           );
         })}
         {(events ?? []).length === 0 && !isLoading && (
-          <div className="px-4 py-6 text-sm text-neutral-500">No webhook deliveries received for this repo yet.</div>
+          <EmptyState icon={AlertTriangle} message="No webhook deliveries received for this repo yet." />
         )}
       </div>
     </div>

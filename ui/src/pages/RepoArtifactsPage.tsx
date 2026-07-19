@@ -4,6 +4,9 @@ import { useRepoArtifacts } from "../hooks/useArtifacts";
 import { artifactsApi } from "../api/artifacts";
 import StatusBadge from "../components/common/StatusBadge";
 import { buttonClass } from "../components/common/Button";
+import PageHeader from "../components/common/PageHeader";
+import { listCardClass } from "../components/common/Card";
+import EmptyState from "../components/common/EmptyState";
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -17,12 +20,11 @@ export default function RepoArtifactsPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold text-neutral-100">Artifacts</h1>
-      <p className="mt-1 text-sm text-neutral-400">Everything produced by every run in this repo, newest first.</p>
+      <PageHeader title="Artifacts" subtitle="Everything produced by every run in this repo, newest first." />
 
       {isLoading && <p className="mt-6 text-sm text-neutral-500">Loading…</p>}
 
-      <div className="mt-4 divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900">
+      <div className={listCardClass("mt-4")}>
         {(artifacts ?? []).map((a) => (
           <div key={a.id} className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="flex min-w-0 items-center gap-2">
@@ -48,9 +50,7 @@ export default function RepoArtifactsPage() {
             </div>
           </div>
         ))}
-        {(artifacts ?? []).length === 0 && !isLoading && (
-          <div className="px-4 py-6 text-sm text-neutral-500">No artifacts produced by this repo yet.</div>
-        )}
+        {(artifacts ?? []).length === 0 && !isLoading && <EmptyState icon={Package} message="No artifacts produced by this repo yet." />}
       </div>
     </div>
   );
