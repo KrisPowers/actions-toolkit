@@ -42,7 +42,7 @@ pub fn router(state: AppState) -> Router {
         .route("/users/{id}", delete(auth_handlers::delete_user))
         .route(
             "/github/token",
-            get(github_account::status).post(github_account::set_token).delete(github_account::delete_token),
+            get(github_account::status).delete(github_account::delete_token),
         )
         .route("/github/accessible-repos", get(github_account::accessible_repos))
         .route("/settings", get(settings::get).patch(settings::update))
