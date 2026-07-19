@@ -9,6 +9,7 @@ import Textarea from "../components/common/Textarea";
 import PageHeader from "../components/common/PageHeader";
 import Card, { listCardClass } from "../components/common/Card";
 import EmptyState from "../components/common/EmptyState";
+import Checkbox from "../components/common/Checkbox";
 import { relativeTime } from "../lib/relativeTime";
 
 export default function ReleasesPage() {
@@ -60,11 +61,11 @@ export default function ReleasesPage() {
           <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={4} className="mt-1 w-full" />
           <div className="mt-3 flex gap-4">
             <label className="flex items-center gap-1.5 text-xs text-neutral-400">
-              <input type="checkbox" checked={draft} onChange={(e) => setDraft(e.target.checked)} className="accent-accent" />
+              <Checkbox checked={draft} onChange={(e) => setDraft(e.target.checked)} />
               Draft
             </label>
             <label className="flex items-center gap-1.5 text-xs text-neutral-400">
-              <input type="checkbox" checked={prerelease} onChange={(e) => setPrerelease(e.target.checked)} className="accent-accent" />
+              <Checkbox checked={prerelease} onChange={(e) => setPrerelease(e.target.checked)} />
               Pre-release
             </label>
           </div>

@@ -5,6 +5,7 @@ import { useCreateRepo } from "../../hooks/useRepos";
 import Avatar from "../../components/common/Avatar";
 import Button from "../../components/common/Button";
 import Input from "../../components/common/Input";
+import Checkbox from "../../components/common/Checkbox";
 
 export default function ReposStep({ onNext }: { onNext: () => void }) {
   const { data: repos, isLoading } = useAccessibleRepos(true);
@@ -66,7 +67,7 @@ export default function ReposStep({ onNext }: { onNext: () => void }) {
         {!isLoading && filtered.length === 0 && <p className="p-3 text-sm text-neutral-500">No repos found.</p>}
         {filtered.map((r) => (
           <label key={r.full_name} className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2 last:border-b-0 hover:bg-neutral-800/50">
-            <input type="checkbox" checked={selected.has(r.full_name)} onChange={() => toggle(r.full_name)} className="accent-accent" />
+            <Checkbox checked={selected.has(r.full_name)} onChange={() => toggle(r.full_name)} />
             <Avatar login={r.owner} size={18} />
             <span className="flex-1 text-sm text-neutral-200">{r.full_name}</span>
             {r.private && <Lock className="h-3.5 w-3.5 text-neutral-600" strokeWidth={2} />}

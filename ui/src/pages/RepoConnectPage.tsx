@@ -8,6 +8,9 @@ import GithubMark from "../components/common/GithubMark";
 import Avatar from "../components/common/Avatar";
 import Button from "../components/common/Button";
 import Input from "../components/common/Input";
+import Checkbox from "../components/common/Checkbox";
+import Card, { cardClass } from "../components/common/Card";
+import PageHeader from "../components/common/PageHeader";
 import type { CreateRepoResponse } from "../api/repos";
 
 export default function RepoConnectPage() {
@@ -122,11 +125,11 @@ export default function RepoConnectPage() {
 
         <div className="mt-4 flex flex-col gap-3">
           {connected.map((repo) => (
-            <div key={repo.id} className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+            <Card key={repo.id} className="p-4">
               <div className="text-sm font-medium text-neutral-200">
                 {repo.owner}/{repo.name}
               </div>
-            </div>
+            </Card>
           ))}
         </div>
 
@@ -154,10 +157,10 @@ export default function RepoConnectPage() {
 
   return (
     <div className="max-w-lg">
-      <h1 className="text-lg font-semibold text-neutral-100">Connect a repo</h1>
-      <p className="mt-1 text-sm text-neutral-400">
-        Connected as @{tokenStatus.github_login}. Pick from repos the actions-toolkit GitHub App can access.
-      </p>
+      <PageHeader
+        title="Connect a repo"
+        subtitle={`Connected as @${tokenStatus.github_login}. Pick from repos the actions-toolkit GitHub App can access.`}
+      />
       {tokenStatus.token_type === "github_app" && (
         <a
           href="https://github.com/settings/installations"
@@ -214,7 +217,7 @@ export default function RepoConnectPage() {
             key={r.full_name}
             className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2 last:border-b-0 hover:bg-neutral-800/50"
           >
-            <input type="checkbox" checked={selected.has(r.full_name)} onChange={() => toggle(r.full_name)} />
+            <Checkbox checked={selected.has(r.full_name)} onChange={() => toggle(r.full_name)} />
             <Avatar login={r.owner} size={20} />
             <span className="flex-1 text-sm text-neutral-200">{r.full_name}</span>
             {r.private && <Lock className="h-3.5 w-3.5 text-neutral-600" strokeWidth={2} />}
@@ -237,7 +240,7 @@ export default function RepoConnectPage() {
       </button>
 
       {showManual && (
-        <form onSubmit={connectManual} className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+        <form onSubmit={connectManual} className={cardClass("mt-3 p-4")}>
           <label className="block text-xs font-medium text-neutral-400">Owner</label>
           <Input value={manualOwner} onChange={(e) => setManualOwner(e.target.value)} className="mt-1 w-full" />
           <label className="mt-3 block text-xs font-medium text-neutral-400">Repository name</label>
