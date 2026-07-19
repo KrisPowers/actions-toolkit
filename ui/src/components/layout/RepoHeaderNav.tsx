@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, matchPath, useLocation } from "react-router-dom";
 import { ChevronDown, Plus } from "lucide-react";
 import {
   AlertTriangle,
@@ -28,8 +28,17 @@ const TABS = [
   { path: "settings", icon: SlidersHorizontal, label: "Settings" },
 ];
 
+// RepoHeaderNav is rendered in AppShell as a sibling of <AppRoutes>'s <Routes>, not as a
+// descendant of the matched Route, so useParams() has no route context here and always returns
+// {}. matchPath against the raw location works from anywhere, matched-tree or not.
+function useRepoIdFromLocation(): string | undefined {
+  const location = useLocation();
+  const match = matchPath("/repos/:repoId/*", location.pathname);
+  return match?.params.repoId;
+}
+
 export default function RepoHeaderNav() {
-  const { repoId } = useParams();
+  const repoId = useRepoIdFromLocation();
   const { data: repos } = useRepos();
   const currentRepo = repos?.find((r) => r.id === repoId);
 
