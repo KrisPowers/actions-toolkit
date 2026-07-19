@@ -40,6 +40,19 @@ pub async fn run_job(
 
     let workspace_dir = workspace::ensure(&state.config.workspaces_dir(), workflow_run_id)?;
 
+    // Mirrors GitHub Actions' automatic `GITHUB_TOKEN`: steps need the same credential checkout
+    // already uses to reach the GitHub API themselves (e.g. to update a release), since this app
+    // has no separate secrets store yet.
+    let github_context_env: Vec<String> = checkout
+        .as_ref()
+        .map(|ctx| {
+            vec![
+                format!("GITHUB_TOKEN={}", ctx.pat),
+                format!("GITHUB_REPOSITORY={}/{}", ctx.owner, ctx.repo),
+            ]
+        })
+        .unwrap_or_default();
+
     if let Some(ctx) = &checkout {
         let owner = ctx.owner.clone();
         let repo = ctx.repo.clone();
@@ -151,11 +164,19 @@ pub async fn run_job(
 
         run_queries::set_step_status(&state.db, &step_run.id, "running", None, false).await?;
 
-        let step_env: Vec<String> = step
+        let mut step_env: Vec<String> = step
             .env
             .as_ref()
             .map(|m| m.iter().map(|(k, v)| format!("{k}={v}")).collect())
             .unwrap_or_default();
+        let declared_keys: std::collections::HashSet<String> =
+            step_env.iter().filter_map(|e| e.split('=').next().map(str::to_string)).collect();
+        step_env.extend(
+            github_context_env
+                .iter()
+                .filter(|e| !declared_keys.contains(e.split('=').next().unwrap_or_default()))
+                .cloned(),
+        );
 
         let exit_code = if let Some(command) = &step.run {
             let hub = state.log_hub.clone();
