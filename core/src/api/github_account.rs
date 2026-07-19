@@ -1,6 +1,5 @@
 use axum::extract::State;
 use axum::Json;
-use serde::Deserialize;
 
 use crate::app::AppState;
 use crate::auth::middleware::CurrentUser;
@@ -39,40 +38,6 @@ fn to_status(row: Option<GithubToken>) -> GithubTokenStatus {
 pub async fn status(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<GithubTokenStatus>> {
     let row = token_queries::get(&state.db).await?;
     Ok(Json(to_status(row)))
-}
-
-#[derive(Deserialize)]
-pub struct SetTokenRequest {
-    pub token: String,
-}
-
-pub async fn set_token(
-    State(state): State<AppState>,
-    _user: CurrentUser,
-    Json(req): Json<SetTokenRequest>,
-) -> AppResult<Json<GithubTokenStatus>> {
-    let token = req.token.trim();
-    if token.is_empty() {
-        return Err(AppError::BadRequest("token is required".into()));
-    }
-
-    let client = client::for_token(token).map_err(AppError::Internal)?;
-    let login = discovery::validate_token(&client)
-        .await
-        .map_err(|e| AppError::BadRequest(format!("GitHub rejected this token: {e}")))?;
-
-    let (token_encrypted, token_nonce) = state.enc.encrypt_str(token).map_err(AppError::Internal)?;
-    token_queries::upsert(&state.db, &token_encrypted, &token_nonce, &login, "").await?;
-    client::invalidate(&state).await;
-
-    Ok(Json(GithubTokenStatus {
-        connected: true,
-        github_login: Some(login),
-        scopes: Some(String::new()),
-        connected_at: None,
-        token_type: Some("pat".to_string()),
-        needs_reconnect: false,
-    }))
 }
 
 pub async fn delete_token(State(state): State<AppState>, _user: CurrentUser) -> AppResult<()> {
