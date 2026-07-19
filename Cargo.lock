@@ -10,6 +10,13 @@ dependencies = [
  "anyhow",
  "argon2",
  "async-trait",
+ "atk-auth",
+ "atk-bucket",
+ "atk-config",
+ "atk-crypto",
+ "atk-db",
+ "atk-github",
+ "atk-workflow",
  "axum",
  "axum-extra",
  "base64",
@@ -246,6 +253,106 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "atk-auth"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "chrono",
+ "jsonwebtoken",
+ "serde",
+]
+
+[[package]]
+name = "atk-bucket"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atk-config",
+ "atk-db",
+ "caps",
+ "chrono",
+ "libc",
+ "nix",
+ "seccompiler",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+ "windows",
+]
+
+[[package]]
+name = "atk-config"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "dirs",
+ "tracing",
+]
+
+[[package]]
+name = "atk-crypto"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "base64",
+ "rand 0.8.7",
+ "tracing",
+]
+
+[[package]]
+name = "atk-db"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atk-crypto",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "atk-github"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64",
+ "chrono",
+ "git2",
+ "hex",
+ "hmac",
+ "octocrab",
+ "rand 0.8.7",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
+name = "atk-workflow"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "globset",
+ "indexmap 2.14.0",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
 ]
 
 [[package]]
