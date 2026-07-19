@@ -48,7 +48,7 @@ use windows::Win32::System::Threading::{
 };
 
 use super::{BucketCapability, BucketHandle, BucketSpec, ExecResult};
-use crate::db::queries::buckets as bucket_queries;
+use atk_db::queries::buckets as bucket_queries;
 
 fn appcontainer_profile_name(id: &str) -> String {
     format!("atk-bucket-{id}")
@@ -200,7 +200,7 @@ pub async fn remove_bucket(pool: &SqlitePool, handle: &BucketHandle) -> Result<(
     .context("bucket teardown task panicked")?
 }
 
-pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &crate::db::models::Bucket) -> BucketHandle {
+pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &atk_db::models::Bucket) -> BucketHandle {
     BucketHandle {
         id: row.id.clone(),
         workspace: std::path::PathBuf::from(&row.workspace_path),
@@ -635,7 +635,7 @@ fn resolve_shell_cmdline(shell: Option<&str>, shell_command: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::models::now_iso;
+    use atk_db::models::now_iso;
 
     #[tokio::test]
     async fn probe_reports_this_host_can_run_buckets() {
@@ -663,7 +663,7 @@ mod tests {
         std::fs::create_dir_all(&buckets_root).unwrap();
 
         let db_path = base.join("test.db");
-        let pool = crate::db::connect(&db_path).await.expect("db connect should succeed");
+        let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
         seed_fk_chain(&pool, "repo-1", "workflow-1", "run-1", "job-1").await;
 
         let spec = BucketSpec {
@@ -742,7 +742,7 @@ mod tests {
         std::fs::create_dir_all(&buckets_root).unwrap();
 
         let db_path = base.join("test.db");
-        let pool = crate::db::connect(&db_path).await.expect("db connect should succeed");
+        let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
         seed_fk_chain(&pool, "repo-2", "workflow-2", "run-2", "job-2").await;
 
         let spec = BucketSpec {
@@ -825,7 +825,7 @@ mod tests {
         std::fs::create_dir_all(&buckets_root).unwrap();
 
         let db_path = base.join("test.db");
-        let pool = crate::db::connect(&db_path).await.expect("db connect should succeed");
+        let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
         seed_fk_chain(&pool, "repo-3", "workflow-3", "run-3", "job-3").await;
 
         let spec = BucketSpec {

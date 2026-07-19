@@ -150,7 +150,7 @@ pub async fn remove_bucket(pool: &SqlitePool, handle: &BucketHandle) -> Result<(
 /// call, used by the reaper (TTL sweep, startup crash reconciliation) where the process that
 /// created the bucket may be long gone. The scaffolding paths are deterministic from
 /// `buckets_root` + the bucket's own id, so no extra state needs to round-trip through the DB.
-pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &crate::db::models::Bucket) -> BucketHandle {
+pub fn handle_from_bucket_row(buckets_root: &Path, row: &atk_db::models::Bucket) -> BucketHandle {
     #[cfg(target_os = "linux")]
     {
         linux::handle_from_bucket_row(buckets_root, row)

@@ -1,16 +1,16 @@
 mod api;
 mod app;
 mod auth;
-mod bucket;
 mod config;
-mod db;
 mod error;
 mod github;
 mod runner;
 mod telemetry;
 mod ws;
 
+pub use atk_bucket as bucket;
 pub use atk_crypto as crypto;
+pub use atk_db as db;
 pub use atk_workflow as workflow;
 
 use std::sync::Arc;

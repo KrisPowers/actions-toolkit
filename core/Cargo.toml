@@ -63,6 +63,7 @@ tar = "0.4"
 zip = "2"
 
 atk-auth = { path = "../crates/atk-auth" }
+atk-bucket = { path = "../crates/atk-bucket" }
 atk-config = { path = "../crates/atk-config" }
 atk-crypto = { path = "../crates/atk-crypto" }
 atk-db = { path = "../crates/atk-db" }

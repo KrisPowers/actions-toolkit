@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use sqlx::SqlitePool;
 
-use crate::db::queries::buckets as bucket_queries;
+use atk_db::queries::buckets as bucket_queries;
 
 const SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 

@@ -13,7 +13,7 @@ use tokio::process::Command;
 use uuid::Uuid;
 
 use super::{BucketCapability, BucketHandle, BucketInitSpec, BucketSpec, ExecResult, DEFAULT_RO_MOUNTS};
-use crate::db::queries::buckets as bucket_queries;
+use atk_db::queries::buckets as bucket_queries;
 
 const CGROUP_ROOT: &str = "/sys/fs/cgroup/actions-toolkit";
 const DELEGATED_SLICE: &str = "actions-toolkit.slice";
@@ -54,7 +54,7 @@ fn cgroup_path_for(id: &str) -> PathBuf {
     }
 }
 
-pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &crate::db::models::Bucket) -> BucketHandle {
+pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &atk_db::models::Bucket) -> BucketHandle {
     BucketHandle {
         id: row.id.clone(),
         workspace: PathBuf::from(&row.workspace_path),

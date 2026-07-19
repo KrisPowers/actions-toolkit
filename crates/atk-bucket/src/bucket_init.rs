@@ -28,7 +28,7 @@ use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{chdir, fork, ForkResult, Pid};
 
 use super::BucketInitSpec;
-use crate::config::BucketInitArgs;
+use atk_config::BucketInitArgs;
 
 pub fn run(args: BucketInitArgs) -> Result<i32> {
     let spec_bytes = std::fs::read(&args.spec_path).context("failed to read bucket init spec")?;
