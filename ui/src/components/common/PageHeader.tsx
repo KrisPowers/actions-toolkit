@@ -9,7 +9,7 @@ export default function PageHeader({
   backLabel,
   actions,
 }: {
-  title: string;
+  title: ReactNode;
   subtitle?: string;
   backTo?: string;
   backLabel?: string;
