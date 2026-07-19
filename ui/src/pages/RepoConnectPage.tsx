@@ -22,6 +22,7 @@ export default function RepoConnectPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState<CreateRepoResponse[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
   const [manualOwner, setManualOwner] = useState("");
   const [manualName, setManualName] = useState("");
@@ -68,26 +69,38 @@ export default function RepoConnectPage() {
 
   async function connectSelected() {
     setConnecting(true);
+    setError(null);
     const chosen = connectable.filter((r) => selected.has(r.full_name));
     const results: CreateRepoResponse[] = [];
+    const failures: string[] = [];
     for (const repo of chosen) {
       try {
         const res = await create.mutateAsync({ owner: repo.owner, name: repo.name, defaultBranch: repo.default_branch });
         results.push(res);
-      } catch {
-        // one repo failing (e.g. race with another connect) shouldn't block the rest
+      } catch (e) {
+        // one repo failing (e.g. race with another connect) shouldn't block the rest, but the
+        // failure still needs to reach the user instead of vanishing silently
+        failures.push(`${repo.full_name}: ${e instanceof Error ? e.message : "failed to connect"}`);
       }
     }
     setConnecting(false);
-    setConnected(results);
+    if (failures.length > 0) {
+      setError(failures.join("\n"));
+    }
+    if (results.length > 0 && failures.length === 0) {
+      setConnected(results);
+    }
   }
 
   async function connectManual(e: React.FormEvent) {
     e.preventDefault();
     setConnecting(true);
+    setError(null);
     try {
       const res = await create.mutateAsync({ owner: manualOwner.trim(), name: manualName.trim(), defaultBranch: manualBranch.trim() || "main" });
       setConnected([res]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "failed to connect");
     } finally {
       setConnecting(false);
     }
@@ -212,6 +225,7 @@ export default function RepoConnectPage() {
       <Button variant="primary" onClick={connectSelected} disabled={selected.size === 0 || connecting} className="mt-4 w-full">
         {connecting ? "Connecting…" : `Connect ${selected.size || ""} repo${selected.size === 1 ? "" : "s"}`.trim()}
       </Button>
+      {error && <p className="mt-2 whitespace-pre-line text-sm text-[var(--color-status-error)]">{error}</p>}
 
       <button
         type="button"
@@ -233,6 +247,7 @@ export default function RepoConnectPage() {
           <Button type="submit" variant="default" disabled={!manualOwner || !manualName || connecting} className="mt-4 w-full">
             Connect repo
           </Button>
+          {error && <p className="mt-2 whitespace-pre-line text-sm text-[var(--color-status-error)]">{error}</p>}
         </form>
       )}
     </div>
