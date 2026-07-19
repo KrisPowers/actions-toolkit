@@ -649,9 +649,20 @@ fn resolve_shell_cmdline(shell: Option<&str>, shell_command: &str) -> String {
 /// argument early and corrupts everything after it. `-EncodedCommand` takes base64'd UTF-16LE
 /// instead, sidestepping command-line quoting entirely — the same approach GitHub Actions' own
 /// Windows runner uses for multi-line `run:` steps.
+/// PowerShell's default `$ErrorActionPreference` is `Continue`: a non-terminating cmdlet error
+/// (the overwhelming majority of built-in cmdlet failures) prints to stderr and lets the script
+/// keep running, without affecting the process exit code, so a step that actually failed partway
+/// through can still report success. Forcing `Stop` turns those into terminating errors that do
+/// propagate; appending the `$LASTEXITCODE` check separately covers a native command (a .exe) that
+/// sets a nonzero exit code without PowerShell itself raising an error, which `Stop` alone doesn't
+/// catch. Both are exactly what GitHub Actions' own Windows runner does for `shell: powershell`/
+/// `shell: pwsh` steps (confirmed against the runner's actual behavior, not assumed).
 fn encode_powershell_command(script: &str) -> String {
     use base64::Engine;
-    let utf16le: Vec<u8> = script.encode_utf16().flat_map(|unit| unit.to_le_bytes()).collect();
+    let wrapped = format!(
+        "$ErrorActionPreference = 'Stop'\n{script}\nif (Test-Path -LiteralPath variable:\\LASTEXITCODE) {{ exit $LASTEXITCODE }}"
+    );
+    let utf16le: Vec<u8> = wrapped.encode_utf16().flat_map(|unit| unit.to_le_bytes()).collect();
     base64::engine::general_purpose::STANDARD.encode(utf16le)
 }
 
@@ -803,6 +814,115 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    /// Rule-proving test for the exit-code fix: a step whose only failure is a non-terminating
+    /// cmdlet error (PowerShell's default `$ErrorActionPreference` is `Continue`, which lets the
+    /// script keep running and reports success) must now come back as a failed step, not a
+    /// silent success. Reproduced for real before this fix: `Out-File` to a path the AppContainer
+    /// has no access to printed an error but still returned `exit_code=0`.
+    #[tokio::test]
+    async fn failing_non_terminating_cmdlet_now_fails_the_step() {
+        let capability = probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let base = std::env::temp_dir().join(format!("atk-bucket-test-erroraction-{test_id}"));
+        let buckets_root = base.join("buckets");
+        let workspace = base.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&buckets_root).unwrap();
+
+        let db_path = base.join("test.db");
+        let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
+        seed_fk_chain(&pool, "repo-eap", "workflow-eap", "run-eap", "job-eap").await;
+
+        let spec = BucketSpec {
+            workspace_host_path: &workspace,
+            run_id: "run-eap",
+            job_run_id: "job-eap",
+            network_enabled: false,
+            ttl: std::time::Duration::from_secs(3600),
+        };
+        let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
+
+        // A non-terminating cmdlet error against a path the AppContainer genuinely has no access
+        // to: real failure, not a contrived exit call, exercising the same failure class found in
+        // #16's investigation.
+        let command = "Out-File -FilePath C:\\atk_erroraction_test.txt -InputObject 'should not succeed'";
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            exec_step(&handle, command, None, None, &[], |_, _| {}),
+        )
+        .await
+        .expect("exec_step timed out")
+        .expect("exec_step should succeed (the step running is not the same as the step's command succeeding)");
+
+        assert_ne!(result.exit_code, 0, "a step with a real, uncaught cmdlet failure must not report success");
+        assert!(
+            !Path::new(r"C:\atk_erroraction_test.txt").exists(),
+            "the write should never have succeeded in the first place"
+        );
+
+        remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Confirms `$ErrorActionPreference = 'Stop'` doesn't turn an *already-successful* step into
+    /// a false failure — the wrapper must be additive, not change behavior for scripts that were
+    /// already correct.
+    #[tokio::test]
+    async fn successful_powershell_step_still_reports_success_with_the_wrapper() {
+        let capability = probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let base = std::env::temp_dir().join(format!("atk-bucket-test-erroraction-ok-{test_id}"));
+        let buckets_root = base.join("buckets");
+        let workspace = base.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&buckets_root).unwrap();
+
+        let db_path = base.join("test.db");
+        let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
+        seed_fk_chain(&pool, "repo-eap-ok", "workflow-eap-ok", "run-eap-ok", "job-eap-ok").await;
+
+        let spec = BucketSpec {
+            workspace_host_path: &workspace,
+            run_id: "run-eap-ok",
+            job_run_id: "job-eap-ok",
+            network_enabled: false,
+            ttl: std::time::Duration::from_secs(3600),
+        };
+        let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
+
+        // Deliberately no relative-path file I/O here: that path currently runs into a separate,
+        // already-tracked bug (#16) with PowerShell's own cwd initialization against this host's
+        // AppContainer traverse ACLs, unrelated to this fix. Using an absolute path inside the
+        // granted workspace keeps this test isolated to what it's actually verifying: that
+        // wrapping the script with $ErrorActionPreference = 'Stop' and the $LASTEXITCODE check
+        // doesn't turn an already-successful step into a false failure.
+        let out_path = workspace.join("ok.txt");
+        let command = format!("'ok' | Out-File -FilePath '{}'", out_path.display());
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            exec_step(&handle, &command, None, None, &[], |_, _| {}),
+        )
+        .await
+        .expect("exec_step timed out")
+        .expect("exec_step should succeed");
+
+        assert_eq!(result.exit_code, 0, "a genuinely successful step must still report success");
+        assert!(out_path.exists());
+
+        remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn resolve_shell_cmdline_honors_explicit_overrides() {
         assert_eq!(resolve_shell_cmdline(Some("cmd"), "echo hi"), "cmd.exe /d /s /c \"echo hi\"");
@@ -836,7 +956,8 @@ mod tests {
         let decoded_bytes = base64::engine::general_purpose::STANDARD.decode(encoded).unwrap();
         let decoded_utf16: Vec<u16> =
             decoded_bytes.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect();
-        assert_eq!(String::from_utf16(&decoded_utf16).unwrap(), script);
+        let decoded = String::from_utf16(&decoded_utf16).unwrap();
+        assert!(decoded.contains(script), "expected the original script to survive encoding intact: {decoded}");
     }
 
     #[test]
