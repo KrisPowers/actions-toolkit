@@ -1,5 +1,6 @@
 import type { MouseEvent, ReactNode } from "react";
 import { cn } from "../../lib/cn";
+import { cardClass } from "./Card";
 
 export default function Modal({
   open,
@@ -24,10 +25,7 @@ export default function Modal({
       onClick={onClose}
     >
       <div
-        className={cn(
-          "w-full rounded-lg border border-neutral-800 bg-neutral-900 p-5 shadow-xl transition-all duration-150 starting:scale-95 starting:opacity-0",
-          className,
-        )}
+        className={cardClass(cn("w-full p-5 shadow-xl transition-all duration-150 starting:scale-95 starting:opacity-0", className))}
         onClick={stopPropagation}
       >
         {children}
