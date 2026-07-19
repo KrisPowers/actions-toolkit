@@ -4,6 +4,7 @@ import GithubMark from "../common/GithubMark";
 import Menu from "../common/Menu";
 import Avatar from "../common/Avatar";
 import ThemeToggle from "../common/ThemeToggle";
+import RepoSwitcher from "./RepoSwitcher";
 import { useLogout } from "../../hooks/useAuth";
 import type { User } from "../../api/types";
 
@@ -20,6 +21,8 @@ export default function GlobalHeader({ user }: { user: User }) {
       <Link to="/" className="flex items-center rounded-md p-1.5 hover:bg-white/10" aria-label="Dashboard">
         <GithubMark className="h-6 w-6 text-header-fg" />
       </Link>
+
+      <RepoSwitcher />
 
       <div className="flex-1" />
 
