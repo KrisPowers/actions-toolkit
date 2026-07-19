@@ -10,6 +10,7 @@ export interface RepoPublic {
   name: string;
   default_branch: string;
   webhook_url: string;
+  webhook_connected: boolean;
   created_at: string;
   updated_at: string;
 }

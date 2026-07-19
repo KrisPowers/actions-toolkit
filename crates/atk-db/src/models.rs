@@ -47,6 +47,11 @@ pub struct RepoPublic {
     pub name: String,
     pub default_branch: String,
     pub webhook_url: String,
+    /// Whether GitHub actually has a webhook registered for this repo (`github_hook_id` is
+    /// `Some` on the underlying row). `false` means event triggers (push, pull_request,
+    /// release, ...) cannot fire no matter how the workflow itself is configured, since GitHub
+    /// has nowhere to deliver the event to.
+    pub webhook_connected: bool,
     pub created_at: String,
     pub updated_at: String,
 }

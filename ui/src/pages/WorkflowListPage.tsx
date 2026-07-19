@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowRight, Play, Plus, Trash2, Workflow } from "lucide-react";
 import { useDeleteWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import { useDispatchWorkflow } from "../hooks/useWorkflows";
+import { useRepo } from "../hooks/useRepos";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import AddWorkflowModal from "../components/workflows/AddWorkflowModal";
 import GithubWorkflowsSection from "../components/workflows/GithubWorkflowsSection";
@@ -10,9 +11,11 @@ import Button from "../components/common/Button";
 import PageHeader from "../components/common/PageHeader";
 import { listCardClass } from "../components/common/Card";
 import EmptyState from "../components/common/EmptyState";
+import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
 
 export default function WorkflowListPage() {
   const { repoId } = useParams();
+  const { data: repo } = useRepo(repoId);
   const { data: workflows } = useWorkflows(repoId);
   const deleteWorkflow = useDeleteWorkflow(repoId as string);
   const dispatch = useDispatchWorkflow();
@@ -36,6 +39,12 @@ export default function WorkflowListPage() {
           </>
         }
       />
+
+      {repo && !repo.webhook_connected && (
+        <div className="mt-4">
+          <WebhookUnreachableBanner />
+        </div>
+      )}
 
       <div className={listCardClass("mt-6")}>
         {(workflows ?? []).map((w) => (

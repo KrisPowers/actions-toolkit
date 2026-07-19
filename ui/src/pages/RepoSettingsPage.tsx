@@ -8,6 +8,7 @@ import GithubMark from "../components/common/GithubMark";
 import Button, { buttonClass } from "../components/common/Button";
 import Card from "../components/common/Card";
 import PageHeader from "../components/common/PageHeader";
+import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
 import { workflowsApi } from "../api/workflows";
 
 function nameFromYaml(text: string, fallback: string): string {
@@ -76,6 +77,11 @@ export default function RepoSettingsPage() {
           <p className="mt-2 text-xs text-neutral-600">
             Created automatically on GitHub when this repo was connected. Disconnect and reconnect to recreate it.
           </p>
+          {!repo.webhook_connected && (
+            <div className="mt-3">
+              <WebhookUnreachableBanner />
+            </div>
+          )}
 
           <div className="mt-5 flex items-center gap-2 border-t border-neutral-800 pt-4">
             <GithubMark className="h-4 w-4 text-neutral-500" />
