@@ -1,4 +1,6 @@
 import { useState } from "react";
+import Input from "../../components/common/Input";
+import Select from "../../components/common/Select";
 
 interface Props {
   value: string | null | undefined;
@@ -22,11 +24,11 @@ export default function ConditionRuleBuilder({ value, availableNeeds, onChange }
   if (raw) {
     return (
       <div className="mt-2">
-        <input
+        <Input
           value={value ?? ""}
           onChange={(e) => onChange(e.target.value || null)}
           placeholder="${{ github.event_name == 'push' }}"
-          className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 font-mono text-xs text-neutral-100 outline-none focus:border-accent"
+          className="w-full font-mono text-xs"
         />
         <button type="button" onClick={() => setRaw(false)} className="mt-1 text-xs text-accent hover:underline">
           Use rule builder
@@ -40,7 +42,7 @@ export default function ConditionRuleBuilder({ value, availableNeeds, onChange }
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2">
-      <select
+      <Select
         value={isFunctionCall ? value! : match ? "field" : "none"}
         onChange={(e) => {
           const v = e.target.value;
@@ -48,32 +50,32 @@ export default function ConditionRuleBuilder({ value, availableNeeds, onChange }
           else if (v === "field") onChange(`\${{ ${options[0]} == '' }}`);
           else onChange(v);
         }}
-        className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-100"
+        className="px-2 py-1 text-xs"
       >
         <option value="none">Always run on success (default)</option>
         <option value="always()">always()</option>
         <option value="failure()">failure()</option>
         <option value="field">field equals value…</option>
-      </select>
+      </Select>
 
       {(match || (!isFunctionCall && value)) && (
         <>
-          <select
+          <Select
             value={match?.[1] ?? options[0]}
             onChange={(e) => onChange(`\${{ ${e.target.value} == '${match?.[2] ?? ""}' }}`)}
-            className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-100"
+            className="px-2 py-1 text-xs"
           >
             {options.map((o) => (
               <option key={o} value={o}>
                 {o}
               </option>
             ))}
-          </select>
+          </Select>
           <span className="text-xs text-neutral-500">==</span>
-          <input
+          <Input
             value={match?.[2] ?? ""}
             onChange={(e) => onChange(`\${{ ${match?.[1] ?? options[0]} == '${e.target.value}' }}`)}
-            className="w-28 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-100"
+            className="w-28 px-2 py-1 text-xs"
           />
         </>
       )}
