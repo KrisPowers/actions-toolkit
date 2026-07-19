@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Play } from "lucide-react";
 import { useDispatchWorkflow, useUpdateWorkflow, useWorkflow } from "../hooks/useWorkflows";
 import WorkflowBuilder from "../builder/WorkflowBuilder";
+import Button from "../components/common/Button";
 import type { WorkflowModel } from "../api/types";
 
 export default function WorkflowEditorPage() {
@@ -30,15 +31,10 @@ export default function WorkflowEditorPage() {
           <h1 className="mt-0.5 text-lg font-semibold text-neutral-100">{workflow.name}</h1>
           {workflow.description && <p className="mt-0.5 text-xs text-neutral-500">{workflow.description}</p>}
         </div>
-        <button
-          type="button"
-          onClick={() => dispatch.mutate(workflow.id)}
-          disabled={dispatch.isPending}
-          className="inline-flex items-center gap-1.5 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-800"
-        >
+        <Button variant="default" onClick={() => dispatch.mutate(workflow.id)} disabled={dispatch.isPending}>
           <Play className="h-3.5 w-3.5" strokeWidth={2} />
           {dispatch.isPending ? "Starting…" : "Run now"}
-        </button>
+        </Button>
       </div>
 
       <div className="min-h-0 flex-1">

@@ -5,6 +5,7 @@ import type { Connection, Edge, EdgeChange, Node, NodeChange } from "reactflow";
 import "reactflow/dist/style.css";
 import { Plus, Save } from "lucide-react";
 import { useTheme } from "../theme/ThemeProvider";
+import Button from "../components/common/Button";
 
 import type { Job, TriggerConfig, WorkflowModel } from "../api/types";
 import YamlCodeEditor from "./YamlCodeEditor";
@@ -186,34 +187,33 @@ export default function WorkflowBuilder({ name, initialYaml, onSave, saving, sav
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-        <div className="flex gap-1 rounded-md border border-neutral-800 p-0.5">
+      <div className="flex items-center justify-between border-b border-neutral-800 pb-0">
+        <div className="flex gap-4">
           <button
             type="button"
             onClick={switchToVisual}
-            className={`rounded px-3 py-1 text-xs font-medium ${mode === "visual" ? "bg-accent text-white" : "text-neutral-400 hover:text-neutral-200"}`}
+            className={`-mb-px border-b-2 pb-3 text-xs font-medium transition-colors ${
+              mode === "visual" ? "border-accent text-neutral-100" : "border-transparent text-neutral-500 hover:text-neutral-300"
+            }`}
           >
             Visual builder
           </button>
           <button
             type="button"
             onClick={switchToCode}
-            className={`rounded px-3 py-1 text-xs font-medium ${mode === "code" ? "bg-accent text-white" : "text-neutral-400 hover:text-neutral-200"}`}
+            className={`-mb-px border-b-2 pb-3 text-xs font-medium transition-colors ${
+              mode === "code" ? "border-accent text-neutral-100" : "border-transparent text-neutral-500 hover:text-neutral-300"
+            }`}
           >
             YAML
           </button>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="mb-3 flex items-center gap-3">
           {saveError && <span className="text-xs text-[var(--color-status-error)]">{saveError}</span>}
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving}
-            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-60"
-          >
+          <Button variant="primary" size="sm" onClick={save} disabled={saving}>
             <Save className="h-3.5 w-3.5" strokeWidth={2} />
             {saving ? "Saving…" : "Save workflow"}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -224,14 +224,10 @@ export default function WorkflowBuilder({ name, initialYaml, onSave, saving, sav
           <div className="flex h-full gap-3">
             <div className="min-w-0 flex-1 rounded-lg border border-neutral-800">
               <div className="border-b border-neutral-800 p-2">
-                <button
-                  type="button"
-                  onClick={addJob}
-                  className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 hover:bg-neutral-800"
-                >
+                <Button variant="default" size="sm" onClick={addJob}>
                   <Plus className="h-3 w-3" strokeWidth={2} />
                   Add job
-                </button>
+                </Button>
               </div>
               <ReactFlow
                 nodes={nodes}
