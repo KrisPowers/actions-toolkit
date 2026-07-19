@@ -6,6 +6,8 @@ import { useAccessibleRepos, useGithubTokenStatus } from "../hooks/useGithubAcco
 import GithubConnectButton from "../components/settings/GithubConnectButton";
 import GithubMark from "../components/common/GithubMark";
 import Avatar from "../components/common/Avatar";
+import Button from "../components/common/Button";
+import Input from "../components/common/Input";
 import type { CreateRepoResponse } from "../api/repos";
 
 export default function RepoConnectPage() {
@@ -115,13 +117,9 @@ export default function RepoConnectPage() {
           ))}
         </div>
 
-        <button
-          type="button"
-          onClick={() => navigate("/repos")}
-          className="mt-5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
-        >
+        <Button variant="primary" onClick={() => navigate("/repos")} className="mt-5">
           Done
-        </button>
+        </Button>
       </div>
     );
   }
@@ -192,12 +190,7 @@ export default function RepoConnectPage() {
 
       <div className="relative mt-3">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" strokeWidth={2} />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search repos…"
-          className="w-full rounded-md border border-neutral-700 bg-neutral-950 py-2 pl-9 pr-3 text-sm text-neutral-100 outline-none focus:border-accent"
-        />
+        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search repos…" className="w-full py-2 pl-9 pr-3" />
       </div>
 
       <div className="mt-3 max-h-72 overflow-y-auto rounded-md border border-neutral-800">
@@ -216,14 +209,9 @@ export default function RepoConnectPage() {
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={connectSelected}
-        disabled={selected.size === 0 || connecting}
-        className="mt-4 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60"
-      >
+      <Button variant="primary" onClick={connectSelected} disabled={selected.size === 0 || connecting} className="mt-4 w-full">
         {connecting ? "Connecting…" : `Connect ${selected.size || ""} repo${selected.size === 1 ? "" : "s"}`.trim()}
-      </button>
+      </Button>
 
       <button
         type="button"
@@ -237,30 +225,14 @@ export default function RepoConnectPage() {
       {showManual && (
         <form onSubmit={connectManual} className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
           <label className="block text-xs font-medium text-neutral-400">Owner</label>
-          <input
-            value={manualOwner}
-            onChange={(e) => setManualOwner(e.target.value)}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent"
-          />
+          <Input value={manualOwner} onChange={(e) => setManualOwner(e.target.value)} className="mt-1 w-full" />
           <label className="mt-3 block text-xs font-medium text-neutral-400">Repository name</label>
-          <input
-            value={manualName}
-            onChange={(e) => setManualName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent"
-          />
+          <Input value={manualName} onChange={(e) => setManualName(e.target.value)} className="mt-1 w-full" />
           <label className="mt-3 block text-xs font-medium text-neutral-400">Default branch</label>
-          <input
-            value={manualBranch}
-            onChange={(e) => setManualBranch(e.target.value)}
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent"
-          />
-          <button
-            type="submit"
-            disabled={!manualOwner || !manualName || connecting}
-            className="mt-4 w-full rounded-md border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
-          >
+          <Input value={manualBranch} onChange={(e) => setManualBranch(e.target.value)} className="mt-1 w-full font-mono" />
+          <Button type="submit" variant="default" disabled={!manualOwner || !manualName || connecting} className="mt-4 w-full">
             Connect repo
-          </button>
+          </Button>
         </form>
       )}
     </div>
