@@ -24,16 +24,16 @@ struct CreatedHook {
 }
 
 /// Creates a repo webhook pointed at this instance's own receiver (`webhooks::receive`, which
-/// this migration leaves untouched), subscribed to the same push/PR/release events the previous
-/// manual setup instructed users to add by hand. Returns the hook's GitHub-side ID so it can be
-/// torn down later by `delete_webhook`. octocrab has no typed hooks-create API (only
+/// this migration leaves untouched), subscribed to the same push/PR/release/issues events the
+/// previous manual setup instructed users to add by hand. Returns the hook's GitHub-side ID so it
+/// can be torn down later by `delete_webhook`. octocrab has no typed hooks-create API (only
 /// `list_deliveries`/`retry_delivery`), so this goes through its generic `post`, which already
 /// maps a non-2xx response into an `Err` for us.
 pub async fn create_webhook(client: &Octocrab, owner: &str, repo: &str, payload_url: &str, secret: &str) -> Result<u64> {
     let body = CreateHookRequest {
         name: "web",
         active: true,
-        events: vec!["push", "pull_request", "release"],
+        events: vec!["push", "pull_request", "release", "issues"],
         config: CreateHookConfig { url: payload_url.to_string(), content_type: "json", secret: secret.to_string() },
     };
 

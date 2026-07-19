@@ -1,7 +1,7 @@
 use globset::Glob;
 use serde_json::Value;
 
-use super::model::{PrEventType, ReleaseEventType, Workflow};
+use super::model::{IssuesEventType, PrEventType, ReleaseEventType, Workflow};
 
 /// Details about how/why a workflow should run, extracted from a matched webhook event.
 pub struct MatchedRun {
@@ -15,6 +15,7 @@ pub fn matches(workflow: &Workflow, github_event: &str, payload: &Value) -> Opti
         "push" => match_push(workflow, payload),
         "pull_request" => match_pull_request(workflow, payload),
         "release" => match_release(workflow, payload),
+        "issues" => match_issues(workflow, payload),
         _ => None,
     }
 }
@@ -114,6 +115,36 @@ fn release_event_type_from_action(action: &str) -> Option<ReleaseEventType> {
         "deleted" => ReleaseEventType::Deleted,
         "prereleased" => ReleaseEventType::Prereleased,
         "released" => ReleaseEventType::Released,
+        _ => return None,
+    })
+}
+
+/// Issues have no commit to attach a run to, so the correlated ref is a synthetic
+/// `refs/issues/{number}` marker (mirroring the `refs/pull/{number}/head` scheme used for PRs)
+/// purely so the UI can look up which runs belong to a given issue.
+fn match_issues(workflow: &Workflow, payload: &Value) -> Option<MatchedRun> {
+    let issues_trigger = workflow.on.issues.as_ref()?;
+    let action = payload.get("action")?.as_str()?;
+    let event_type = issues_event_type_from_action(action)?;
+
+    if !issues_trigger.types.is_empty() && !issues_trigger.types.contains(&event_type) {
+        return None;
+    }
+
+    let number = payload.get("issue")?.get("number")?.as_u64()?;
+    Some(MatchedRun { ref_name: Some(format!("refs/issues/{number}")), commit_sha: None })
+}
+
+fn issues_event_type_from_action(action: &str) -> Option<IssuesEventType> {
+    Some(match action {
+        "opened" => IssuesEventType::Opened,
+        "edited" => IssuesEventType::Edited,
+        "closed" => IssuesEventType::Closed,
+        "reopened" => IssuesEventType::Reopened,
+        "labeled" => IssuesEventType::Labeled,
+        "unlabeled" => IssuesEventType::Unlabeled,
+        "assigned" => IssuesEventType::Assigned,
+        "unassigned" => IssuesEventType::Unassigned,
         _ => return None,
     })
 }

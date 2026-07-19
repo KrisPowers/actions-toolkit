@@ -23,6 +23,8 @@ pub struct TriggerConfig {
     pub pull_request: Option<PullRequestTrigger>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release: Option<ReleaseTrigger>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issues: Option<IssuesTrigger>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "workflow_dispatch")]
     pub workflow_dispatch: Option<ManualTrigger>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -74,6 +76,25 @@ pub enum ReleaseEventType {
 pub struct ReleaseTrigger {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub types: Vec<ReleaseEventType>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IssuesEventType {
+    Opened,
+    Edited,
+    Closed,
+    Reopened,
+    Labeled,
+    Unlabeled,
+    Assigned,
+    Unassigned,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IssuesTrigger {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub types: Vec<IssuesEventType>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
