@@ -624,12 +624,35 @@ fn pwsh_available() -> bool {
 fn resolve_shell_cmdline(shell: Option<&str>, shell_command: &str) -> String {
     match shell.map(str::to_ascii_lowercase).as_deref() {
         Some("cmd") => format!("cmd.exe /d /s /c \"{shell_command}\""),
-        Some("powershell") => format!("powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
-        Some("pwsh") => format!("pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
+        Some("powershell") => format!(
+            "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+            encode_powershell_command(shell_command)
+        ),
+        Some("pwsh") => format!(
+            "pwsh.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+            encode_powershell_command(shell_command)
+        ),
         Some(other) => format!("{other} \"{shell_command}\""),
-        None if pwsh_available() => format!("pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
-        None => format!("powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
+        None if pwsh_available() => format!(
+            "pwsh.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+            encode_powershell_command(shell_command)
+        ),
+        None => format!(
+            "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+            encode_powershell_command(shell_command)
+        ),
     }
+}
+
+/// `-Command "<script>"` naively wraps the script in one pair of double quotes with no escaping,
+/// so any double quote in the script (i.e. almost any real PowerShell script) truncates the
+/// argument early and corrupts everything after it. `-EncodedCommand` takes base64'd UTF-16LE
+/// instead, sidestepping command-line quoting entirely — the same approach GitHub Actions' own
+/// Windows runner uses for multi-line `run:` steps.
+fn encode_powershell_command(script: &str) -> String {
+    use base64::Engine;
+    let utf16le: Vec<u8> = script.encode_utf16().flat_map(|unit| unit.to_le_bytes()).collect();
+    base64::engine::general_purpose::STANDARD.encode(utf16le)
 }
 
 #[cfg(test)]
@@ -785,12 +808,35 @@ mod tests {
         assert_eq!(resolve_shell_cmdline(Some("cmd"), "echo hi"), "cmd.exe /d /s /c \"echo hi\"");
         assert_eq!(
             resolve_shell_cmdline(Some("PowerShell"), "Write-Host hi"),
-            "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"Write-Host hi\""
+            format!(
+                "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+                encode_powershell_command("Write-Host hi")
+            )
         );
         assert_eq!(
             resolve_shell_cmdline(Some("pwsh"), "Write-Host hi"),
-            "pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"Write-Host hi\""
+            format!(
+                "pwsh.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+                encode_powershell_command("Write-Host hi")
+            )
         );
+    }
+
+    /// A script containing double quotes (i.e. almost any real PowerShell script) used to
+    /// truncate `-Command "<script>"` at the first embedded quote and corrupt everything after
+    /// it. `-EncodedCommand` must survive this untouched, decoding back to the exact original.
+    #[test]
+    fn resolve_shell_cmdline_encoded_command_survives_embedded_quotes() {
+        let script = "Write-Host \"hello $env:GITHUB_TOKEN\" -split \"`n\"";
+        let cmdline = resolve_shell_cmdline(Some("powershell"), script);
+        let encoded = cmdline.rsplit(' ').next().unwrap();
+        assert_eq!(encoded, encode_powershell_command(script));
+
+        use base64::Engine;
+        let decoded_bytes = base64::engine::general_purpose::STANDARD.decode(encoded).unwrap();
+        let decoded_utf16: Vec<u16> =
+            decoded_bytes.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect();
+        assert_eq!(String::from_utf16(&decoded_utf16).unwrap(), script);
     }
 
     #[test]
