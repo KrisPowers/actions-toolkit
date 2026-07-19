@@ -3,6 +3,9 @@ import type { Job, Step } from "../../api/types";
 import { useRuntimeStatus } from "../../hooks/useSettings";
 import ConditionRuleBuilder from "./ConditionRuleBuilder";
 import StepConfigPanel from "./StepConfigPanel";
+import Input from "../../components/common/Input";
+import Button from "../../components/common/Button";
+import { fieldClass } from "../../lib/fieldClass";
 
 interface Props {
   jobKey: string;
@@ -30,11 +33,7 @@ export default function JobConfigPanel({ jobKey, job, onChange, onRemove }: Prop
       </div>
 
       <label className="mt-4 block text-xs font-medium text-neutral-400">Display name</label>
-      <input
-        value={job.name ?? ""}
-        onChange={(e) => onChange({ ...job, name: e.target.value })}
-        className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent"
-      />
+      <Input value={job.name ?? ""} onChange={(e) => onChange({ ...job, name: e.target.value })} className="mt-1 w-full" />
 
       <div className="mt-3 text-xs font-medium text-neutral-400">Sandbox</div>
       <div className="mt-1 flex w-fit gap-1 rounded-md border border-neutral-700 p-0.5">
@@ -71,11 +70,11 @@ export default function JobConfigPanel({ jobKey, job, onChange, onRemove }: Prop
       {job.container && (
         <>
           <label className="mt-2 block text-xs font-medium text-neutral-400">Container image</label>
-          <input
+          <Input
             value={job.container.image}
             onChange={(e) => onChange({ ...job, container: { ...job.container!, image: e.target.value } })}
             placeholder="node:20-alpine"
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 font-mono text-sm text-neutral-100 outline-none focus:border-accent"
+            className="mt-1 w-full font-mono"
           />
         </>
       )}
@@ -128,38 +127,39 @@ export default function JobConfigPanel({ jobKey, job, onChange, onRemove }: Prop
           </button>
         </div>
         {job.artifacts.map((a, i) => (
-          <div key={i} className="mt-1.5 flex gap-2">
+          <div key={i} className="mt-1.5 flex items-center gap-2">
             <input
               value={a.name}
               onChange={(e) =>
                 onChange({ ...job, artifacts: job.artifacts.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })
               }
-              className="w-28 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-100"
+              className={fieldClass("w-28 px-2 py-1 text-xs")}
             />
             <input
               value={a.path}
               onChange={(e) =>
                 onChange({ ...job, artifacts: job.artifacts.map((x, j) => (j === i ? { ...x, path: e.target.value } : x)) })
               }
-              className="flex-1 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-100"
+              className={fieldClass("flex-1 px-2 py-1 font-mono text-xs")}
             />
-            <button
-              type="button"
+            <Button
+              variant="invisible"
+              size="icon"
               onClick={() => onChange({ ...job, artifacts: job.artifacts.filter((_, j) => j !== i) })}
               aria-label={`Remove artifact ${a.name}`}
-              className="text-[var(--color-status-error)] hover:underline"
+              className="hover:text-[var(--color-status-error)]"
             >
               <X className="h-3.5 w-3.5" strokeWidth={2} />
-            </button>
+            </Button>
           </div>
         ))}
       </div>
 
       <label className="mt-4 block text-xs font-medium text-neutral-400">Download artifacts from earlier jobs (comma separated)</label>
-      <input
+      <Input
         value={job.download_artifacts.join(", ")}
         onChange={(e) => onChange({ ...job, download_artifacts: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
-        className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-100 outline-none focus:border-accent"
+        className="mt-1 w-full text-xs"
       />
     </div>
   );
