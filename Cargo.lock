@@ -273,6 +273,7 @@ dependencies = [
  "anyhow",
  "atk-config",
  "atk-db",
+ "base64",
  "caps",
  "chrono",
  "libc",
