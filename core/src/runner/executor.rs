@@ -38,7 +38,10 @@ pub async fn run_job(
 ) -> Result<bool> {
     run_queries::set_job_status(&state.db, job_run_id, "running", None, false).await?;
 
-    let workspace_dir = workspace::ensure(&state.config.workspaces_dir(), workflow_run_id)?;
+    // Keyed by job_run_id, not workflow_run_id: each job gets its own workspace so files one job
+    // writes aren't implicitly visible to jobs that run after it. download_artifacts is the only
+    // way to pass files between jobs, matching GitHub Actions' own per-job isolation.
+    let workspace_dir = workspace::ensure(&state.config.workspaces_dir(), job_run_id)?;
 
     // Mirrors GitHub Actions' automatic `GITHUB_TOKEN`: steps need the same credential checkout
     // already uses to reach the GitHub API themselves (e.g. to update a release), since this app
@@ -471,6 +474,123 @@ mod tests {
         let artifact_path = state.config.artifacts_dir().join("run-1").join("out");
         assert!(artifact_path.exists(), "expected the artifact to have been captured to {}", artifact_path.display());
         assert_eq!(std::fs::read_to_string(&artifact_path).unwrap().trim(), "hello");
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// Rule-proving test for the workspace-isolation fix: two jobs in the same run must not see
+    /// each other's files unless explicitly passed via `download_artifacts`. job-a writes a file
+    /// into its own workspace; job-b actively checks (the same way a real step would, with a
+    /// live conditional, not just a path comparison from the test itself) whether that file is
+    /// visible to it and records the result as its own artifact. Before the fix, both jobs
+    /// resolved to the same workflow_run_id-keyed directory, so job-b would have seen job-a's
+    /// file despite declaring no download_artifacts.
+    #[tokio::test]
+    async fn jobs_in_the_same_run_do_not_share_a_workspace() {
+        let capability = crate::bucket::probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let data_dir = std::env::temp_dir().join(format!("atk-executor-isolation-test-{test_id}"));
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let config = AppConfig {
+            data_dir: data_dir.clone(),
+            github_app_client_id: "test-client-id".to_string(),
+            github_oauth_token_url: crate::github::oauth::GITHUB_TOKEN_URL.to_string(),
+            github_device_code_url: crate::github::oauth::GITHUB_DEVICE_CODE_URL.to_string(),
+        };
+        let db = crate::db::connect(&config.db_path()).await.expect("db connect should succeed");
+        let enc = EncryptionKey::load_or_generate(None, &config.secrets_dir()).expect("encryption key should load");
+        let jwt = JwtCodec::new("test-secret");
+
+        seed_fk_chain(&db, "repo-2", "workflow-2", "run-2", "job-a").await;
+        sqlx::query("INSERT INTO job_runs (id, workflow_run_id, job_key, status) VALUES ('job-b', 'run-2', 'second', 'running')")
+            .execute(&db)
+            .await
+            .unwrap();
+
+        let state = AppState(Arc::new(AppStateInner {
+            db,
+            config,
+            jwt,
+            enc,
+            docker: None,
+            bucket_capability_ok: true,
+            log_hub: Arc::new(LogHub::new()),
+            github_client: RwLock::new(None),
+            pending_device_flow: RwLock::new(None),
+        }));
+
+        let shell = if cfg!(windows) { Some("cmd".to_string()) } else { None };
+        let write_command = "echo hello > only-in-job-a.txt".to_string();
+        let check_command = if cfg!(windows) {
+            "if exist only-in-job-a.txt (echo LEAKED > marker.txt) else (echo ISOLATED > marker.txt)".to_string()
+        } else {
+            "if [ -f only-in-job-a.txt ]; then echo LEAKED > marker.txt; else echo ISOLATED > marker.txt; fi".to_string()
+        };
+
+        let job_a = Job {
+            name: None,
+            runs_on: "self-hosted".to_string(),
+            container: None,
+            needs: vec![],
+            if_condition: None,
+            strategy: None,
+            steps: vec![Step {
+                name: Some("write a file into this job's own workspace".to_string()),
+                id: None,
+                run: Some(write_command),
+                uses: None,
+                with: None,
+                env: None,
+                if_condition: None,
+                continue_on_error: false,
+                shell: shell.clone(),
+            }],
+            artifacts: vec![],
+            download_artifacts: vec![],
+            network: false,
+        };
+
+        let job_b = Job {
+            name: None,
+            runs_on: "self-hosted".to_string(),
+            container: None,
+            needs: vec![],
+            if_condition: None,
+            strategy: None,
+            steps: vec![Step {
+                name: Some("check whether job-a's file leaked into this workspace".to_string()),
+                id: None,
+                run: Some(check_command),
+                uses: None,
+                with: None,
+                env: None,
+                if_condition: None,
+                continue_on_error: false,
+                shell,
+            }],
+            artifacts: vec![ArtifactSpec { name: "marker".to_string(), path: "/workspace/marker.txt".to_string() }],
+            download_artifacts: vec![],
+            network: false,
+        };
+
+        let job_a_ok = run_job(&state, &None, "run-2", "job-a", &job_a, None).await.expect("job-a should not error");
+        assert!(job_a_ok, "expected job-a to succeed");
+        let job_b_ok = run_job(&state, &None, "run-2", "job-b", &job_b, None).await.expect("job-b should not error");
+        assert!(job_b_ok, "expected job-b to succeed");
+
+        let marker_path = state.config.artifacts_dir().join("run-2").join("marker");
+        assert!(marker_path.exists(), "expected job-b's marker artifact to have been captured to {}", marker_path.display());
+        assert_eq!(
+            std::fs::read_to_string(&marker_path).unwrap().trim(),
+            "ISOLATED",
+            "job-b must not see the file job-a wrote into its own workspace"
+        );
 
         let _ = std::fs::remove_dir_all(&data_dir);
     }
