@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Tag, X } from "lucide-react";
 import { githubApi } from "../api/github";
+import { useRuns } from "../hooks/useRuns";
 import Button from "../components/common/Button";
 import Input from "../components/common/Input";
 import Textarea from "../components/common/Textarea";
@@ -10,6 +11,7 @@ import PageHeader from "../components/common/PageHeader";
 import Card, { listCardClass } from "../components/common/Card";
 import EmptyState from "../components/common/EmptyState";
 import Checkbox from "../components/common/Checkbox";
+import ItemWorkflowRuns from "../components/runs/ItemWorkflowRuns";
 import { relativeTime } from "../lib/relativeTime";
 
 export default function ReleasesPage() {
@@ -21,12 +23,16 @@ export default function ReleasesPage() {
   const [body, setBody] = useState("");
   const [draft, setDraft] = useState(false);
   const [prerelease, setPrerelease] = useState(false);
+  const [expanded, setExpanded] = useState<number | null>(null);
 
   const { data: releases, isLoading } = useQuery({
     queryKey: ["releases", repoId],
     queryFn: () => githubApi.listReleases(repoId as string),
     enabled: !!repoId,
   });
+
+  const { data: runs } = useRuns(repoId, 200);
+  const runsForRelease = (tag: string) => (runs ?? []).filter((r) => r.ref_name === tag);
 
   const createRelease = useMutation({
     mutationFn: () => githubApi.createRelease(repoId as string, { tag_name: tagName, name, body, draft, prerelease }),
@@ -80,15 +86,21 @@ export default function ReleasesPage() {
       <div className={listCardClass("mt-4")}>
         {(releases ?? []).map((r) => (
           <div key={r.id} className="px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Tag className="h-3.5 w-3.5 text-neutral-500" strokeWidth={2} />
-              <span className="text-sm font-medium text-neutral-200">{r.name || r.tag_name}</span>
-              <span className="font-mono text-xs text-neutral-500">{r.tag_name}</span>
-              {r.draft && <span className="text-xs text-[var(--color-status-warning)]">draft</span>}
-              {r.prerelease && <span className="text-xs text-[var(--color-status-info)]">pre-release</span>}
-              {r.published_at && <span className="text-xs text-neutral-600">published {relativeTime(r.published_at)}</span>}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Tag className="h-3.5 w-3.5 text-neutral-500" strokeWidth={2} />
+                <span className="text-sm font-medium text-neutral-200">{r.name || r.tag_name}</span>
+                <span className="font-mono text-xs text-neutral-500">{r.tag_name}</span>
+                {r.draft && <span className="text-xs text-[var(--color-status-warning)]">draft</span>}
+                {r.prerelease && <span className="text-xs text-[var(--color-status-info)]">pre-release</span>}
+                {r.published_at && <span className="text-xs text-neutral-600">published {relativeTime(r.published_at)}</span>}
+              </div>
+              <Button variant="default" size="sm" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
+                Workflows{runsForRelease(r.tag_name).length > 0 ? ` (${runsForRelease(r.tag_name).length})` : ""}
+              </Button>
             </div>
             {r.body && <p className="mt-1 whitespace-pre-wrap text-xs text-neutral-500">{r.body}</p>}
+            {expanded === r.id && <ItemWorkflowRuns repoId={repoId as string} runs={runsForRelease(r.tag_name)} emptyLabel="release" />}
           </div>
         ))}
         {(releases ?? []).length === 0 && !isLoading && <EmptyState icon={Tag} message="No releases yet." />}
