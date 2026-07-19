@@ -4,8 +4,9 @@ A self-hosted, local alternative to GitHub Actions. actions-toolkit runs your CI
 **on your own machine** instead of GitHub-hosted runners, so you stop paying for Actions minutes
 while keeping a workflow-file-driven, trigger-based pipeline you already know.
 
-- **Rust backend** (axum + SQLite + Docker) serves a REST/WebSocket API and executes workflow
-  jobs as Docker containers on the host, mirroring GitHub Actions' execution model.
+- **Rust backend** (axum + SQLite) serves a REST/WebSocket API and executes workflow jobs on the
+  host, mirroring GitHub Actions' execution model: as Docker containers for jobs that declare a
+  `container:` image, or through a built-in native sandbox ("Bucket") for jobs that don't.
 - **React/TypeScript UI** (served by the same binary) gives you configuration, live logs, run
   history, and analytics, plus GitHub issue/PR/release management.
 - **Two ways to author workflows**: a full YAML code editor (Monaco), or a drag-and-drop visual
@@ -24,8 +25,9 @@ while keeping a workflow-file-driven, trigger-based pipeline you already know.
    what it needs to be reachable at.
 4. Define workflows (`on:` triggers, `jobs:`, `steps:`) either as YAML or visually.
 5. When a matching event arrives (or you click "Run now"), actions-toolkit checks out your repo,
-   spins up a Docker container per job, runs each step, streams logs live to the UI, and captures
-   any declared artifacts, all on your own hardware.
+   starts each job (a Docker container if it declares one, the Bucket sandbox otherwise), runs
+   each step, streams logs live to the UI, and captures any declared artifacts, all on your own
+   hardware.
 
 One GitHub connection covers every repo the App installation grants access to; there's no
 per-repo credential to manage, and the underlying token is never entered, displayed, or stored as
@@ -77,9 +79,9 @@ No prebuilt binary for your OS/architecture yet? Build from source, see below.
 
 - [Rust](https://rustup.rs/) (stable toolchain)
 - [Node.js](https://nodejs.org/) 20+ and npm
-- [Docker](https://www.docker.com/) running locally. This is what actually executes workflow
-  jobs. The server starts without it, but dispatching a workflow will fail until Docker is
-  reachable.
+- [Docker](https://www.docker.com/) running locally, only if a workflow's job declares a
+  `container:` image. Jobs without one run through the built-in "Bucket" sandbox (native Linux
+  namespaces/cgroups or a Windows AppContainer) instead, with no Docker involved at all.
 - A GitHub account that can install the shared actions-toolkit App (see below) on whichever repos
   you want to connect. No token to generate ahead of time.
 
@@ -191,7 +193,9 @@ sequentially, just like GitHub's own runners.
 - The accessible-repos picker lists up to a few hundred repos (a handful of paginated requests);
   very large orgs may not see their entire repo list there, but can still connect a repo by exact
   owner/name via the manual fallback.
-- **Docker is required** to execute anything; there's no non-container execution mode.
+- **Docker is only required for jobs that declare a `container:` image.** Jobs without one run
+  through the built-in "Bucket" sandbox (native Linux namespaces/cgroups, or a Windows
+  AppContainer) instead, with no Docker involved.
 - The visual builder and the YAML editor share one canonical model, but the backend regenerates
   YAML on every visual-builder save, so hand-written comments and formatting are not preserved
   once you save from visual mode.
