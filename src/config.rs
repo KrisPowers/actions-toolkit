@@ -12,6 +12,11 @@ use crate::crypto::EncryptionKey;
 /// Overridable via `GITHUB_APP_CLIENT_ID` for forks that register their own App.
 pub const DEFAULT_GITHUB_APP_CLIENT_ID: &str = "Iv23liCp6juYQps4Dxdu";
 
+/// Slug of the shared actions-toolkit GitHub App, used to build its public install URL
+/// (`https://github.com/apps/<slug>/installations/new`) and to match it against a user's
+/// installations after a device-flow connect.
+pub const GITHUB_APP_SLUG: &str = "actionstoolkit";
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = "actions-toolkit", about = "Local, self-hosted GitHub Actions-compatible runner")]
 pub struct Cli {
@@ -105,11 +110,14 @@ pub struct StartArgs {
 pub struct AppConfig {
     pub data_dir: PathBuf,
     pub github_app_client_id: String,
-    /// GitHub's OAuth token endpoint. Always `github::oauth::GITHUB_TOKEN_URL` outside of tests;
-    /// not exposed as a CLI flag/env var since there's no legitimate reason for a real deployment
-    /// to point this anywhere else. Tests construct `AppConfig` directly and override it to a
-    /// mock server's URI, the same pattern already used for `github_app_client_id` in fixtures.
+    /// GitHub's OAuth token endpoint (used for both the device-flow poll and refresh grants).
+    /// Always `github::oauth::GITHUB_TOKEN_URL` outside of tests; not exposed as a CLI flag/env
+    /// var since there's no legitimate reason for a real deployment to point this anywhere else.
+    /// Tests construct `AppConfig` directly and override it to a mock server's URI, the same
+    /// pattern already used for `github_app_client_id` in fixtures.
     pub github_oauth_token_url: String,
+    /// GitHub's device-code endpoint. Same testability rationale as `github_oauth_token_url`.
+    pub github_device_code_url: String,
 }
 
 impl AppConfig {
@@ -169,6 +177,7 @@ pub async fn bootstrap(
         data_dir,
         github_app_client_id: github_app_client_id.unwrap_or_else(|| DEFAULT_GITHUB_APP_CLIENT_ID.to_string()),
         github_oauth_token_url: crate::github::oauth::GITHUB_TOKEN_URL.to_string(),
+        github_device_code_url: crate::github::oauth::GITHUB_DEVICE_CODE_URL.to_string(),
     };
     std::fs::create_dir_all(&app_config.data_dir)?;
     std::fs::create_dir_all(app_config.workspaces_dir())?;

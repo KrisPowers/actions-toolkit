@@ -124,7 +124,12 @@ mod tests {
 
         let db = crate::db::connect(&data_dir.join("db.sqlite")).await.unwrap();
         let enc = EncryptionKey::load_or_generate(None, &data_dir.join("secrets")).unwrap();
-        let config = AppConfig { data_dir, github_app_client_id: "test-client-id".to_string(), github_oauth_token_url: token_url };
+        let config = AppConfig {
+            data_dir,
+            github_app_client_id: "test-client-id".to_string(),
+            github_oauth_token_url: token_url,
+            github_device_code_url: crate::github::oauth::GITHUB_DEVICE_CODE_URL.to_string(),
+        };
 
         AppState(Arc::new(AppStateInner {
             db,
@@ -135,7 +140,7 @@ mod tests {
             bucket_capability_ok: true,
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
-            oauth_states: Default::default(),
+            pending_device_flow: RwLock::new(None),
         }))
     }
 

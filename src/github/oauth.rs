@@ -1,90 +1,66 @@
 use anyhow::{Context, Result};
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine;
 use chrono::{DateTime, Utc};
-use rand::RngCore;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
-const GITHUB_AUTHORIZE_URL: &str = "https://github.com/login/oauth/authorize";
-/// GitHub's OAuth token endpoint, used for both the initial code exchange and refresh grants.
+/// GitHub's OAuth token endpoint, used for both the device-flow poll and refresh grants.
 /// Default value of `AppConfig::github_oauth_token_url`; tests override that config field to
 /// point at a mock server instead of hardcoding around this constant.
 pub const GITHUB_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
+/// GitHub's device-code endpoint. Default value of `AppConfig::github_device_code_url`.
+pub const GITHUB_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
 
-/// How long an unused authorize attempt (state + PKCE verifier) stays valid before a callback
-/// using it is rejected as stale.
-const PENDING_TTL_MINUTES: i64 = 5;
-
-pub struct Pkce {
-    pub verifier: String,
-    pub challenge: String,
+/// A pending device-flow connect attempt: the device code needed to poll for completion, and
+/// when it expires. There is at most one of these at a time, held in
+/// `AppStateInner::pending_device_flow`, since only one operator can be mid-connect on a
+/// single-instance tool; starting a new attempt simply replaces whatever was there before.
+#[derive(Clone)]
+pub struct PendingDeviceFlow {
+    pub device_code: String,
+    pub interval_secs: i64,
+    pub expires_at: DateTime<Utc>,
 }
 
-/// Generates a PKCE code verifier (32 random bytes, base64url-encoded to 43 characters, within
-/// the RFC 7636 43-128 range) and its S256 challenge.
-pub fn generate_pkce() -> Pkce {
-    let mut bytes = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    let verifier = URL_SAFE_NO_PAD.encode(bytes);
-
-    let mut hasher = Sha256::new();
-    hasher.update(verifier.as_bytes());
-    let challenge = URL_SAFE_NO_PAD.encode(hasher.finalize());
-
-    Pkce { verifier, challenge }
+pub struct DeviceCodeStart {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_in: i64,
+    pub interval: i64,
 }
 
-/// Generates an opaque, unguessable CSRF state value for the authorize request.
-pub fn generate_state() -> String {
-    let mut bytes = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    URL_SAFE_NO_PAD.encode(bytes)
+#[derive(Debug, Deserialize)]
+struct DeviceCodeResponse {
+    device_code: String,
+    user_code: String,
+    verification_uri: String,
+    expires_in: i64,
+    interval: i64,
 }
 
-/// A stored, not-yet-completed authorize attempt: the PKCE verifier the callback needs to
-/// complete the exchange, and when it was issued. Keyed by the CSRF `state` value in
-/// `AppStateInner::oauth_states`; removed the moment a callback looks it up, so a state value
-/// can be redeemed at most once by construction.
-pub struct PendingAuthorize {
-    pub code_verifier: String,
-    pub created_at: DateTime<Utc>,
-}
+/// Starts a device-flow connect attempt: GitHub returns a `user_code` to show the operator and a
+/// `device_code` this instance polls with. No client secret is sent (device flow is the one
+/// GitHub OAuth flow that genuinely doesn't need one — see the doc comment on `refresh_access_token`
+/// for why the redirect-based authorization-code flow this replaced needed one after all).
+pub async fn start_device_flow(device_code_url: &str, client_id: &str) -> Result<DeviceCodeStart> {
+    let client = reqwest::Client::new();
+    let resp: DeviceCodeResponse = client
+        .post(device_code_url)
+        .header("Accept", "application/json")
+        .form(&[("client_id", client_id)])
+        .send()
+        .await
+        .context("failed to reach GitHub's device code endpoint")?
+        .json()
+        .await
+        .context("failed to parse GitHub's device code response")?;
 
-impl PendingAuthorize {
-    pub fn is_expired(&self) -> bool {
-        Utc::now() - self.created_at > chrono::Duration::minutes(PENDING_TTL_MINUTES)
-    }
-}
-
-/// Looks up and removes the pending authorize attempt for `state_param`. Removing on lookup
-/// means a second call with the same state (a replay) finds nothing, and a `None` state param
-/// (missing entirely) is rejected before any map access. Pure and side-effect-free beyond the
-/// map mutation, so it's directly unit-testable without a running server or a GitHub call.
-pub fn take_pending(
-    states: &dashmap::DashMap<String, PendingAuthorize>,
-    state_param: Option<&str>,
-) -> Result<PendingAuthorize> {
-    let key = state_param.ok_or_else(|| anyhow::anyhow!("missing state parameter"))?;
-    let pending = states
-        .remove(key)
-        .map(|(_, v)| v)
-        .ok_or_else(|| anyhow::anyhow!("unknown or already-used state parameter"))?;
-    if pending.is_expired() {
-        anyhow::bail!("expired state parameter");
-    }
-    Ok(pending)
-}
-
-pub fn authorize_url(client_id: &str, redirect_uri: &str, state: &str, challenge: &str) -> String {
-    let mut url = reqwest::Url::parse(GITHUB_AUTHORIZE_URL).expect("GITHUB_AUTHORIZE_URL is a valid static URL");
-    url.query_pairs_mut()
-        .append_pair("client_id", client_id)
-        .append_pair("redirect_uri", redirect_uri)
-        .append_pair("state", state)
-        .append_pair("code_challenge", challenge)
-        .append_pair("code_challenge_method", "S256");
-    url.to_string()
+    Ok(DeviceCodeStart {
+        device_code: resp.device_code,
+        user_code: resp.user_code,
+        verification_uri: resp.verification_uri,
+        expires_in: resp.expires_in,
+        interval: resp.interval,
+    })
 }
 
 pub struct ExchangedToken {
@@ -100,20 +76,30 @@ struct TokenResponse {
     expires_in: Option<i64>,
     error: Option<String>,
     error_description: Option<String>,
+    interval: Option<i64>,
 }
 
-/// POSTs a token-endpoint request and validates the response shape. `token_url` is a parameter
-/// (not the `GITHUB_TOKEN_URL` constant baked in directly) so tests can point it at a mock
-/// server instead of the real GitHub endpoint; production callers pass
-/// `AppConfig::github_oauth_token_url`, which defaults to `GITHUB_TOKEN_URL`. GitHub reports
-/// failures (denied, expired code, revoked refresh token) as a 200 with an `error` field rather
-/// than a non-2xx status, so that's checked explicitly rather than relying on HTTP status alone.
-async fn post_token_request(token_url: &str, params: &[(&str, &str)]) -> Result<ExchangedToken> {
+pub enum DevicePollOutcome {
+    /// The operator hasn't approved (or denied) yet; keep polling at the current interval.
+    Pending,
+    /// GitHub asked for a longer interval between polls; the caller should use this from now on.
+    SlowDown { new_interval_secs: i64 },
+    /// The operator explicitly declined on GitHub's side.
+    Denied,
+    /// The device code expired before it was approved; the whole attempt has to restart.
+    Expired,
+    Success(ExchangedToken),
+}
+
+/// Polls once for whether a device-flow attempt has been approved yet. GitHub reports "not yet"
+/// as a 200 with `error: "authorization_pending"` (not a non-2xx status), same shape as the
+/// terminal failure/success cases, so all of it is read from the response body.
+pub async fn poll_device_token(token_url: &str, client_id: &str, device_code: &str) -> Result<DevicePollOutcome> {
     let client = reqwest::Client::new();
     let resp: TokenResponse = client
         .post(token_url)
         .header("Accept", "application/json")
-        .form(params)
+        .form(&[("client_id", client_id), ("device_code", device_code), ("grant_type", "urn:ietf:params:oauth:grant-type:device_code")])
         .send()
         .await
         .context("failed to reach GitHub's token endpoint")?
@@ -121,8 +107,14 @@ async fn post_token_request(token_url: &str, params: &[(&str, &str)]) -> Result<
         .await
         .context("failed to parse GitHub's token response")?;
 
-    if let Some(err) = resp.error {
-        anyhow::bail!("GitHub rejected the request: {err} ({})", resp.error_description.unwrap_or_default());
+    if let Some(err) = resp.error.as_deref() {
+        return Ok(match err {
+            "authorization_pending" => DevicePollOutcome::Pending,
+            "slow_down" => DevicePollOutcome::SlowDown { new_interval_secs: resp.interval.unwrap_or(5) },
+            "expired_token" => DevicePollOutcome::Expired,
+            "access_denied" => DevicePollOutcome::Denied,
+            other => anyhow::bail!("GitHub rejected the device-flow poll: {other} ({})", resp.error_description.unwrap_or_default()),
+        });
     }
 
     let access_token = resp.access_token.context("GitHub's token response had no access_token")?;
@@ -132,71 +124,129 @@ async fn post_token_request(token_url: &str, params: &[(&str, &str)]) -> Result<
     let expires_in = resp
         .expires_in
         .context("GitHub's token response had no expires_in; is 'Expire user authorization tokens' enabled on the App?")?;
-
-    Ok(ExchangedToken { access_token, refresh_token, expires_in })
-}
-
-/// Exchanges an authorization `code` and its PKCE `code_verifier` for an access token. No
-/// client secret is sent: the App is a public OAuth client and PKCE is the only proof required.
-pub async fn exchange_code(token_url: &str, client_id: &str, code: &str, code_verifier: &str, redirect_uri: &str) -> Result<ExchangedToken> {
-    post_token_request(
-        token_url,
-        &[("client_id", client_id), ("code", code), ("code_verifier", code_verifier), ("redirect_uri", redirect_uri)],
-    )
-    .await
+    Ok(DevicePollOutcome::Success(ExchangedToken { access_token, refresh_token, expires_in }))
 }
 
 /// Refreshes an expiring GitHub App user-to-server access token using the stored refresh token.
-/// Same no-client-secret shape as `exchange_code`.
+/// Unlike the initial device-flow exchange, GitHub's refresh grant genuinely takes no client
+/// secret for any flow (device flow included), so this stays a plain `client_id` + refresh token
+/// request.
 pub async fn refresh_access_token(token_url: &str, client_id: &str, refresh_token: &str) -> Result<ExchangedToken> {
-    post_token_request(token_url, &[("client_id", client_id), ("grant_type", "refresh_token"), ("refresh_token", refresh_token)]).await
+    let client = reqwest::Client::new();
+    let resp: TokenResponse = client
+        .post(token_url)
+        .header("Accept", "application/json")
+        .form(&[("client_id", client_id), ("grant_type", "refresh_token"), ("refresh_token", refresh_token)])
+        .send()
+        .await
+        .context("failed to reach GitHub's token endpoint")?
+        .json()
+        .await
+        .context("failed to parse GitHub's token response")?;
+
+    if let Some(err) = resp.error {
+        anyhow::bail!("GitHub rejected the refresh: {err} ({})", resp.error_description.unwrap_or_default());
+    }
+    let access_token = resp.access_token.context("GitHub's token response had no access_token")?;
+    let refresh_token = resp.refresh_token.context("GitHub's token response had no refresh_token")?;
+    let expires_in = resp.expires_in.context("GitHub's token response had no expires_in")?;
+    Ok(ExchangedToken { access_token, refresh_token, expires_in })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashmap::DashMap;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    #[test]
-    fn pkce_challenge_is_the_sha256_of_the_verifier() {
-        let pkce = generate_pkce();
-        assert!(pkce.verifier.len() >= 43 && pkce.verifier.len() <= 128);
-        assert!(pkce.verifier.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    #[tokio::test]
+    async fn start_device_flow_parses_the_response() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "device_code": "d-123",
+                "user_code": "ABCD-1234",
+                "verification_uri": "https://github.com/login/device",
+                "expires_in": 900,
+                "interval": 5
+            })))
+            .mount(&mock_server)
+            .await;
 
-        let mut hasher = Sha256::new();
-        hasher.update(pkce.verifier.as_bytes());
-        let expected = URL_SAFE_NO_PAD.encode(hasher.finalize());
-        assert_eq!(pkce.challenge, expected);
+        let started = start_device_flow(&mock_server.uri(), "client-id").await.unwrap();
+        assert_eq!(started.device_code, "d-123");
+        assert_eq!(started.user_code, "ABCD-1234");
+        assert_eq!(started.interval, 5);
     }
 
-    #[test]
-    fn missing_state_is_rejected() {
-        let states: DashMap<String, PendingAuthorize> = DashMap::new();
-        assert!(take_pending(&states, None).is_err());
+    #[tokio::test]
+    async fn poll_reports_pending_while_unapproved() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "error": "authorization_pending" })))
+            .mount(&mock_server)
+            .await;
+
+        let outcome = poll_device_token(&mock_server.uri(), "client-id", "d-123").await.unwrap();
+        assert!(matches!(outcome, DevicePollOutcome::Pending));
     }
 
-    #[test]
-    fn unknown_state_is_rejected() {
-        let states: DashMap<String, PendingAuthorize> = DashMap::new();
-        assert!(take_pending(&states, Some("never-issued")).is_err());
+    #[tokio::test]
+    async fn poll_reports_denied_when_the_operator_declines() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "error": "access_denied" })))
+            .mount(&mock_server)
+            .await;
+
+        let outcome = poll_device_token(&mock_server.uri(), "client-id", "d-123").await.unwrap();
+        assert!(matches!(outcome, DevicePollOutcome::Denied));
     }
 
-    #[test]
-    fn reused_state_is_rejected_on_the_second_use() {
-        let states: DashMap<String, PendingAuthorize> = DashMap::new();
-        states.insert("s1".to_string(), PendingAuthorize { code_verifier: "v".to_string(), created_at: Utc::now() });
+    #[tokio::test]
+    async fn poll_reports_expired_when_the_device_code_times_out() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "error": "expired_token" })))
+            .mount(&mock_server)
+            .await;
 
-        assert!(take_pending(&states, Some("s1")).is_ok());
-        assert!(take_pending(&states, Some("s1")).is_err());
+        let outcome = poll_device_token(&mock_server.uri(), "client-id", "d-123").await.unwrap();
+        assert!(matches!(outcome, DevicePollOutcome::Expired));
     }
 
-    #[test]
-    fn expired_state_is_rejected() {
-        let states: DashMap<String, PendingAuthorize> = DashMap::new();
-        states.insert(
-            "s1".to_string(),
-            PendingAuthorize { code_verifier: "v".to_string(), created_at: Utc::now() - chrono::Duration::minutes(PENDING_TTL_MINUTES + 1) },
-        );
-        assert!(take_pending(&states, Some("s1")).is_err());
+    #[tokio::test]
+    async fn poll_reports_slow_down_with_the_new_interval() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "error": "slow_down", "interval": 10 })))
+            .mount(&mock_server)
+            .await;
+
+        let outcome = poll_device_token(&mock_server.uri(), "client-id", "d-123").await.unwrap();
+        assert!(matches!(outcome, DevicePollOutcome::SlowDown { new_interval_secs: 10 }));
+    }
+
+    #[tokio::test]
+    async fn poll_reports_success_with_the_issued_tokens() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "ghu_abc",
+                "refresh_token": "ghr_def",
+                "expires_in": 28800
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let outcome = poll_device_token(&mock_server.uri(), "client-id", "d-123").await.unwrap();
+        match outcome {
+            DevicePollOutcome::Success(t) => {
+                assert_eq!(t.access_token, "ghu_abc");
+                assert_eq!(t.refresh_token, "ghr_def");
+                assert_eq!(t.expires_in, 28800);
+            }
+            _ => panic!("expected Success"),
+        }
     }
 }
