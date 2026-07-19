@@ -63,6 +63,7 @@ tar = "0.4"
 zip = "2"
 
 atk-crypto = { path = "../crates/atk-crypto" }
+atk-workflow = { path = "../crates/atk-workflow" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { version = "0.29", features = ["mount", "sched", "process", "fs", "user", "signal"] }
