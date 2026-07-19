@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowRight, PlayCircle } from "lucide-react";
 import { useRepo } from "../hooks/useRepos";
 import { useAnalyticsSummary, useDurationTrend, useStatusBreakdown } from "../hooks/useAnalytics";
 import { useRuns } from "../hooks/useRuns";
@@ -7,6 +7,9 @@ import SuccessRateChart from "../components/analytics/SuccessRateChart";
 import DurationTrendChart from "../components/analytics/DurationTrendChart";
 import StatusBreakdownChart from "../components/analytics/StatusBreakdownChart";
 import StatusBadge from "../components/common/StatusBadge";
+import PageHeader from "../components/common/PageHeader";
+import { listCardClass } from "../components/common/Card";
+import EmptyState from "../components/common/EmptyState";
 
 export default function AnalyticsPage() {
   const { repoId } = useParams();
@@ -18,13 +21,7 @@ export default function AnalyticsPage() {
 
   return (
     <div>
-      <Link to="/" className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-300">
-        <ArrowLeft className="h-3 w-3" strokeWidth={2} />
-        Dashboard
-      </Link>
-      <h1 className="mt-0.5 text-lg font-semibold text-neutral-100">
-        Analytics{repo ? ` · ${repo.owner}/${repo.name}` : ""}
-      </h1>
+      <PageHeader title={`Analytics${repo ? ` · ${repo.owner}/${repo.name}` : ""}`} backTo="/" backLabel="Dashboard" />
 
       {summary && (
         <div className="mt-5">
@@ -47,7 +44,7 @@ export default function AnalyticsPage() {
             </Link>
           )}
         </div>
-        <div className="mt-2 divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900">
+        <div className={listCardClass("mt-2")}>
           {(recentRuns ?? []).map((run) => (
             <Link key={run.id} to={`/runs/${run.id}`} className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-800/50">
               <span className="text-sm text-neutral-300">
@@ -57,7 +54,7 @@ export default function AnalyticsPage() {
               <StatusBadge status={run.status} />
             </Link>
           ))}
-          {(recentRuns ?? []).length === 0 && <div className="px-4 py-5 text-sm text-neutral-500">No runs yet.</div>}
+          {(recentRuns ?? []).length === 0 && <EmptyState icon={PlayCircle} message="No runs yet." />}
         </div>
       </div>
     </div>

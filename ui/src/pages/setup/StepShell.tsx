@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cardClass } from "../../components/common/Card";
 
 const STEP_LABELS = ["Welcome", "Admin account", "GitHub token", "Repos", "Done"];
 
@@ -16,7 +17,7 @@ export default function StepShell({ step, children }: { step: number; children: 
             </div>
           ))}
         </div>
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-6">{children}</div>
+        <div className={cardClass("p-6")}>{children}</div>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Download } from "lucide-react";
 import GithubMark from "../common/GithubMark";
 import Button from "../common/Button";
+import { listCardClass } from "../common/Card";
 import { useGithubWorkflows, useImportGithubWorkflow } from "../../hooks/useWorkflows";
 
 export default function GithubWorkflowsSection({ repoId }: { repoId: string }) {
@@ -38,7 +39,7 @@ export default function GithubWorkflowsSection({ repoId }: { repoId: string }) {
 
       {error && <p className="mt-2 text-xs text-[var(--color-status-error)]">{error}</p>}
 
-      <div className="mt-2 divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900">
+      <div className={listCardClass("mt-2")}>
         {isLoading && <div className="px-4 py-4 text-sm text-neutral-500">Loading…</div>}
         {(files ?? []).map((f) => (
           <div key={f.path} className="flex items-center justify-between px-4 py-3">

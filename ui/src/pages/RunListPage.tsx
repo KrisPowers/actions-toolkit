@@ -1,7 +1,10 @@
 import { Link, useParams } from "react-router-dom";
-import { Clock } from "lucide-react";
+import { Clock, PlayCircle } from "lucide-react";
 import { useRuns } from "../hooks/useRuns";
 import StatusBadge from "../components/common/StatusBadge";
+import PageHeader from "../components/common/PageHeader";
+import { listCardClass } from "../components/common/Card";
+import EmptyState from "../components/common/EmptyState";
 
 export default function RunListPage() {
   const { repoId } = useParams();
@@ -9,11 +12,11 @@ export default function RunListPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold text-neutral-100">Runs</h1>
+      <PageHeader title="Runs" />
 
       {isLoading && <p className="mt-6 text-sm text-neutral-500">Loading…</p>}
 
-      <div className="mt-4 divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900">
+      <div className={listCardClass("mt-4")}>
         {(runs ?? []).map((run) => (
           <Link key={run.id} to={`/runs/${run.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-neutral-800/50">
             <div>
@@ -36,7 +39,7 @@ export default function RunListPage() {
             <StatusBadge status={run.status} />
           </Link>
         ))}
-        {(runs ?? []).length === 0 && !isLoading && <div className="px-4 py-6 text-sm text-neutral-500">No runs yet.</div>}
+        {(runs ?? []).length === 0 && !isLoading && <EmptyState icon={PlayCircle} message="No runs yet." />}
       </div>
     </div>
   );

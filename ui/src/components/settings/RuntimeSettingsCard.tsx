@@ -4,6 +4,7 @@ import { useRuntimeStatus, useSettings, useUpdateSettings } from "../../hooks/us
 import StatusBadge from "../common/StatusBadge";
 import Input from "../common/Input";
 import Button from "../common/Button";
+import Card from "../common/Card";
 
 export default function RuntimeSettingsCard() {
   const { data: settings } = useSettings();
@@ -25,7 +26,7 @@ export default function RuntimeSettingsCard() {
   const jobsValid = Number.isInteger(jobsValue) && jobsValue > 0;
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
+    <Card className="p-5">
       <div className="flex items-center gap-2">
         <Server className="h-4 w-4 text-neutral-500" strokeWidth={2} />
         <h2 className="text-sm font-semibold text-neutral-200">Runtime settings</h2>
@@ -104,6 +105,6 @@ export default function RuntimeSettingsCard() {
         {update.isError && <p className="mt-2 text-xs text-[var(--color-status-error)]">{(update.error as Error).message}</p>}
         {update.isSuccess && <p className="mt-2 text-xs text-neutral-500">Saved.</p>}
       </div>
-    </div>
+    </Card>
   );
 }

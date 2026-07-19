@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowRight, Play, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Play, Plus, Trash2, Workflow } from "lucide-react";
 import { useDeleteWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import { useDispatchWorkflow } from "../hooks/useWorkflows";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import AddWorkflowModal from "../components/workflows/AddWorkflowModal";
 import GithubWorkflowsSection from "../components/workflows/GithubWorkflowsSection";
 import Button from "../components/common/Button";
+import PageHeader from "../components/common/PageHeader";
+import { listCardClass } from "../components/common/Card";
+import EmptyState from "../components/common/EmptyState";
 
 export default function WorkflowListPage() {
   const { repoId } = useParams();
@@ -18,21 +21,23 @@ export default function WorkflowListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-100">Workflows</h1>
-        <div className="flex items-center gap-3">
-          <Link to={`/repos/${repoId}/runs`} className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
-            View runs
-            <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
-          </Link>
-          <Button variant="primary" onClick={() => setShowAddModal(true)}>
-            <Plus className="h-3.5 w-3.5" strokeWidth={2} />
-            Add workflow
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Workflows"
+        actions={
+          <>
+            <Link to={`/repos/${repoId}/runs`} className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
+              View runs
+              <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
+            </Link>
+            <Button variant="primary" onClick={() => setShowAddModal(true)}>
+              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+              Add workflow
+            </Button>
+          </>
+        }
+      />
 
-      <div className="mt-6 divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900">
+      <div className={listCardClass("mt-6")}>
         {(workflows ?? []).map((w) => (
           <div key={w.id} className="flex items-center justify-between px-4 py-3">
             <div>
@@ -56,7 +61,7 @@ export default function WorkflowListPage() {
             </div>
           </div>
         ))}
-        {(workflows ?? []).length === 0 && <div className="px-4 py-6 text-sm text-neutral-500">No workflows yet.</div>}
+        {(workflows ?? []).length === 0 && <EmptyState icon={Workflow} message="No workflows yet." />}
       </div>
 
       {repoId && <GithubWorkflowsSection repoId={repoId} />}

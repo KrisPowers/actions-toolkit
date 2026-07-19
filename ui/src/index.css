@@ -7,12 +7,22 @@
   --color-accent-hover: #0860ca;
   --color-accent-fg: #ffffff;
 
+  --color-btn-primary: #2da44e;
+  --color-btn-primary-hover: #2c974b;
+  --color-btn-primary-fg: #ffffff;
+
   --color-status-success: #1a7f37;
   --color-status-error: #d1242f;
   --color-status-warning: #9a6700;
   --color-status-info: #0969da;
   --color-status-merged: #8250df;
   --color-status-muted: #656d76;
+
+  /* GitHub's global header stays this dark shade in both themes, it does not flip with color-scheme. */
+  --color-header-bg: #151b23;
+  --color-header-border: #3d444d;
+  --color-header-fg: #f0f6fc;
+  --color-header-fg-muted: #9198a1;
 
   --font-mono:
     ui-monospace, "SF Mono", "Segoe UI Mono", "Cascadia Code", Consolas, monospace;
@@ -35,6 +45,10 @@
   --color-accent: #2f81f7;
   --color-accent-hover: #1f6feb;
   --color-accent-fg: #ffffff;
+
+  --color-btn-primary: #238636;
+  --color-btn-primary-hover: #2ea043;
+  --color-btn-primary-fg: #ffffff;
 
   --color-status-success: #3fb950;
   --color-status-error: #f85149;

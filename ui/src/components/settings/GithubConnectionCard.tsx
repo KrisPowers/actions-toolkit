@@ -4,6 +4,7 @@ import { useDeleteGithubToken, useGithubTokenStatus } from "../../hooks/useGithu
 import ConfirmDialog from "../common/ConfirmDialog";
 import GithubConnectButton from "./GithubConnectButton";
 import GithubMark from "../common/GithubMark";
+import Card from "../common/Card";
 
 export default function GithubConnectionCard() {
   const { data: status } = useGithubTokenStatus();
@@ -11,7 +12,7 @@ export default function GithubConnectionCard() {
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   return (
-    <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
+    <Card className="p-5">
       <div className="flex items-center gap-2">
         <GithubMark className="h-4 w-4 text-neutral-500" />
         <h2 className="text-sm font-semibold text-neutral-200">GitHub connection</h2>
@@ -70,6 +71,6 @@ export default function GithubConnectionCard() {
           setConfirmRemove(false);
         }}
       />
-    </div>
+    </Card>
   );
 }

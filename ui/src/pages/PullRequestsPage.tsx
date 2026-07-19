@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, MessageSquare } from "lucide-react";
+import { ArrowRight, GitPullRequest, MessageSquare } from "lucide-react";
 import { githubApi } from "../api/github";
 import StatusBadge from "../components/common/StatusBadge";
 import LabelPill from "../components/common/LabelPill";
 import Avatar from "../components/common/Avatar";
 import Button from "../components/common/Button";
 import Input from "../components/common/Input";
-import Select from "../components/common/Select";
+import PageHeader from "../components/common/PageHeader";
+import { listCardClass } from "../components/common/Card";
+import EmptyState from "../components/common/EmptyState";
+import { TabList, TabButton } from "../components/common/Tabs";
 import { relativeTime } from "../lib/relativeTime";
 
 export default function PullRequestsPage() {
@@ -40,18 +43,23 @@ export default function PullRequestsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-100">Pull Requests</h1>
-        <Select value={state} onChange={(e) => setState(e.target.value as typeof state)} className="py-1">
-          <option value="open">Open</option>
-          <option value="closed">Closed</option>
-          <option value="all">All</option>
-        </Select>
-      </div>
+      <PageHeader title="Pull Requests" />
+
+      <TabList className="mt-4">
+        <TabButton active={state === "open"} onClick={() => setState("open")}>
+          Open
+        </TabButton>
+        <TabButton active={state === "closed"} onClick={() => setState("closed")}>
+          Closed
+        </TabButton>
+        <TabButton active={state === "all"} onClick={() => setState("all")}>
+          All
+        </TabButton>
+      </TabList>
 
       {isLoading && <p className="mt-6 text-sm text-neutral-500">Loading…</p>}
 
-      <div className="mt-4 divide-y divide-neutral-800 rounded-lg border border-neutral-800 bg-neutral-900">
+      <div className={listCardClass("mt-4")}>
         {(pulls ?? []).map((pr) => (
           <div key={pr.number} className="px-4 py-3">
             <div className="flex items-center justify-between gap-3">
@@ -93,7 +101,7 @@ export default function PullRequestsPage() {
             )}
           </div>
         ))}
-        {(pulls ?? []).length === 0 && !isLoading && <div className="px-4 py-6 text-sm text-neutral-500">No pull requests.</div>}
+        {(pulls ?? []).length === 0 && !isLoading && <EmptyState icon={GitPullRequest} message="No pull requests." />}
       </div>
     </div>
   );
