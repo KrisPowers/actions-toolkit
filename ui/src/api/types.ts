@@ -23,6 +23,20 @@ export interface GithubTokenStatus {
   needs_reconnect: boolean;
 }
 
+export interface DeviceStartResponse {
+  user_code: string;
+  verification_uri: string;
+  interval: number;
+  expires_in: number;
+}
+
+export type DevicePollResponse =
+  | { status: "pending" }
+  | { status: "denied" }
+  | { status: "expired" }
+  | { status: "not_started" }
+  | { status: "connected"; github_login: string; has_installation: boolean };
+
 export interface Settings {
   id: number;
   port: number;

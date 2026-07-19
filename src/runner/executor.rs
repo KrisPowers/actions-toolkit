@@ -390,6 +390,7 @@ mod tests {
             data_dir: data_dir.clone(),
             github_app_client_id: "test-client-id".to_string(),
             github_oauth_token_url: crate::github::oauth::GITHUB_TOKEN_URL.to_string(),
+            github_device_code_url: crate::github::oauth::GITHUB_DEVICE_CODE_URL.to_string(),
         };
         let db = crate::db::connect(&config.db_path()).await.expect("db connect should succeed");
         let enc = EncryptionKey::load_or_generate(None, &config.secrets_dir()).expect("encryption key should load");
@@ -406,7 +407,7 @@ mod tests {
             bucket_capability_ok: true,
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
-            oauth_states: Default::default(),
+            pending_device_flow: RwLock::new(None),
         }));
 
         let out_file = "artifact.txt";

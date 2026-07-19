@@ -59,6 +59,28 @@ struct InstallationRepositories {
     repositories: Vec<octocrab::models::Repository>,
 }
 
+#[derive(Debug, Deserialize)]
+struct Installation {
+    id: i64,
+    app_slug: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListInstallationsResponse {
+    installations: Vec<Installation>,
+}
+
+/// Finds the installation of `app_slug` (the actions-toolkit App) among the ones the connected
+/// user administers. Device flow has no callback to carry an `installation_id` the way the
+/// redirect-based authorize flow did, so this is looked up explicitly right after connecting
+/// instead. Returns `None` if the user hasn't installed the App on any account yet, distinct from
+/// a request failure, so the caller can prompt "install the App" rather than surface an error.
+pub async fn find_installation_id(client: &Octocrab, app_slug: &str) -> Result<Option<i64>> {
+    let resp: ListInstallationsResponse =
+        client.get("/user/installations", None::<&()>).await.context("failed to list this user's installations")?;
+    Ok(resp.installations.into_iter().find(|i| i.app_slug.as_deref() == Some(app_slug)).map(|i| i.id))
+}
+
 /// List repos a GitHub App installation was actually granted, for a `github_app`-connected
 /// token. Unlike `list_accessible_repos` (which lists everything the token's account can see),
 /// this reflects exactly what the installation picker on GitHub granted, so a repo the user
