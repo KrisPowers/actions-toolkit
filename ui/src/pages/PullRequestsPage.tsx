@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, GitPullRequest, MessageSquare } from "lucide-react";
 import { githubApi } from "../api/github";
+import { useRuns } from "../hooks/useRuns";
 import StatusBadge from "../components/common/StatusBadge";
 import LabelPill from "../components/common/LabelPill";
 import Avatar from "../components/common/Avatar";
@@ -12,6 +13,7 @@ import PageHeader from "../components/common/PageHeader";
 import { listCardClass } from "../components/common/Card";
 import EmptyState from "../components/common/EmptyState";
 import { TabList, TabButton } from "../components/common/Tabs";
+import ItemWorkflowRuns from "../components/runs/ItemWorkflowRuns";
 import { relativeTime } from "../lib/relativeTime";
 
 export default function PullRequestsPage() {
@@ -26,6 +28,9 @@ export default function PullRequestsPage() {
     queryFn: () => githubApi.listPullRequests(repoId as string, state),
     enabled: !!repoId,
   });
+
+  const { data: runs } = useRuns(repoId, 200);
+  const runsForPr = (number: number) => (runs ?? []).filter((r) => r.ref_name === `refs/pull/${number}/head`);
 
   const addComment = useMutation({
     mutationFn: (number: number) => githubApi.addPrComment(repoId as string, number, comment),
@@ -87,17 +92,25 @@ export default function PullRequestsPage() {
                   ))}
                 </div>
               </div>
-              <StatusBadge status={prStatus(pr)} />
+              <div className="flex shrink-0 items-center gap-2">
+                <StatusBadge status={prStatus(pr)} />
+                <Button variant="default" size="sm" onClick={() => setExpanded(expanded === pr.number ? null : pr.number)}>
+                  Workflows{runsForPr(pr.number).length > 0 ? ` (${runsForPr(pr.number).length})` : ""}
+                </Button>
+              </div>
             </div>
 
             {expanded === pr.number && (
-              <div className="mt-3 flex gap-2">
-                <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write a comment…" className="flex-1" />
-                <Button variant="primary" disabled={!comment || addComment.isPending} onClick={() => addComment.mutate(pr.number)}>
-                  <MessageSquare className="h-3.5 w-3.5" strokeWidth={2} />
-                  Comment
-                </Button>
-              </div>
+              <>
+                <ItemWorkflowRuns repoId={repoId as string} runs={runsForPr(pr.number)} emptyLabel="pull request" />
+                <div className="mt-3 flex gap-2">
+                  <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write a comment…" className="flex-1" />
+                  <Button variant="primary" disabled={!comment || addComment.isPending} onClick={() => addComment.mutate(pr.number)}>
+                    <MessageSquare className="h-3.5 w-3.5" strokeWidth={2} />
+                    Comment
+                  </Button>
+                </div>
+              </>
             )}
           </div>
         ))}
