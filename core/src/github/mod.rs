@@ -1,9 +1,3 @@
-pub mod actions;
-pub mod checkout;
+pub use atk_github::{actions, checkout, discovery, hooks, issues, oauth, releases, webhook_verify};
+
 pub mod client;
-pub mod discovery;
-pub mod hooks;
-pub mod issues;
-pub mod oauth;
-pub mod releases;
-pub mod webhook_verify;
