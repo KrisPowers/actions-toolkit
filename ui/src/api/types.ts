@@ -15,6 +15,15 @@ export interface RepoPublic {
   updated_at: string;
 }
 
+export interface Secret {
+  id: string;
+  repo_id: string;
+  name: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface GithubTokenStatus {
   connected: boolean;
   github_login: string | null;

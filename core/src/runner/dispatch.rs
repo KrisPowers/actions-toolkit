@@ -43,6 +43,7 @@ pub async fn spawn_run(
     let checkout = Some(CheckoutContext {
         owner: repo.owner.clone(),
         repo: repo.name.clone(),
+        repo_id: repo.id.clone(),
         pat,
         git_ref: ref_name.map(str::to_string).unwrap_or_else(|| format!("refs/heads/{}", repo.default_branch)),
     });

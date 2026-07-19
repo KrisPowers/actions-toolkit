@@ -3,6 +3,7 @@ pub mod buckets;
 pub mod github_token;
 pub mod repos;
 pub mod runs;
+pub mod secrets;
 pub mod settings;
 pub mod users;
 pub mod webhook_events;

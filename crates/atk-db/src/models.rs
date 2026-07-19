@@ -202,6 +202,24 @@ pub struct Artifact {
     pub created_at: String,
 }
 
+/// A repo-scoped encrypted secret, injected into every job step's env the same way `GITHUB_TOKEN`
+/// already is. `value_encrypted`/`value_nonce` are skipped on serialization so this type is safe
+/// to return directly from a list/get API handler; only `core::secrets::decrypted_value` (which
+/// requires the app's own `EncryptionKey`) can recover the plaintext.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Secret {
+    pub id: String,
+    pub repo_id: String,
+    pub name: String,
+    #[serde(skip_serializing)]
+    pub value_encrypted: Vec<u8>,
+    #[serde(skip_serializing)]
+    pub value_nonce: Vec<u8>,
+    pub created_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct WebhookEvent {
     pub id: String,
