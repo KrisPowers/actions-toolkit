@@ -1,6 +1,7 @@
 import { Check, Monitor, Moon, Sun } from "lucide-react";
 import Menu from "./Menu";
 import { buttonClass } from "./Button";
+import { cn } from "../../lib/cn";
 import { useTheme } from "../../theme/ThemeProvider";
 
 const OPTIONS = [
@@ -9,7 +10,10 @@ const OPTIONS = [
   { value: "system", label: "System", icon: Monitor },
 ] as const;
 
-export default function ThemeToggle() {
+// triggerClassName lets callers on the fixed-dark global header (which doesn't follow the
+// light/dark theme) swap in header-appropriate hover styles instead of the theme-flipping
+// neutral tokens the default "invisible" button variant uses.
+export default function ThemeToggle({ triggerClassName }: { triggerClassName?: string }) {
   const { theme, resolvedTheme, setTheme } = useTheme();
   const ActiveIcon = resolvedTheme === "dark" ? Moon : Sun;
 
@@ -22,7 +26,7 @@ export default function ThemeToggle() {
           onClick={toggle}
           aria-expanded={open}
           aria-label="Change theme"
-          className={buttonClass("invisible", "icon")}
+          className={cn(buttonClass("invisible", "icon"), triggerClassName)}
         >
           <ActiveIcon className="h-4 w-4" strokeWidth={2} />
         </button>
