@@ -5,6 +5,7 @@ import { authApi } from "../api/auth";
 import { useMe } from "../hooks/useAuth";
 import GithubConnectionCard from "../components/settings/GithubConnectionCard";
 import RuntimeSettingsCard from "../components/settings/RuntimeSettingsCard";
+import BucketSettingsCard from "../components/settings/BucketSettingsCard";
 import Button from "../components/common/Button";
 import Input from "../components/common/Input";
 import Card from "../components/common/Card";
@@ -38,6 +39,7 @@ export default function SettingsPage() {
       <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
         <GithubConnectionCard />
         <RuntimeSettingsCard />
+        <BucketSettingsCard />
       </div>
 
       <Card className="mt-5 p-5">

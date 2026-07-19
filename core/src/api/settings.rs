@@ -16,6 +16,7 @@ pub async fn get(State(state): State<AppState>, _user: CurrentUser) -> AppResult
 pub struct RuntimeStatus {
     pub docker_available: bool,
     pub bucket_available: bool,
+    pub bucket_unavailable_reason: Option<String>,
 }
 
 /// Re-checks Docker live rather than trusting the value captured at startup, so starting (or
@@ -29,7 +30,11 @@ pub async fn runtime_status(State(state): State<AppState>, _user: CurrentUser) -
         Ok(client) => crate::runner::docker::ping(&client).await.is_ok(),
         Err(_) => false,
     };
-    Ok(Json(RuntimeStatus { docker_available, bucket_available: state.bucket_capability_ok }))
+    Ok(Json(RuntimeStatus {
+        docker_available,
+        bucket_available: state.bucket_capability_ok,
+        bucket_unavailable_reason: (!state.bucket_capability_ok).then(|| state.bucket_capability_reason.clone()).flatten(),
+    }))
 }
 
 /// `port` is deliberately not accepted here: changing it always requires a restart to take
@@ -40,6 +45,15 @@ pub struct UpdateSettingsRequest {
     pub bind_addr: Option<String>,
     pub docker_host: Option<String>,
     pub max_concurrent_jobs: Option<usize>,
+    pub bucket_default_ttl_seconds: Option<i64>,
+    /// `0` (not a meaningful CPU/memory limit) is treated as "clear the limit back to
+    /// unbounded"; omitted entirely leaves it untouched; any other value sets it. Simpler than a
+    /// nested-Option "nullable-but-optional" field, at the cost of not being able to set an
+    /// actual `0` limit, which would mean "no CPU/memory at all" and isn't a real value anyone
+    /// wants regardless.
+    pub bucket_cpu_limit_millis: Option<i64>,
+    pub bucket_memory_limit_mb: Option<i64>,
+    pub bucket_host_mounts_json: Option<String>,
 }
 
 pub async fn update(
@@ -53,6 +67,10 @@ pub async fn update(
         // An empty string means "clear the override and auto-detect again".
         docker_host: req.docker_host.map(|s| { let s = s.trim().to_string(); if s.is_empty() { None } else { Some(s) } }),
         max_concurrent_jobs: req.max_concurrent_jobs,
+        bucket_default_ttl_seconds: req.bucket_default_ttl_seconds,
+        bucket_cpu_limit_millis: req.bucket_cpu_limit_millis.map(|v| if v == 0 { None } else { Some(v) }),
+        bucket_memory_limit_mb: req.bucket_memory_limit_mb.map(|v| if v == 0 { None } else { Some(v) }),
+        bucket_host_mounts_json: req.bucket_host_mounts_json,
     };
     Ok(Json(settings_queries::update(&state.db, patch).await?))
 }

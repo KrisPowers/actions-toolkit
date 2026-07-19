@@ -30,6 +30,9 @@ pub struct AppStateInner {
     /// hard-fails up front when this is `false`, since that means no job lacking `container:` can
     /// execute at all, unlike a missing Docker connection which only affects specific jobs/steps.
     pub bucket_capability_ok: bool,
+    /// Why Bucket isn't available, when `bucket_capability_ok` is `false`; `None` either when
+    /// it's available or (rare) when the probe failed without a specific reason.
+    pub bucket_capability_reason: Option<String>,
     pub log_hub: Arc<LogHub>,
     /// Cached client for the single account-wide GitHub token set up in the setup wizard.
     /// `None` until a token has been configured, or after `github::client::invalidate` runs

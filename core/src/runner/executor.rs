@@ -130,12 +130,13 @@ pub async fn run_job(
             RunBackend::Docker { docker: docker.clone(), container_id }
         }
         None => {
+            let ttl = bucket_ttl_from_settings(crate::db::queries::settings::get(&state.db).await.ok().as_ref());
             let spec = bucket::BucketSpec {
                 workspace_host_path: &workspace_dir,
                 run_id: workflow_run_id,
                 job_run_id,
                 network_enabled: job.network,
-                ttl: bucket::DEFAULT_TTL,
+                ttl,
             };
             match bucket::create_job_bucket(&state.db, &state.config.buckets_dir(), spec).await {
                 Ok(handle) => RunBackend::Bucket { handle },
@@ -356,6 +357,17 @@ async fn exec_docker_action_step(
     }
 }
 
+/// Resolves how long a Bucket sandbox may live before the TTL reaper force-cleans it: the
+/// configured `bucket_default_ttl_seconds` setting when it's a positive number, `bucket::DEFAULT_TTL`
+/// otherwise (a fresh install's seeded default is already positive, so this fallback is really
+/// only for a settings lookup failure or a corrupt `<= 0` value, not the normal path).
+fn bucket_ttl_from_settings(settings: Option<&crate::db::models::Settings>) -> std::time::Duration {
+    match settings {
+        Some(s) if s.bucket_default_ttl_seconds > 0 => std::time::Duration::from_secs(s.bucket_default_ttl_seconds as u64),
+        _ => bucket::DEFAULT_TTL,
+    }
+}
+
 async fn emit_system_line(_state: &AppState, job_run_id: &str, message: &str) {
     // System-level messages (image pull failure, checkout failure) aren't tied to a specific
     // step_run row, so they're logged via tracing only; per-step failures are captured
@@ -429,6 +441,7 @@ mod tests {
             enc,
             docker: None,
             bucket_capability_ok: true,
+            bucket_capability_reason: None,
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
@@ -520,6 +533,7 @@ mod tests {
             enc,
             docker: None,
             bucket_capability_ok: true,
+            bucket_capability_reason: None,
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
@@ -593,6 +607,38 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    fn fake_settings(bucket_default_ttl_seconds: i64) -> crate::db::models::Settings {
+        crate::db::models::Settings {
+            id: 1,
+            port: 7890,
+            bind_addr: "0.0.0.0".to_string(),
+            docker_host: None,
+            max_concurrent_jobs: 4,
+            bucket_default_ttl_seconds,
+            bucket_cpu_limit_millis: None,
+            bucket_memory_limit_mb: None,
+            bucket_host_mounts_json: "[]".to_string(),
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn bucket_ttl_from_settings_uses_the_configured_value() {
+        assert_eq!(bucket_ttl_from_settings(Some(&fake_settings(60))), std::time::Duration::from_secs(60));
+    }
+
+    #[test]
+    fn bucket_ttl_from_settings_falls_back_to_the_default_when_settings_lookup_failed() {
+        assert_eq!(bucket_ttl_from_settings(None), bucket::DEFAULT_TTL);
+    }
+
+    #[test]
+    fn bucket_ttl_from_settings_falls_back_to_the_default_when_configured_value_is_not_positive() {
+        assert_eq!(bucket_ttl_from_settings(Some(&fake_settings(0))), bucket::DEFAULT_TTL);
+        assert_eq!(bucket_ttl_from_settings(Some(&fake_settings(-5))), bucket::DEFAULT_TTL);
     }
 
     async fn seed_fk_chain(pool: &sqlx::SqlitePool, repo_id: &str, workflow_id: &str, run_id: &str, job_run_id: &str) {

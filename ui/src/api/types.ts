@@ -44,6 +44,10 @@ export interface Settings {
   bind_addr: string;
   docker_host: string | null;
   max_concurrent_jobs: number;
+  bucket_default_ttl_seconds: number;
+  bucket_cpu_limit_millis: number | null;
+  bucket_memory_limit_mb: number | null;
+  bucket_host_mounts_json: string;
   created_at: string;
   updated_at: string;
 }
@@ -51,12 +55,17 @@ export interface Settings {
 export interface RuntimeStatus {
   docker_available: boolean;
   bucket_available: boolean;
+  bucket_unavailable_reason: string | null;
 }
 
 export interface UpdateSettingsRequest {
   bind_addr?: string;
   docker_host?: string;
   max_concurrent_jobs?: number;
+  bucket_default_ttl_seconds?: number;
+  bucket_cpu_limit_millis?: number;
+  bucket_memory_limit_mb?: number;
+  bucket_host_mounts_json?: string;
 }
 
 export interface AccessibleRepo {

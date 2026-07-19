@@ -224,6 +224,14 @@ pub struct Settings {
     pub bind_addr: String,
     pub docker_host: Option<String>,
     pub max_concurrent_jobs: i64,
+    /// How long a Bucket sandbox may live before the TTL reaper force-cleans it. Actually wired
+    /// through to bucket creation (see `executor::run_job`); `bucket_cpu_limit_millis` and
+    /// `bucket_memory_limit_mb` are columns only so far, not yet consumed by either backend, see
+    /// the tracking issue.
+    pub bucket_default_ttl_seconds: i64,
+    pub bucket_cpu_limit_millis: Option<i64>,
+    pub bucket_memory_limit_mb: Option<i64>,
+    pub bucket_host_mounts_json: String,
     pub created_at: String,
     pub updated_at: String,
 }
