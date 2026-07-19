@@ -1,15 +1,18 @@
-import { CheckCircle2, CircleDashed, CircleSlash, Clock, GitMerge, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, CircleDashed, CircleDot, CircleSlash, GitMerge, GitPullRequest, Loader2, XCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 const STATUS: Record<string, { color: string; icon: LucideIcon; spin?: boolean }> = {
   succeeded: { color: "var(--color-status-success)", icon: CheckCircle2 },
   success: { color: "var(--color-status-success)", icon: CheckCircle2 },
-  merged: { color: "var(--color-status-success)", icon: GitMerge },
-  running: { color: "var(--color-status-info)", icon: Loader2, spin: true },
-  queued: { color: "var(--color-status-warning)", icon: Clock },
+  open: { color: "var(--color-status-success)", icon: CircleDot },
+  merged: { color: "var(--color-status-merged)", icon: GitMerge },
+  draft: { color: "var(--color-status-muted)", icon: GitPullRequest },
+  running: { color: "var(--color-status-warning)", icon: Loader2, spin: true },
+  queued: { color: "var(--color-status-muted)", icon: CircleDashed },
   pending: { color: "var(--color-status-muted)", icon: CircleDashed },
   failed: { color: "var(--color-status-error)", icon: XCircle },
   failure: { color: "var(--color-status-error)", icon: XCircle },
+  closed: { color: "var(--color-status-error)", icon: CircleSlash },
   cancelled: { color: "var(--color-status-muted)", icon: CircleSlash },
   skipped: { color: "var(--color-status-muted)", icon: CircleSlash },
 };
