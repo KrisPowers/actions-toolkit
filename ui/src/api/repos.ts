@@ -12,4 +12,5 @@ export const reposApi = {
   testConnection: (id: string) => api.post<{ ok: boolean; message: string }>(`/repos/${id}/test-connection`),
   sync: (id: string) => api.post<{ dispatched: boolean }>(`/repos/${id}/sync`),
   webhookEvents: (id: string) => api.get<WebhookEvent[]>(`/repos/${id}/webhook-events`),
+  recreateWebhook: (id: string) => api.post<RepoPublic>(`/repos/${id}/webhooks/recreate`),
 };

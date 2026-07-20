@@ -20,6 +20,9 @@ pub struct SettingsPatch {
     pub bucket_cpu_limit_millis: Option<Option<i64>>,
     pub bucket_memory_limit_mb: Option<Option<i64>>,
     pub bucket_host_mounts_json: Option<String>,
+    /// `Some(None)` clears the override back to auto-detect from the request; `Some(Some(url))`
+    /// sets it; `None` leaves the current value untouched.
+    pub public_url: Option<Option<String>>,
 }
 
 impl SettingsPatch {
@@ -32,6 +35,7 @@ impl SettingsPatch {
             && self.bucket_cpu_limit_millis.is_none()
             && self.bucket_memory_limit_mb.is_none()
             && self.bucket_host_mounts_json.is_none()
+            && self.public_url.is_none()
     }
 }
 
@@ -46,12 +50,13 @@ pub async fn update(pool: &SqlitePool, patch: SettingsPatch) -> sqlx::Result<Set
     let bucket_cpu_limit_millis = patch.bucket_cpu_limit_millis.unwrap_or(current.bucket_cpu_limit_millis);
     let bucket_memory_limit_mb = patch.bucket_memory_limit_mb.unwrap_or(current.bucket_memory_limit_mb);
     let bucket_host_mounts_json = patch.bucket_host_mounts_json.unwrap_or(current.bucket_host_mounts_json);
+    let public_url = patch.public_url.unwrap_or(current.public_url);
     let now = now_iso();
 
     sqlx::query(
         "UPDATE settings SET port = ?, bind_addr = ?, docker_host = ?, max_concurrent_jobs = ?, \
             bucket_default_ttl_seconds = ?, bucket_cpu_limit_millis = ?, bucket_memory_limit_mb = ?, \
-            bucket_host_mounts_json = ?, updated_at = ? \
+            bucket_host_mounts_json = ?, public_url = ?, updated_at = ? \
          WHERE id = 1",
     )
     .bind(port)
@@ -62,6 +67,7 @@ pub async fn update(pool: &SqlitePool, patch: SettingsPatch) -> sqlx::Result<Set
     .bind(bucket_cpu_limit_millis)
     .bind(bucket_memory_limit_mb)
     .bind(&bucket_host_mounts_json)
+    .bind(&public_url)
     .bind(&now)
     .execute(pool)
     .await?;

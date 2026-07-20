@@ -654,6 +654,7 @@ mod tests {
             bucket_cpu_limit_millis: None,
             bucket_memory_limit_mb: None,
             bucket_host_mounts_json: "[]".to_string(),
+            public_url: None,
             created_at: String::new(),
             updated_at: String::new(),
         }

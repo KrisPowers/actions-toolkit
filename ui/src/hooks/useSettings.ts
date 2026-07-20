@@ -19,3 +19,7 @@ export function useUpdateSettings() {
 export function useRuntimeStatus() {
   return useQuery({ queryKey: ["settings", "runtime-status"], queryFn: settingsApi.runtimeStatus, refetchInterval: 5000 });
 }
+
+export function useNetworkInfo() {
+  return useQuery({ queryKey: ["settings", "network-info"], queryFn: settingsApi.networkInfo });
+}

@@ -34,6 +34,14 @@ export function useSyncRepo() {
   return useMutation({ mutationFn: (id: string) => reposApi.sync(id) });
 }
 
+export function useRecreateWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => reposApi.recreateWebhook(id),
+    onSuccess: (_data, id) => qc.invalidateQueries({ queryKey: ["repos", id] }),
+  });
+}
+
 export function useRepoWebhookEvents(repoId: string | undefined) {
   return useQuery({
     queryKey: ["repos", repoId, "webhook-events"],
