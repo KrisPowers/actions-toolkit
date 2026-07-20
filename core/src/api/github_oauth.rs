@@ -151,6 +151,7 @@ mod tests {
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
+            token_refresh_lock: tokio::sync::Mutex::new(()),
         }));
 
         (state, user)

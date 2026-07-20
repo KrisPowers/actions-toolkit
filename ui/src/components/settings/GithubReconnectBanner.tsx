@@ -17,7 +17,7 @@ export default function GithubReconnectBanner() {
         Your GitHub connection needs to be reconnected
         {status.token_type === "pat" ? " — it's still using the old personal access token" : ""}.
       </span>
-      <GithubConnectButton label="Reconnect" variant="outline" />
+      <GithubConnectButton label="Reconnect" variant="outline" presentation="modal" />
     </div>
   );
 }
