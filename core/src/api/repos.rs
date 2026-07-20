@@ -218,6 +218,7 @@ mod tests {
             enc,
             docker: None,
             bucket_capability_ok: true,
+            bucket_capability_reason: None,
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),

@@ -106,6 +106,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         bind_addr: args.bind_addr.clone(),
         docker_host: args.docker_host.clone().map(Some),
         max_concurrent_jobs: args.max_concurrent_jobs,
+        ..Default::default()
     };
     let settings = if patch.is_empty() { settings } else { settings_queries::update(&db, patch).await? };
 
@@ -154,6 +155,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         enc,
         docker,
         bucket_capability_ok: bucket_capability.ok,
+        bucket_capability_reason: bucket_capability.reason,
         log_hub,
         github_client: RwLock::new(None),
         pending_device_flow: RwLock::new(None),
