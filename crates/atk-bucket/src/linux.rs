@@ -67,6 +67,9 @@ pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &atk_db::models::
         workspace: PathBuf::from(&row.workspace_path),
         root_skeleton: root_skeleton_path(buckets_root, &row.id),
         network_enabled: row.network_enabled != 0,
+        // Only used by exec_step (a fresh step execution); this reconstruction path is for
+        // crash-recovery cleanup/reaping, which never calls exec_step.
+        extra_ro_mounts: Vec::new(),
         cgroup_path: cgroup_path_for(&row.id),
     }
 }
@@ -93,11 +96,14 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     .await
     .context("failed to record bucket in database")?;
 
+    let extra_ro_mounts: Vec<PathBuf> = spec.extra_ro_mounts.iter().map(PathBuf::from).filter(|p| p.exists()).collect();
+
     Ok(BucketHandle {
         id,
         workspace: spec.workspace_host_path.to_path_buf(),
         root_skeleton,
         network_enabled: spec.network_enabled,
+        extra_ro_mounts,
         cgroup_path,
     })
 }
@@ -114,7 +120,16 @@ where
     F: FnMut(&str, String) + Send,
 {
     let invocation = StepInvocation { shell_command, shell, working_dir, env };
-    run_in_sandbox(&handle.root_skeleton, &handle.cgroup_path, &handle.workspace, handle.network_enabled, invocation, on_line).await
+    run_in_sandbox(
+        &handle.root_skeleton,
+        &handle.cgroup_path,
+        &handle.workspace,
+        handle.network_enabled,
+        &handle.extra_ro_mounts,
+        invocation,
+        on_line,
+    )
+    .await
 }
 
 pub async fn remove_bucket(pool: &SqlitePool, handle: &BucketHandle) -> Result<()> {
@@ -160,7 +175,7 @@ async fn probe_inner(id: &str, root_skeleton: &Path) -> Result<()> {
     std::fs::create_dir_all(&workspace)?;
 
     let invocation = StepInvocation { shell_command: "true", shell: None, working_dir: None, env: &[] };
-    let result = run_in_sandbox(root_skeleton, &cgroup_path, &workspace, false, invocation, |_, _| {}).await?;
+    let result = run_in_sandbox(root_skeleton, &cgroup_path, &workspace, false, &[], invocation, |_, _| {}).await?;
     if result.exit_code != 0 {
         anyhow::bail!("probe command exited with status {}", result.exit_code);
     }
@@ -176,6 +191,14 @@ struct StepInvocation<'a> {
     env: &'a [String],
 }
 
+/// Read-only mounts for a step: `DEFAULT_RO_MOUNTS` plus the operator-configured
+/// `extra_ro_mounts` (deduplicated isn't needed — bind-mounting the same path twice is harmless),
+/// filtered to paths that actually exist on the host. Pure and separate from `run_in_sandbox` so
+/// the merge/filter behavior is directly testable without needing a real sandboxed execution.
+fn resolve_ro_mounts(extra_ro_mounts: &[PathBuf]) -> Vec<PathBuf> {
+    DEFAULT_RO_MOUNTS.iter().map(PathBuf::from).chain(extra_ro_mounts.iter().cloned()).filter(|p| p.exists()).collect()
+}
+
 /// Spawns `__bucket-init` with the namespace-unshare `pre_exec` hook, streams its stdout/stderr
 /// line-by-line to `on_line`, and returns its exit code — this is the actual per-step sandbox
 /// execution shared by `exec_step` and the capability probe.
@@ -184,6 +207,7 @@ async fn run_in_sandbox<F>(
     cgroup_path: &Path,
     workspace: &Path,
     network_enabled: bool,
+    extra_ro_mounts: &[PathBuf],
     invocation: StepInvocation<'_>,
     mut on_line: F,
 ) -> Result<ExecResult>
@@ -191,7 +215,7 @@ where
     F: FnMut(&str, String) + Send,
 {
     let StepInvocation { shell_command, shell, working_dir, env } = invocation;
-    let ro_mounts: Vec<PathBuf> = DEFAULT_RO_MOUNTS.iter().map(PathBuf::from).filter(|p| p.exists()).collect();
+    let ro_mounts = resolve_ro_mounts(extra_ro_mounts);
 
     let spec = BucketInitSpec {
         workspace: workspace.to_path_buf(),
@@ -519,6 +543,29 @@ mod tests {
         // host at least one of these should exist.
         let any_exist = DEFAULT_RO_MOUNTS.iter().any(|p| Path::new(p).exists());
         assert!(any_exist, "expected at least one of the default ro-mount paths to exist on a normal Linux host");
+    }
+
+    /// Rule-proving test for the host-mount allowlist (#13): a configured extra path that
+    /// actually exists on the host must be included alongside the defaults.
+    #[test]
+    fn resolve_ro_mounts_includes_an_existing_configured_extra_path() {
+        let test_dir = std::env::temp_dir().join(format!("atk-extra-mount-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&test_dir).unwrap();
+
+        let mounts = resolve_ro_mounts(&[test_dir.clone()]);
+        assert!(mounts.contains(&test_dir), "expected the configured extra path to be included: {mounts:?}");
+        assert!(mounts.len() > 1, "expected the defaults to still be present alongside the extra path");
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
+
+    /// Rule-proving test: a configured extra path that doesn't exist on the host must be
+    /// silently skipped, matching `DEFAULT_RO_MOUNTS`' own convention, not fail the job.
+    #[test]
+    fn resolve_ro_mounts_skips_a_configured_extra_path_that_does_not_exist() {
+        let missing = PathBuf::from("/definitely/does/not/exist/on/this/host/atk-test");
+        let mounts = resolve_ro_mounts(&[missing.clone()]);
+        assert!(!mounts.contains(&missing), "expected a nonexistent configured path to be silently skipped: {mounts:?}");
     }
 
     /// Rule-proving test for the systemd-delegation verification #12 asked for: unlike

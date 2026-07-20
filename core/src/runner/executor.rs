@@ -151,13 +151,16 @@ pub async fn run_job(
             RunBackend::Docker { docker: docker.clone(), container_id }
         }
         None => {
-            let ttl = bucket_ttl_from_settings(crate::db::queries::settings::get(&state.db).await.ok().as_ref());
+            let settings = crate::db::queries::settings::get(&state.db).await.ok();
+            let ttl = bucket_ttl_from_settings(settings.as_ref());
+            let extra_ro_mounts = bucket_extra_ro_mounts_from_settings(settings.as_ref());
             let spec = bucket::BucketSpec {
                 workspace_host_path: &workspace_dir,
                 run_id: workflow_run_id,
                 job_run_id,
                 network_enabled: job.network,
                 ttl,
+                extra_ro_mounts: &extra_ro_mounts,
             };
             match bucket::create_job_bucket(&state.db, &state.config.buckets_dir(), spec).await {
                 Ok(handle) => RunBackend::Bucket { handle },
@@ -387,6 +390,16 @@ fn bucket_ttl_from_settings(settings: Option<&crate::db::models::Settings>) -> s
         Some(s) if s.bucket_default_ttl_seconds > 0 => std::time::Duration::from_secs(s.bucket_default_ttl_seconds as u64),
         _ => bucket::DEFAULT_TTL,
     }
+}
+
+/// Parses the operator-configured extra host-mount allowlist (`settings.bucket_host_mounts_json`,
+/// a JSON array of path strings). A missing settings row, unparseable JSON, or a value that isn't
+/// a JSON array of strings all resolve to "no extra mounts" rather than failing the job — this is
+/// an additive convenience on top of `DEFAULT_RO_MOUNTS`, not something a job should fail over.
+fn bucket_extra_ro_mounts_from_settings(settings: Option<&crate::db::models::Settings>) -> Vec<String> {
+    settings
+        .and_then(|s| serde_json::from_str::<Vec<String>>(&s.bucket_host_mounts_json).ok())
+        .unwrap_or_default()
 }
 
 async fn emit_system_line(_state: &AppState, job_run_id: &str, message: &str) {
@@ -649,6 +662,28 @@ mod tests {
     #[test]
     fn bucket_ttl_from_settings_uses_the_configured_value() {
         assert_eq!(bucket_ttl_from_settings(Some(&fake_settings(60))), std::time::Duration::from_secs(60));
+    }
+
+    #[test]
+    fn bucket_extra_ro_mounts_from_settings_parses_a_configured_list() {
+        let mut settings = fake_settings(60);
+        settings.bucket_host_mounts_json = r#"["/opt/nvm", "/home/user/.cargo"]"#.to_string();
+        assert_eq!(
+            bucket_extra_ro_mounts_from_settings(Some(&settings)),
+            vec!["/opt/nvm".to_string(), "/home/user/.cargo".to_string()]
+        );
+    }
+
+    #[test]
+    fn bucket_extra_ro_mounts_from_settings_defaults_to_empty_on_missing_or_bad_input() {
+        assert_eq!(bucket_extra_ro_mounts_from_settings(None), Vec::<String>::new());
+
+        let mut settings = fake_settings(60);
+        settings.bucket_host_mounts_json = "not valid json".to_string();
+        assert_eq!(bucket_extra_ro_mounts_from_settings(Some(&settings)), Vec::<String>::new());
+
+        settings.bucket_host_mounts_json = r#"{"not": "an array"}"#.to_string();
+        assert_eq!(bucket_extra_ro_mounts_from_settings(Some(&settings)), Vec::<String>::new());
     }
 
     #[test]
