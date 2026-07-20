@@ -254,6 +254,10 @@ pub struct Settings {
     pub bucket_cpu_limit_millis: Option<i64>,
     pub bucket_memory_limit_mb: Option<i64>,
     pub bucket_host_mounts_json: String,
+    /// Operator-pinned external URL used to build a repo's webhook payload URL (e.g. a Cloudflare
+    /// Tunnel or ngrok hostname). `None` falls back to `request_origin` (the connecting request's
+    /// own Host header), which is almost always a LAN address when this instance sits behind NAT.
+    pub public_url: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
