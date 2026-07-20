@@ -7,6 +7,7 @@ use crate::auth::middleware::CurrentUser;
 use crate::db::models::Settings;
 use crate::db::queries::settings::{self as settings_queries, SettingsPatch};
 use crate::error::AppResult;
+use crate::tunnel::CloudflareTunnelState;
 
 pub async fn get(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<Settings>> {
     Ok(Json(settings_queries::get(&state.db).await?))
@@ -118,6 +119,25 @@ pub async fn network_info(State(state): State<AppState>, _user: CurrentUser) -> 
         configured_public_url: settings.public_url,
         webhook_path_template: "/webhooks/github/{repo_id}".to_string(),
     }))
+}
+
+/// Starts (or reports the status of) the instance-wide Cloudflare Quick Tunnel, so the operator
+/// never has to run `cloudflared` in a terminal themselves. Fire-and-poll: this returns
+/// immediately with whatever the state is right after kicking off the spawn (usually `Starting`);
+/// the frontend polls `GET /settings/cloudflare-tunnel` until it flips to `Running` or `Failed`.
+pub async fn start_cloudflare_tunnel(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<CloudflareTunnelState>> {
+    let settings = settings_queries::get(&state.db).await?;
+    crate::tunnel::start(state.cloudflare_tunnel.clone(), settings.port as u16).await;
+    Ok(Json(state.cloudflare_tunnel.status().await))
+}
+
+pub async fn cloudflare_tunnel_status(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<CloudflareTunnelState>> {
+    Ok(Json(state.cloudflare_tunnel.status().await))
+}
+
+pub async fn stop_cloudflare_tunnel(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<CloudflareTunnelState>> {
+    crate::tunnel::stop(&state.cloudflare_tunnel).await;
+    Ok(Json(state.cloudflare_tunnel.status().await))
 }
 
 #[cfg(test)]

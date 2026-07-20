@@ -6,6 +6,7 @@ mod error;
 mod github;
 mod runner;
 mod telemetry;
+mod tunnel;
 mod ws;
 
 pub use atk_bucket as bucket;
@@ -160,6 +161,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         github_client: RwLock::new(None),
         pending_device_flow: RwLock::new(None),
         token_refresh_lock: tokio::sync::Mutex::new(()),
+        cloudflare_tunnel: Arc::new(tunnel::CloudflareTunnel::new()),
     }));
 
     // Repos GitHub can't reach with a real webhook still get their `on: release` workflows
