@@ -28,7 +28,7 @@ export default function GithubConnectButton({
 }: {
   label?: string;
   variant?: "primary" | "outline";
-  onConnected?: () => void;
+  onConnected?: (hasInstallation: boolean) => void;
 }) {
   const [state, setState] = useState<FlowState>({ phase: "idle" });
   const qc = useQueryClient();
@@ -49,7 +49,7 @@ export default function GithubConnectButton({
           setState({ phase: "connected", githubLogin: res.github_login, hasInstallation: res.has_installation });
           qc.invalidateQueries({ queryKey: ["github", "token-status"] });
           qc.invalidateQueries({ queryKey: ["auth", "status"] });
-          onConnected?.();
+          onConnected?.(res.has_installation);
         }
       } catch {
         if (!cancelled) setState({ phase: "error", message: "Lost contact with the server while waiting on GitHub." });

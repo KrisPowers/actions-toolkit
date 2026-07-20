@@ -20,7 +20,7 @@
 use std::io::{BufRead, BufReader};
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::FromRawHandle;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use sqlx::SqlitePool;
@@ -100,6 +100,8 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     let workspace = spec.workspace_host_path.to_path_buf();
     let profile_name = appcontainer_profile_name(&id);
     let workspace_for_setup = workspace.clone();
+    let extra_ro_mounts: Vec<PathBuf> = spec.extra_ro_mounts.iter().map(PathBuf::from).filter(|p| p.exists()).collect();
+    let extra_ro_mounts_for_setup = extra_ro_mounts.clone();
 
     // The Job Object is deliberately *not* created here: a named kernel object with no open
     // handle and no assigned process is destroyed immediately, and at this point there's no
@@ -116,7 +118,12 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
         let sid_string = sid_string.context("failed to stringify AppContainer SID")?;
 
         grant_full_control(&workspace_for_setup, &sid_string).context("failed to grant AppContainer access to workspace")?;
-        grant_ancestor_traverse_access(&workspace_for_setup, &sid_string);
+        grant_ancestor_traverse_access(&workspace_for_setup);
+        for extra_path in &extra_ro_mounts_for_setup {
+            if let Err(e) = grant_read_execute_access(extra_path, &sid_string) {
+                tracing::warn!(error = %e, path = %extra_path.display(), "failed to grant configured extra host-mount access");
+            }
+        }
         Ok(())
     })
     .await
@@ -135,7 +142,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     .await
     .context("failed to record bucket in database")?;
 
-    Ok(BucketHandle { id, workspace, root_skeleton, network_enabled: spec.network_enabled })
+    Ok(BucketHandle { id, workspace, root_skeleton, network_enabled: spec.network_enabled, extra_ro_mounts })
 }
 
 pub async fn exec_step<F>(
@@ -206,6 +213,10 @@ pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &atk_db::models::
         workspace: std::path::PathBuf::from(&row.workspace_path),
         root_skeleton: buckets_root.join(&row.id),
         network_enabled: row.network_enabled != 0,
+        // Only used by exec_step (a fresh step execution); this reconstruction path is for
+        // crash-recovery cleanup/reaping, which never calls exec_step, so leaving it empty here
+        // doesn't lose anything a real step could have used.
+        extra_ro_mounts: Vec::new(),
     }
 }
 
@@ -266,32 +277,78 @@ fn grant_full_control(path: &Path, sid_string: &str) -> Result<()> {
     Ok(())
 }
 
-/// Grants the AppContainer SID traverse-only access (`(X)`, not full control, and not inherited
-/// by each ancestor's other children) to `path`'s two immediate ancestors — for a workspace at
-/// `<data_dir>/workspaces/<run_id>`, that's `<data_dir>/workspaces` and `<data_dir>` itself — on
-/// top of `grant_full_control`'s full-control grant on `path` itself.
+/// Read+execute (not full control) access to an operator-configured extra host path
+/// (`bucket_host_mounts_json`), for toolchains installed outside the base OS dirs `DEFAULT_RO_MOUNTS`
+/// covers. Deliberately best-effort: a bad or inaccessible configured path shouldn't block the
+/// whole bucket from starting, just leave that one path unreachable inside it (logged by the
+/// caller). Doesn't grant ancestor traverse access the way the workspace grant does — an operator
+/// who configures an extra mount path is expected to pick one that's already reachable (e.g.
+/// under their own home directory, which already has the traverse grants a normal user session
+/// gets), not an arbitrary path buried somewhere the AppContainer has no way to reach at all.
+fn grant_read_execute_access(path: &Path, sid_string: &str) -> Result<()> {
+    let grant_arg = format!("*{sid_string}:(OI)(CI)RX");
+    let output = std::process::Command::new("icacls")
+        .arg(path)
+        .arg("/grant")
+        .arg(&grant_arg)
+        .arg("/T")
+        .output()
+        .context("failed to invoke icacls")?;
+    if !output.status.success() {
+        bail!("icacls failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+    Ok(())
+}
+
+/// Grants the two well-known "any AppContainer" SIDs traverse-only access (`(X)`, not full
+/// control, and not inherited by each ancestor's other children) to `path`'s two immediate
+/// ancestors — for a workspace at `<data_dir>/workspaces/<run_id>`, that's
+/// `<data_dir>/workspaces` and `<data_dir>` itself — on top of `grant_full_control`'s full-control
+/// grant (scoped to this specific bucket's own SID) on `path` itself.
 ///
 /// AppContainer tokens don't hold the "bypass traverse checking" privilege normal user tokens get
-/// by default, so a workspace nested under the app's own data dir is otherwise only reachable by
-/// tools that don't validate their working directory at startup. `cmd.exe`'s inherited-cwd
-/// handling doesn't (file I/O inside the granted leaf directory works fine even without this), but
-/// PowerShell's `Set-Location`/`$PWD` initialization does, and fails with
-/// `UnauthorizedAccessException` without it — found by testing a real (non-`cmd`) default-shell
-/// step end-to-end, not from documentation.
+/// by default (confirmed: AppContainer tokens do inherit `SeChangeNotifyPrivilege` from the base
+/// user token, but the filesystem driver enforces a full traversal check for AppContainer tokens
+/// regardless, unless the volume's device object has `FILE_DEVICE_ALLOW_APPCONTAINER_TRAVERSAL`
+/// set, which no user-mode code controls). `cmd.exe`'s inherited-cwd handling doesn't need this
+/// (file I/O inside the granted leaf directory works fine even without it); PowerShell's
+/// `Set-Location`/`$PWD` initialization does.
 ///
-/// Deliberately bounded to 2 levels rather than walking to the drive root: this covers every
-/// directory the app itself creates without touching (and persistently modifying the ACLs of)
-/// arbitrary user-profile directories above `data_dir` that this process doesn't own — which, on
-/// top of the unbounded-depth version being needlessly invasive, also turned out to be extremely
-/// slow (one `icacls` process per ancestor, several of which took tens of seconds against real
-/// directories with large existing ACLs).
-fn grant_ancestor_traverse_access(path: &Path, sid_string: &str) {
-    let grant_arg = format!("*{sid_string}:(X)");
+/// Grants the well-known `ALL APPLICATION PACKAGES` (`S-1-15-2-1`) and
+/// `ALL RESTRICTED APPLICATION PACKAGES` (`S-1-15-2-2`) SIDs — which cover every AppContainer
+/// token on the system, not just this bucket's own — rather than this bucket's unique per-run
+/// SID. This is deliberate, not a broadening of scope: traverse-only access doesn't expose an
+/// ancestor's contents (no read/list), only lets a token pass through it to reach something it's
+/// separately been granted deeper down, and it's what makes repeated calls across many buckets
+/// idempotent instead of accumulating. The previous per-bucket-SID version left a permanent,
+/// never-removed ACE on these shared directories for every bucket ever created (see the tracking
+/// issue for the ACL growth this caused); granting the same two well-known trustees every time is
+/// a no-op once already granted (verified: `icacls` on the *same* trustee repeatedly stays at one
+/// ACE and takes ~15ms per call, not growing or slowing down).
+///
+/// Still bounded to 2 levels, unchanged from before. A separate investigation tried widening this
+/// to cover the OS-standard default data dir's full ancestor chain (6 levels) in the hope of also
+/// fixing the deeper-nesting cwd-fallback problem tracked in a linked issue, but that was
+/// empirically disproven: even with the well-known SIDs verified present (via `icacls`) on every
+/// ancestor up to and including `%LOCALAPPDATA%`, the underlying PowerShell cwd-initialization
+/// failure still reproduced. Ancestor ACL grants are necessary but evidently not sufficient for
+/// that problem, whose real root cause is still unknown — not fixed here, left to that issue.
+fn grant_ancestor_traverse_access(path: &Path) {
+    const ALL_APPLICATION_PACKAGES_SID: &str = "S-1-15-2-1";
+    const ALL_RESTRICTED_APPLICATION_PACKAGES_SID: &str = "S-1-15-2-2";
+
     for ancestor in path.ancestors().skip(1).take(2) {
         if ancestor.parent().is_none() {
             break;
         }
-        match std::process::Command::new("icacls").arg(ancestor).arg("/grant").arg(&grant_arg).output() {
+        match std::process::Command::new("icacls")
+            .arg(ancestor)
+            .arg("/grant")
+            .arg(format!("*{ALL_APPLICATION_PACKAGES_SID}:(X)"))
+            .arg("/grant")
+            .arg(format!("*{ALL_RESTRICTED_APPLICATION_PACKAGES_SID}:(X)"))
+            .output()
+        {
             Ok(output) if !output.status.success() => {
                 tracing::warn!(
                     path = %ancestor.display(),
@@ -624,12 +681,46 @@ fn pwsh_available() -> bool {
 fn resolve_shell_cmdline(shell: Option<&str>, shell_command: &str) -> String {
     match shell.map(str::to_ascii_lowercase).as_deref() {
         Some("cmd") => format!("cmd.exe /d /s /c \"{shell_command}\""),
-        Some("powershell") => format!("powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
-        Some("pwsh") => format!("pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
+        Some("powershell") => format!(
+            "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+            encode_powershell_command(shell_command)
+        ),
+        Some("pwsh") => format!(
+            "pwsh.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+            encode_powershell_command(shell_command)
+        ),
         Some(other) => format!("{other} \"{shell_command}\""),
-        None if pwsh_available() => format!("pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
-        None => format!("powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"{shell_command}\""),
+        None if pwsh_available() => format!(
+            "pwsh.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+            encode_powershell_command(shell_command)
+        ),
+        None => format!(
+            "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+            encode_powershell_command(shell_command)
+        ),
     }
+}
+
+/// `-Command "<script>"` naively wraps the script in one pair of double quotes with no escaping,
+/// so any double quote in the script (i.e. almost any real PowerShell script) truncates the
+/// argument early and corrupts everything after it. `-EncodedCommand` takes base64'd UTF-16LE
+/// instead, sidestepping command-line quoting entirely — the same approach GitHub Actions' own
+/// Windows runner uses for multi-line `run:` steps.
+/// PowerShell's default `$ErrorActionPreference` is `Continue`: a non-terminating cmdlet error
+/// (the overwhelming majority of built-in cmdlet failures) prints to stderr and lets the script
+/// keep running, without affecting the process exit code, so a step that actually failed partway
+/// through can still report success. Forcing `Stop` turns those into terminating errors that do
+/// propagate; appending the `$LASTEXITCODE` check separately covers a native command (a .exe) that
+/// sets a nonzero exit code without PowerShell itself raising an error, which `Stop` alone doesn't
+/// catch. Both are exactly what GitHub Actions' own Windows runner does for `shell: powershell`/
+/// `shell: pwsh` steps (confirmed against the runner's actual behavior, not assumed).
+fn encode_powershell_command(script: &str) -> String {
+    use base64::Engine;
+    let wrapped = format!(
+        "$ErrorActionPreference = 'Stop'\n{script}\nif (Test-Path -LiteralPath variable:\\LASTEXITCODE) {{ exit $LASTEXITCODE }}"
+    );
+    let utf16le: Vec<u8> = wrapped.encode_utf16().flat_map(|unit| unit.to_le_bytes()).collect();
+    base64::engine::general_purpose::STANDARD.encode(utf16le)
 }
 
 #[cfg(test)]
@@ -672,6 +763,7 @@ mod tests {
             job_run_id: "job-1",
             network_enabled: false,
             ttl: std::time::Duration::from_secs(3600),
+            extra_ro_mounts: &[],
         };
         let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
 
@@ -751,6 +843,7 @@ mod tests {
             job_run_id: "job-2",
             network_enabled: false,
             ttl: std::time::Duration::from_secs(3600),
+            extra_ro_mounts: &[],
         };
         let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
 
@@ -780,17 +873,203 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    /// Rule-proving test for the exit-code fix: a step whose only failure is a non-terminating
+    /// cmdlet error (PowerShell's default `$ErrorActionPreference` is `Continue`, which lets the
+    /// script keep running and reports success) must now come back as a failed step, not a
+    /// silent success. Reproduced for real before this fix: `Out-File` to a path the AppContainer
+    /// has no access to printed an error but still returned `exit_code=0`.
+    #[tokio::test]
+    async fn failing_non_terminating_cmdlet_now_fails_the_step() {
+        let capability = probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let base = std::env::temp_dir().join(format!("atk-bucket-test-erroraction-{test_id}"));
+        let buckets_root = base.join("buckets");
+        let workspace = base.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&buckets_root).unwrap();
+
+        let db_path = base.join("test.db");
+        let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
+        seed_fk_chain(&pool, "repo-eap", "workflow-eap", "run-eap", "job-eap").await;
+
+        let spec = BucketSpec {
+            workspace_host_path: &workspace,
+            run_id: "run-eap",
+            job_run_id: "job-eap",
+            network_enabled: false,
+            ttl: std::time::Duration::from_secs(3600),
+            extra_ro_mounts: &[],
+        };
+        let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
+
+        // A non-terminating cmdlet error against a path the AppContainer genuinely has no access
+        // to: real failure, not a contrived exit call, exercising the same failure class found in
+        // #16's investigation.
+        let command = "Out-File -FilePath C:\\atk_erroraction_test.txt -InputObject 'should not succeed'";
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            exec_step(&handle, command, None, None, &[], |_, _| {}),
+        )
+        .await
+        .expect("exec_step timed out")
+        .expect("exec_step should succeed (the step running is not the same as the step's command succeeding)");
+
+        assert_ne!(result.exit_code, 0, "a step with a real, uncaught cmdlet failure must not report success");
+        assert!(
+            !Path::new(r"C:\atk_erroraction_test.txt").exists(),
+            "the write should never have succeeded in the first place"
+        );
+
+        remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Confirms `$ErrorActionPreference = 'Stop'` doesn't turn an *already-successful* step into
+    /// a false failure — the wrapper must be additive, not change behavior for scripts that were
+    /// already correct.
+    #[tokio::test]
+    async fn successful_powershell_step_still_reports_success_with_the_wrapper() {
+        let capability = probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let base = std::env::temp_dir().join(format!("atk-bucket-test-erroraction-ok-{test_id}"));
+        let buckets_root = base.join("buckets");
+        let workspace = base.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&buckets_root).unwrap();
+
+        let db_path = base.join("test.db");
+        let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
+        seed_fk_chain(&pool, "repo-eap-ok", "workflow-eap-ok", "run-eap-ok", "job-eap-ok").await;
+
+        let spec = BucketSpec {
+            workspace_host_path: &workspace,
+            run_id: "run-eap-ok",
+            job_run_id: "job-eap-ok",
+            network_enabled: false,
+            ttl: std::time::Duration::from_secs(3600),
+            extra_ro_mounts: &[],
+        };
+        let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
+
+        // Deliberately no relative-path file I/O here: that path currently runs into a separate,
+        // already-tracked bug (#16) with PowerShell's own cwd initialization against this host's
+        // AppContainer traverse ACLs, unrelated to this fix. Using an absolute path inside the
+        // granted workspace keeps this test isolated to what it's actually verifying: that
+        // wrapping the script with $ErrorActionPreference = 'Stop' and the $LASTEXITCODE check
+        // doesn't turn an already-successful step into a false failure.
+        let out_path = workspace.join("ok.txt");
+        let command = format!("'ok' | Out-File -FilePath '{}'", out_path.display());
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            exec_step(&handle, &command, None, None, &[], |_, _| {}),
+        )
+        .await
+        .expect("exec_step timed out")
+        .expect("exec_step should succeed");
+
+        assert_eq!(result.exit_code, 0, "a genuinely successful step must still report success");
+        assert!(out_path.exists());
+
+        remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Rule-proving test for the ACL-accumulation fix (#73): creating several buckets whose
+    /// workspaces share the same ancestor directory must leave exactly one ACE per well-known
+    /// SID on that ancestor, not one per bucket. Before this fix, each bucket granted its own
+    /// unique per-run SID, so this would have left 3 separate entries after 3 buckets.
+    #[tokio::test]
+    async fn repeated_bucket_creation_does_not_accumulate_ancestor_acl_entries() {
+        let capability = probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let base = std::env::temp_dir().join(format!("atk-bucket-test-acl-growth-{test_id}"));
+        let buckets_root = base.join("buckets");
+        std::fs::create_dir_all(&buckets_root).unwrap();
+
+        let db_path = base.join("test.db");
+        let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
+        seed_fk_chain(&pool, "repo-acl", "workflow-acl", "run-acl", "job-acl-0").await;
+
+        // Three separate buckets, three separate workspaces, but all sharing `base` as a common
+        // ancestor -- the thing that used to accumulate one SID grant per bucket.
+        for i in 0..3 {
+            let workspace = base.join(format!("workspace-{i}"));
+            std::fs::create_dir_all(&workspace).unwrap();
+            let spec = BucketSpec {
+                workspace_host_path: &workspace,
+                run_id: "run-acl",
+                job_run_id: "job-acl-0",
+                network_enabled: false,
+                ttl: std::time::Duration::from_secs(3600),
+                extra_ro_mounts: &[],
+            };
+            let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
+            remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
+        }
+
+        let output = std::process::Command::new("icacls").arg(&base).output().expect("icacls should run");
+        let acl_text = String::from_utf8_lossy(&output.stdout);
+        println!("ACL on shared ancestor after 3 buckets:\n{acl_text}");
+
+        let all_app_packages_count = acl_text.matches("ALL APPLICATION PACKAGES").count();
+        assert_eq!(
+            all_app_packages_count, 1,
+            "expected exactly one ALL APPLICATION PACKAGES entry after 3 buckets, not one per bucket: {acl_text}"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn resolve_shell_cmdline_honors_explicit_overrides() {
         assert_eq!(resolve_shell_cmdline(Some("cmd"), "echo hi"), "cmd.exe /d /s /c \"echo hi\"");
         assert_eq!(
             resolve_shell_cmdline(Some("PowerShell"), "Write-Host hi"),
-            "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"Write-Host hi\""
+            format!(
+                "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+                encode_powershell_command("Write-Host hi")
+            )
         );
         assert_eq!(
             resolve_shell_cmdline(Some("pwsh"), "Write-Host hi"),
-            "pwsh.exe -NoLogo -NoProfile -NonInteractive -Command \"Write-Host hi\""
+            format!(
+                "pwsh.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {}",
+                encode_powershell_command("Write-Host hi")
+            )
         );
+    }
+
+    /// A script containing double quotes (i.e. almost any real PowerShell script) used to
+    /// truncate `-Command "<script>"` at the first embedded quote and corrupt everything after
+    /// it. `-EncodedCommand` must survive this untouched, decoding back to the exact original.
+    #[test]
+    fn resolve_shell_cmdline_encoded_command_survives_embedded_quotes() {
+        let script = "Write-Host \"hello $env:GITHUB_TOKEN\" -split \"`n\"";
+        let cmdline = resolve_shell_cmdline(Some("powershell"), script);
+        let encoded = cmdline.rsplit(' ').next().unwrap();
+        assert_eq!(encoded, encode_powershell_command(script));
+
+        use base64::Engine;
+        let decoded_bytes = base64::engine::general_purpose::STANDARD.decode(encoded).unwrap();
+        let decoded_utf16: Vec<u16> =
+            decoded_bytes.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect();
+        let decoded = String::from_utf16(&decoded_utf16).unwrap();
+        assert!(decoded.contains(script), "expected the original script to survive encoding intact: {decoded}");
     }
 
     #[test]
@@ -834,6 +1113,7 @@ mod tests {
             job_run_id: "job-3",
             network_enabled: true,
             ttl: std::time::Duration::from_secs(3600),
+            extra_ro_mounts: &[],
         };
         let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
 

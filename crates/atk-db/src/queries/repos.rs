@@ -60,3 +60,21 @@ pub async fn set_github_hook_id(pool: &SqlitePool, id: &str, github_hook_id: i64
         .await?;
     Ok(())
 }
+
+/// Repos without a working webhook (`github_hook_id` is `None`) are exactly the ones the polling
+/// fallback needs to cover; a repo with a real webhook doesn't need polling too.
+pub async fn list_without_webhook(pool: &SqlitePool) -> sqlx::Result<Vec<Repo>> {
+    sqlx::query_as::<_, Repo>("SELECT * FROM repos WHERE github_hook_id IS NULL ORDER BY created_at DESC")
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn set_last_synced_release_id(pool: &SqlitePool, id: &str, release_id: i64) -> sqlx::Result<()> {
+    sqlx::query("UPDATE repos SET last_synced_release_id = ?, updated_at = ? WHERE id = ?")
+        .bind(release_id)
+        .bind(now_iso())
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

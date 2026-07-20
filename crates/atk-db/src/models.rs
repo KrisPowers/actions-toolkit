@@ -38,6 +38,10 @@ pub struct Repo {
     /// failed in a way that still left the repo row behind (shouldn't happen going forward, see
     /// `api::repos::create`, but kept nullable defensively for exactly that edge case).
     pub github_hook_id: Option<i64>,
+    /// The last release ID this instance already reacted to via polling (see
+    /// `core::runner::poll_sync`), so a repo without a working webhook doesn't re-dispatch
+    /// `on: release` workflows for the same release on every poll. `None` until the first sync.
+    pub last_synced_release_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -47,6 +51,11 @@ pub struct RepoPublic {
     pub name: String,
     pub default_branch: String,
     pub webhook_url: String,
+    /// Whether GitHub actually has a webhook registered for this repo (`github_hook_id` is
+    /// `Some` on the underlying row). `false` means event triggers (push, pull_request,
+    /// release, ...) cannot fire no matter how the workflow itself is configured, since GitHub
+    /// has nowhere to deliver the event to.
+    pub webhook_connected: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -197,6 +206,24 @@ pub struct Artifact {
     pub created_at: String,
 }
 
+/// A repo-scoped encrypted secret, injected into every job step's env the same way `GITHUB_TOKEN`
+/// already is. `value_encrypted`/`value_nonce` are skipped on serialization so this type is safe
+/// to return directly from a list/get API handler; only `core::secrets::decrypted_value` (which
+/// requires the app's own `EncryptionKey`) can recover the plaintext.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Secret {
+    pub id: String,
+    pub repo_id: String,
+    pub name: String,
+    #[serde(skip_serializing)]
+    pub value_encrypted: Vec<u8>,
+    #[serde(skip_serializing)]
+    pub value_nonce: Vec<u8>,
+    pub created_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct WebhookEvent {
     pub id: String,
@@ -219,6 +246,14 @@ pub struct Settings {
     pub bind_addr: String,
     pub docker_host: Option<String>,
     pub max_concurrent_jobs: i64,
+    /// How long a Bucket sandbox may live before the TTL reaper force-cleans it. Actually wired
+    /// through to bucket creation (see `executor::run_job`); `bucket_cpu_limit_millis` and
+    /// `bucket_memory_limit_mb` are columns only so far, not yet consumed by either backend, see
+    /// the tracking issue.
+    pub bucket_default_ttl_seconds: i64,
+    pub bucket_cpu_limit_millis: Option<i64>,
+    pub bucket_memory_limit_mb: Option<i64>,
+    pub bucket_host_mounts_json: String,
     pub created_at: String,
     pub updated_at: String,
 }

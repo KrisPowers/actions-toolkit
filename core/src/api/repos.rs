@@ -18,6 +18,7 @@ fn to_public(repo: &Repo) -> RepoPublic {
         name: repo.name.clone(),
         default_branch: repo.default_branch.clone(),
         webhook_url: format!("/webhooks/github/{}", repo.id),
+        webhook_connected: repo.github_hook_id.is_some(),
         created_at: repo.created_at.clone(),
         updated_at: repo.updated_at.clone(),
     }
@@ -159,9 +160,47 @@ pub async fn test_connection(
     }
 }
 
+#[derive(serde::Serialize)]
+pub struct SyncResponse {
+    /// Whether a new release was found and dispatched. `false` just means nothing new since the
+    /// last sync, not that anything went wrong.
+    pub dispatched: bool,
+}
+
+/// Manual trigger for the polling fallback (`runner::poll_sync`) — lets an operator sync
+/// immediately instead of waiting for the periodic sweep, e.g. right after publishing a release
+/// on a repo without a working webhook.
+pub async fn sync(State(state): State<AppState>, Path(id): Path<String>, _user: CurrentUser) -> AppResult<Json<SyncResponse>> {
+    let repo = repo_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
+    let dispatched = crate::runner::poll_sync::sync_repo_releases(&state, &repo).await.map_err(AppError::Internal)?;
+    Ok(Json(SyncResponse { dispatched }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A repo connected before webhook automation existed (or whose creation left the row behind
+    /// despite a failed hook) has `github_hook_id: None`; the API must report that as not
+    /// connected rather than silently claiming the trigger path works.
+    #[test]
+    fn to_public_reports_webhook_connected_false_when_hook_id_is_none() {
+        let repo = Repo {
+            id: "repo-1".to_string(),
+            owner: "octocat".to_string(),
+            name: "hello-world".to_string(),
+            default_branch: "main".to_string(),
+            webhook_secret_encrypted: vec![],
+            webhook_secret_nonce: vec![],
+            created_by: "user-1".to_string(),
+            created_at: "2020-01-01T00:00:00Z".to_string(),
+            updated_at: "2020-01-01T00:00:00Z".to_string(),
+            github_hook_id: None,
+            last_synced_release_id: None,
+        };
+        assert!(!to_public(&repo).webhook_connected);
+    }
+
     use crate::app::{AppState, AppStateInner};
     use crate::auth::jwt::JwtCodec;
     use crate::config::AppConfig;
@@ -196,6 +235,7 @@ mod tests {
             enc,
             docker: None,
             bucket_capability_ok: true,
+            bucket_capability_reason: None,
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
@@ -250,6 +290,7 @@ mod tests {
 
         let repo = repo_queries::find_by_id(&state.db, &response.0.repo.id).await.unwrap().unwrap();
         assert_eq!(repo.github_hook_id, Some(555));
+        assert!(response.0.repo.webhook_connected, "the API response must reflect the stored hook id, not just the DB row");
     }
 
     /// Rule-proving test: disconnecting a repo removes the corresponding webhook from GitHub, not

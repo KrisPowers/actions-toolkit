@@ -109,6 +109,7 @@ async fn run_inner(
             let checkout = checkout.as_ref().map(|c| CheckoutContext {
                 owner: c.owner.clone(),
                 repo: c.repo.clone(),
+                repo_id: c.repo_id.clone(),
                 pat: c.pat.clone(),
                 git_ref: c.git_ref.clone(),
             });
@@ -155,9 +156,12 @@ async fn run_inner(
     )
     .await?;
 
-    // Artifacts have already been copied out to data/artifacts/; the checked-out source
-    // workspace itself is no longer needed once every job has reached a terminal state.
-    crate::runner::workspace::cleanup(&state.config.workspaces_dir(), workflow_run_id);
+    // Artifacts have already been copied out to data/artifacts/; each job's own checked-out
+    // workspace (keyed by job_run_id, not workflow_run_id — see executor::run_job) is no longer
+    // needed once every job has reached a terminal state.
+    for job_run_id in job_run_ids.values() {
+        crate::runner::workspace::cleanup(&state.config.workspaces_dir(), job_run_id);
+    }
 
     Ok(())
 }

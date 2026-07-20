@@ -4,7 +4,7 @@ use bollard::Docker;
 use crate::app::AppState;
 use crate::bucket;
 use crate::db::models::now_iso;
-use crate::db::queries::{artifacts as artifact_queries, buckets as bucket_queries, runs as run_queries};
+use crate::db::queries::{artifacts as artifact_queries, buckets as bucket_queries, runs as run_queries, secrets as secret_queries};
 use crate::runner::log_stream::LogLine;
 use crate::runner::{artifact_capture, docker as docker_ops, workspace};
 use crate::workflow::model::Job;
@@ -12,6 +12,7 @@ use crate::workflow::model::Job;
 pub struct CheckoutContext {
     pub owner: String,
     pub repo: String,
+    pub repo_id: String,
     pub pat: String,
     pub git_ref: String,
 }
@@ -38,7 +39,43 @@ pub async fn run_job(
 ) -> Result<bool> {
     run_queries::set_job_status(&state.db, job_run_id, "running", None, false).await?;
 
-    let workspace_dir = workspace::ensure(&state.config.workspaces_dir(), workflow_run_id)?;
+    // Keyed by job_run_id, not workflow_run_id: each job gets its own workspace so files one job
+    // writes aren't implicitly visible to jobs that run after it. download_artifacts is the only
+    // way to pass files between jobs, matching GitHub Actions' own per-job isolation.
+    let workspace_dir = workspace::ensure(&state.config.workspaces_dir(), job_run_id)?;
+
+    // Mirrors GitHub Actions' automatic `GITHUB_TOKEN`: steps need the same credential checkout
+    // already uses to reach the GitHub API themselves (e.g. to update a release).
+    let mut injected_env: Vec<String> = checkout
+        .as_ref()
+        .map(|ctx| {
+            vec![
+                format!("GITHUB_TOKEN={}", ctx.pat),
+                format!("GITHUB_REPOSITORY={}/{}", ctx.owner, ctx.repo),
+            ]
+        })
+        .unwrap_or_default();
+
+    // Repo-scoped secrets, decrypted just-in-time and injected the same way: never written back
+    // to disk in plaintext, never logged (see the docs on the step_env merge below), only ever
+    // present as an env var inside the running job's own container/sandbox process.
+    if let Some(ctx) = &checkout {
+        match secret_queries::list_for_repo(&state.db, &ctx.repo_id).await {
+            Ok(secrets) => {
+                for secret in secrets {
+                    match state.enc.decrypt_str(&secret.value_encrypted, &secret.value_nonce) {
+                        Ok(value) => injected_env.push(format!("{}={value}", secret.name)),
+                        Err(e) => {
+                            emit_system_line(state, job_run_id, &format!("failed to decrypt secret '{}': {e}", secret.name)).await;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                emit_system_line(state, job_run_id, &format!("failed to look up secrets for this repo: {e}")).await;
+            }
+        }
+    }
 
     if let Some(ctx) = &checkout {
         let owner = ctx.owner.clone();
@@ -114,12 +151,16 @@ pub async fn run_job(
             RunBackend::Docker { docker: docker.clone(), container_id }
         }
         None => {
+            let settings = crate::db::queries::settings::get(&state.db).await.ok();
+            let ttl = bucket_ttl_from_settings(settings.as_ref());
+            let extra_ro_mounts = bucket_extra_ro_mounts_from_settings(settings.as_ref());
             let spec = bucket::BucketSpec {
                 workspace_host_path: &workspace_dir,
                 run_id: workflow_run_id,
                 job_run_id,
                 network_enabled: job.network,
-                ttl: bucket::DEFAULT_TTL,
+                ttl,
+                extra_ro_mounts: &extra_ro_mounts,
             };
             match bucket::create_job_bucket(&state.db, &state.config.buckets_dir(), spec).await {
                 Ok(handle) => RunBackend::Bucket { handle },
@@ -151,11 +192,19 @@ pub async fn run_job(
 
         run_queries::set_step_status(&state.db, &step_run.id, "running", None, false).await?;
 
-        let step_env: Vec<String> = step
+        let mut step_env: Vec<String> = step
             .env
             .as_ref()
             .map(|m| m.iter().map(|(k, v)| format!("{k}={v}")).collect())
             .unwrap_or_default();
+        let declared_keys: std::collections::HashSet<String> =
+            step_env.iter().filter_map(|e| e.split('=').next().map(str::to_string)).collect();
+        step_env.extend(
+            injected_env
+                .iter()
+                .filter(|e| !declared_keys.contains(e.split('=').next().unwrap_or_default()))
+                .cloned(),
+        );
 
         let exit_code = if let Some(command) = &step.run {
             let hub = state.log_hub.clone();
@@ -332,6 +381,27 @@ async fn exec_docker_action_step(
     }
 }
 
+/// Resolves how long a Bucket sandbox may live before the TTL reaper force-cleans it: the
+/// configured `bucket_default_ttl_seconds` setting when it's a positive number, `bucket::DEFAULT_TTL`
+/// otherwise (a fresh install's seeded default is already positive, so this fallback is really
+/// only for a settings lookup failure or a corrupt `<= 0` value, not the normal path).
+fn bucket_ttl_from_settings(settings: Option<&crate::db::models::Settings>) -> std::time::Duration {
+    match settings {
+        Some(s) if s.bucket_default_ttl_seconds > 0 => std::time::Duration::from_secs(s.bucket_default_ttl_seconds as u64),
+        _ => bucket::DEFAULT_TTL,
+    }
+}
+
+/// Parses the operator-configured extra host-mount allowlist (`settings.bucket_host_mounts_json`,
+/// a JSON array of path strings). A missing settings row, unparseable JSON, or a value that isn't
+/// a JSON array of strings all resolve to "no extra mounts" rather than failing the job — this is
+/// an additive convenience on top of `DEFAULT_RO_MOUNTS`, not something a job should fail over.
+fn bucket_extra_ro_mounts_from_settings(settings: Option<&crate::db::models::Settings>) -> Vec<String> {
+    settings
+        .and_then(|s| serde_json::from_str::<Vec<String>>(&s.bucket_host_mounts_json).ok())
+        .unwrap_or_default()
+}
+
 async fn emit_system_line(_state: &AppState, job_run_id: &str, message: &str) {
     // System-level messages (image pull failure, checkout failure) aren't tied to a specific
     // step_run row, so they're logged via tracing only; per-step failures are captured
@@ -405,6 +475,7 @@ mod tests {
             enc,
             docker: None,
             bucket_capability_ok: true,
+            bucket_capability_reason: None,
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
@@ -452,6 +523,178 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&artifact_path).unwrap().trim(), "hello");
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// Rule-proving test for the workspace-isolation fix: two jobs in the same run must not see
+    /// each other's files unless explicitly passed via `download_artifacts`. job-a writes a file
+    /// into its own workspace; job-b actively checks (the same way a real step would, with a
+    /// live conditional, not just a path comparison from the test itself) whether that file is
+    /// visible to it and records the result as its own artifact. Before the fix, both jobs
+    /// resolved to the same workflow_run_id-keyed directory, so job-b would have seen job-a's
+    /// file despite declaring no download_artifacts.
+    #[tokio::test]
+    async fn jobs_in_the_same_run_do_not_share_a_workspace() {
+        let capability = crate::bucket::probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let data_dir = std::env::temp_dir().join(format!("atk-executor-isolation-test-{test_id}"));
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let config = AppConfig {
+            data_dir: data_dir.clone(),
+            github_app_client_id: "test-client-id".to_string(),
+            github_oauth_token_url: crate::github::oauth::GITHUB_TOKEN_URL.to_string(),
+            github_device_code_url: crate::github::oauth::GITHUB_DEVICE_CODE_URL.to_string(),
+        };
+        let db = crate::db::connect(&config.db_path()).await.expect("db connect should succeed");
+        let enc = EncryptionKey::load_or_generate(None, &config.secrets_dir()).expect("encryption key should load");
+        let jwt = JwtCodec::new("test-secret");
+
+        seed_fk_chain(&db, "repo-2", "workflow-2", "run-2", "job-a").await;
+        sqlx::query("INSERT INTO job_runs (id, workflow_run_id, job_key, status) VALUES ('job-b', 'run-2', 'second', 'running')")
+            .execute(&db)
+            .await
+            .unwrap();
+
+        let state = AppState(Arc::new(AppStateInner {
+            db,
+            config,
+            jwt,
+            enc,
+            docker: None,
+            bucket_capability_ok: true,
+            bucket_capability_reason: None,
+            log_hub: Arc::new(LogHub::new()),
+            github_client: RwLock::new(None),
+            pending_device_flow: RwLock::new(None),
+        }));
+
+        let shell = if cfg!(windows) { Some("cmd".to_string()) } else { None };
+        let write_command = "echo hello > only-in-job-a.txt".to_string();
+        let check_command = if cfg!(windows) {
+            "if exist only-in-job-a.txt (echo LEAKED > marker.txt) else (echo ISOLATED > marker.txt)".to_string()
+        } else {
+            "if [ -f only-in-job-a.txt ]; then echo LEAKED > marker.txt; else echo ISOLATED > marker.txt; fi".to_string()
+        };
+
+        let job_a = Job {
+            name: None,
+            runs_on: "self-hosted".to_string(),
+            container: None,
+            needs: vec![],
+            if_condition: None,
+            strategy: None,
+            steps: vec![Step {
+                name: Some("write a file into this job's own workspace".to_string()),
+                id: None,
+                run: Some(write_command),
+                uses: None,
+                with: None,
+                env: None,
+                if_condition: None,
+                continue_on_error: false,
+                shell: shell.clone(),
+            }],
+            artifacts: vec![],
+            download_artifacts: vec![],
+            network: false,
+        };
+
+        let job_b = Job {
+            name: None,
+            runs_on: "self-hosted".to_string(),
+            container: None,
+            needs: vec![],
+            if_condition: None,
+            strategy: None,
+            steps: vec![Step {
+                name: Some("check whether job-a's file leaked into this workspace".to_string()),
+                id: None,
+                run: Some(check_command),
+                uses: None,
+                with: None,
+                env: None,
+                if_condition: None,
+                continue_on_error: false,
+                shell,
+            }],
+            artifacts: vec![ArtifactSpec { name: "marker".to_string(), path: "/workspace/marker.txt".to_string() }],
+            download_artifacts: vec![],
+            network: false,
+        };
+
+        let job_a_ok = run_job(&state, &None, "run-2", "job-a", &job_a, None).await.expect("job-a should not error");
+        assert!(job_a_ok, "expected job-a to succeed");
+        let job_b_ok = run_job(&state, &None, "run-2", "job-b", &job_b, None).await.expect("job-b should not error");
+        assert!(job_b_ok, "expected job-b to succeed");
+
+        let marker_path = state.config.artifacts_dir().join("run-2").join("marker");
+        assert!(marker_path.exists(), "expected job-b's marker artifact to have been captured to {}", marker_path.display());
+        assert_eq!(
+            std::fs::read_to_string(&marker_path).unwrap().trim(),
+            "ISOLATED",
+            "job-b must not see the file job-a wrote into its own workspace"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    fn fake_settings(bucket_default_ttl_seconds: i64) -> crate::db::models::Settings {
+        crate::db::models::Settings {
+            id: 1,
+            port: 7890,
+            bind_addr: "0.0.0.0".to_string(),
+            docker_host: None,
+            max_concurrent_jobs: 4,
+            bucket_default_ttl_seconds,
+            bucket_cpu_limit_millis: None,
+            bucket_memory_limit_mb: None,
+            bucket_host_mounts_json: "[]".to_string(),
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn bucket_ttl_from_settings_uses_the_configured_value() {
+        assert_eq!(bucket_ttl_from_settings(Some(&fake_settings(60))), std::time::Duration::from_secs(60));
+    }
+
+    #[test]
+    fn bucket_extra_ro_mounts_from_settings_parses_a_configured_list() {
+        let mut settings = fake_settings(60);
+        settings.bucket_host_mounts_json = r#"["/opt/nvm", "/home/user/.cargo"]"#.to_string();
+        assert_eq!(
+            bucket_extra_ro_mounts_from_settings(Some(&settings)),
+            vec!["/opt/nvm".to_string(), "/home/user/.cargo".to_string()]
+        );
+    }
+
+    #[test]
+    fn bucket_extra_ro_mounts_from_settings_defaults_to_empty_on_missing_or_bad_input() {
+        assert_eq!(bucket_extra_ro_mounts_from_settings(None), Vec::<String>::new());
+
+        let mut settings = fake_settings(60);
+        settings.bucket_host_mounts_json = "not valid json".to_string();
+        assert_eq!(bucket_extra_ro_mounts_from_settings(Some(&settings)), Vec::<String>::new());
+
+        settings.bucket_host_mounts_json = r#"{"not": "an array"}"#.to_string();
+        assert_eq!(bucket_extra_ro_mounts_from_settings(Some(&settings)), Vec::<String>::new());
+    }
+
+    #[test]
+    fn bucket_ttl_from_settings_falls_back_to_the_default_when_settings_lookup_failed() {
+        assert_eq!(bucket_ttl_from_settings(None), bucket::DEFAULT_TTL);
+    }
+
+    #[test]
+    fn bucket_ttl_from_settings_falls_back_to_the_default_when_configured_value_is_not_positive() {
+        assert_eq!(bucket_ttl_from_settings(Some(&fake_settings(0))), bucket::DEFAULT_TTL);
+        assert_eq!(bucket_ttl_from_settings(Some(&fake_settings(-5))), bucket::DEFAULT_TTL);
     }
 
     async fn seed_fk_chain(pool: &sqlx::SqlitePool, repo_id: &str, workflow_id: &str, run_id: &str, job_run_id: &str) {

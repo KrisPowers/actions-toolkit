@@ -1,13 +1,15 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Download, RefreshCw, Trash2, Upload, Webhook, XCircle } from "lucide-react";
-import { useDeleteRepo, useRepo, useTestRepoConnection } from "../hooks/useRepos";
+import { AlertTriangle, CheckCircle2, Download, RefreshCw, RotateCw, Trash2, Upload, Webhook, XCircle } from "lucide-react";
+import { useDeleteRepo, useRepo, useSyncRepo, useTestRepoConnection } from "../hooks/useRepos";
 import { useCreateWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import GithubMark from "../components/common/GithubMark";
 import Button, { buttonClass } from "../components/common/Button";
 import Card from "../components/common/Card";
 import PageHeader from "../components/common/PageHeader";
+import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
+import SecretsCard from "../components/settings/SecretsCard";
 import { workflowsApi } from "../api/workflows";
 
 function nameFromYaml(text: string, fallback: string): string {
@@ -27,6 +29,7 @@ export default function RepoSettingsPage() {
   const { data: repo } = useRepo(repoId);
   const { data: workflows } = useWorkflows(repoId);
   const testConnection = useTestRepoConnection();
+  const syncRepo = useSyncRepo();
   const deleteRepo = useDeleteRepo();
   const createWorkflow = useCreateWorkflow(repoId as string);
   const navigate = useNavigate();
@@ -76,6 +79,29 @@ export default function RepoSettingsPage() {
           <p className="mt-2 text-xs text-neutral-600">
             Created automatically on GitHub when this repo was connected. Disconnect and reconnect to recreate it.
           </p>
+          {!repo.webhook_connected && (
+            <div className="mt-3">
+              <WebhookUnreachableBanner />
+              <p className="mt-2 text-xs text-neutral-600">
+                Until that's fixed, this instance automatically polls for new releases every few minutes instead.{" "}
+              </p>
+              <Button
+                variant="default"
+                size="sm"
+                className="mt-2"
+                onClick={() => syncRepo.mutate(repo.id)}
+                disabled={syncRepo.isPending}
+              >
+                <RotateCw className={`h-3.5 w-3.5 ${syncRepo.isPending ? "animate-spin" : ""}`} strokeWidth={2} />
+                {syncRepo.isPending ? "Syncing…" : "Sync now"}
+              </Button>
+              {syncRepo.data && (
+                <p className="mt-2 text-xs text-neutral-500">
+                  {syncRepo.data.dispatched ? "Found and dispatched a new release." : "No new release since the last sync."}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="mt-5 flex items-center gap-2 border-t border-neutral-800 pt-4">
             <GithubMark className="h-4 w-4 text-neutral-500" />
@@ -151,6 +177,8 @@ export default function RepoSettingsPage() {
             )}
           </div>
         </Card>
+
+        <SecretsCard repoId={repo.id} />
 
         <Card className="border-[var(--color-status-error)]/30 bg-[var(--color-status-error)]/5 p-5 xl:col-span-2">
           <div className="flex items-center gap-2 text-[var(--color-status-error)]">

@@ -30,6 +30,10 @@ export function useTestRepoConnection() {
   return useMutation({ mutationFn: (id: string) => reposApi.testConnection(id) });
 }
 
+export function useSyncRepo() {
+  return useMutation({ mutationFn: (id: string) => reposApi.sync(id) });
+}
+
 export function useRepoWebhookEvents(repoId: string | undefined) {
   return useQuery({
     queryKey: ["repos", repoId, "webhook-events"],

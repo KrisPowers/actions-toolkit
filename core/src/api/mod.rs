@@ -5,6 +5,7 @@ pub mod github_oauth;
 pub mod github_proxy;
 pub mod repos;
 pub mod runs;
+pub mod secrets;
 pub mod settings;
 pub mod static_files;
 pub mod webhooks;
@@ -42,7 +43,7 @@ pub fn router(state: AppState) -> Router {
         .route("/users/{id}", delete(auth_handlers::delete_user))
         .route(
             "/github/token",
-            get(github_account::status).post(github_account::set_token).delete(github_account::delete_token),
+            get(github_account::status).delete(github_account::delete_token),
         )
         .route("/github/accessible-repos", get(github_account::accessible_repos))
         .route("/settings", get(settings::get).patch(settings::update))
@@ -50,7 +51,10 @@ pub fn router(state: AppState) -> Router {
         .route("/repos", get(repos::list).post(repos::create))
         .route("/repos/{id}", get(repos::get).delete(repos::delete))
         .route("/repos/{id}/test-connection", post(repos::test_connection))
+        .route("/repos/{id}/sync", post(repos::sync))
         .route("/repos/{id}/webhook-events", get(repos::webhook_events))
+        .route("/repos/{repo_id}/secrets", get(secrets::list_for_repo).post(secrets::create))
+        .route("/repos/{repo_id}/secrets/{id}", delete(secrets::delete))
         .route("/repos/{repo_id}/workflows", get(workflows::list_for_repo).post(workflows::create))
         .route("/repos/{repo_id}/workflows/export", get(workflows::export_repo))
         .route("/workflows/{id}", get(workflows::get).patch(workflows::update).delete(workflows::delete))

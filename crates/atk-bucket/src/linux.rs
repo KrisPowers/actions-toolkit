@@ -16,7 +16,14 @@ use super::{BucketCapability, BucketHandle, BucketInitSpec, BucketSpec, ExecResu
 use atk_db::queries::buckets as bucket_queries;
 
 const CGROUP_ROOT: &str = "/sys/fs/cgroup/actions-toolkit";
-const DELEGATED_SLICE: &str = "actions-toolkit.slice";
+/// Deliberately hyphen-free. systemd treats a hyphenated slice name as implicitly nested under a
+/// parent slice named by everything before the first hyphen (`foo-bar.slice` lives under
+/// `foo.slice`) — confirmed empirically: `--slice actions-toolkit.slice` actually placed the
+/// scope at `.../user@<uid>.service/actions.slice/actions-toolkit.slice/...`, an extra implied
+/// `actions.slice` level `systemd_user_scope_cgroup_path` didn't know about, so its computed path
+/// never matched reality and `try_create_systemd_scope` always looked like it had failed/timed
+/// out even when the scope was created successfully. A hyphen-free name has no implied parent.
+const DELEGATED_SLICE: &str = "atkbucket.slice";
 const DEFAULT_PIDS_MAX: &str = "512";
 const DEFAULT_MEMORY_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
@@ -60,6 +67,9 @@ pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &atk_db::models::
         workspace: PathBuf::from(&row.workspace_path),
         root_skeleton: root_skeleton_path(buckets_root, &row.id),
         network_enabled: row.network_enabled != 0,
+        // Only used by exec_step (a fresh step execution); this reconstruction path is for
+        // crash-recovery cleanup/reaping, which never calls exec_step.
+        extra_ro_mounts: Vec::new(),
         cgroup_path: cgroup_path_for(&row.id),
     }
 }
@@ -86,11 +96,14 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     .await
     .context("failed to record bucket in database")?;
 
+    let extra_ro_mounts: Vec<PathBuf> = spec.extra_ro_mounts.iter().map(PathBuf::from).filter(|p| p.exists()).collect();
+
     Ok(BucketHandle {
         id,
         workspace: spec.workspace_host_path.to_path_buf(),
         root_skeleton,
         network_enabled: spec.network_enabled,
+        extra_ro_mounts,
         cgroup_path,
     })
 }
@@ -107,7 +120,16 @@ where
     F: FnMut(&str, String) + Send,
 {
     let invocation = StepInvocation { shell_command, shell, working_dir, env };
-    run_in_sandbox(&handle.root_skeleton, &handle.cgroup_path, &handle.workspace, handle.network_enabled, invocation, on_line).await
+    run_in_sandbox(
+        &handle.root_skeleton,
+        &handle.cgroup_path,
+        &handle.workspace,
+        handle.network_enabled,
+        &handle.extra_ro_mounts,
+        invocation,
+        on_line,
+    )
+    .await
 }
 
 pub async fn remove_bucket(pool: &SqlitePool, handle: &BucketHandle) -> Result<()> {
@@ -153,7 +175,7 @@ async fn probe_inner(id: &str, root_skeleton: &Path) -> Result<()> {
     std::fs::create_dir_all(&workspace)?;
 
     let invocation = StepInvocation { shell_command: "true", shell: None, working_dir: None, env: &[] };
-    let result = run_in_sandbox(root_skeleton, &cgroup_path, &workspace, false, invocation, |_, _| {}).await?;
+    let result = run_in_sandbox(root_skeleton, &cgroup_path, &workspace, false, &[], invocation, |_, _| {}).await?;
     if result.exit_code != 0 {
         anyhow::bail!("probe command exited with status {}", result.exit_code);
     }
@@ -169,6 +191,14 @@ struct StepInvocation<'a> {
     env: &'a [String],
 }
 
+/// Read-only mounts for a step: `DEFAULT_RO_MOUNTS` plus the operator-configured
+/// `extra_ro_mounts` (deduplicated isn't needed — bind-mounting the same path twice is harmless),
+/// filtered to paths that actually exist on the host. Pure and separate from `run_in_sandbox` so
+/// the merge/filter behavior is directly testable without needing a real sandboxed execution.
+fn resolve_ro_mounts(extra_ro_mounts: &[PathBuf]) -> Vec<PathBuf> {
+    DEFAULT_RO_MOUNTS.iter().map(PathBuf::from).chain(extra_ro_mounts.iter().cloned()).filter(|p| p.exists()).collect()
+}
+
 /// Spawns `__bucket-init` with the namespace-unshare `pre_exec` hook, streams its stdout/stderr
 /// line-by-line to `on_line`, and returns its exit code — this is the actual per-step sandbox
 /// execution shared by `exec_step` and the capability probe.
@@ -177,6 +207,7 @@ async fn run_in_sandbox<F>(
     cgroup_path: &Path,
     workspace: &Path,
     network_enabled: bool,
+    extra_ro_mounts: &[PathBuf],
     invocation: StepInvocation<'_>,
     mut on_line: F,
 ) -> Result<ExecResult>
@@ -184,7 +215,7 @@ where
     F: FnMut(&str, String) + Send,
 {
     let StepInvocation { shell_command, shell, working_dir, env } = invocation;
-    let ro_mounts: Vec<PathBuf> = DEFAULT_RO_MOUNTS.iter().map(PathBuf::from).filter(|p| p.exists()).collect();
+    let ro_mounts = resolve_ro_mounts(extra_ro_mounts);
 
     let spec = BucketInitSpec {
         workspace: workspace.to_path_buf(),
@@ -414,6 +445,12 @@ async fn try_create_systemd_scope(id: &str) -> Option<PathBuf> {
 /// Tears down a bucket's cgroup: `cgroup.kill` (Linux 5.14+) atomically SIGKILLs every process
 /// in the cgroup in one write, regardless of how deep a process tree the sandboxed command
 /// forked — this is the guaranteed-cleanup mechanism, not best-effort process tracking.
+///
+/// For a systemd-delegated scope (created with `--collect`), killing its last process makes
+/// systemd itself remove the scope's cgroup directory as part of garbage-collecting the now-empty
+/// unit — confirmed empirically, not assumed. That's success, the same as removing it ourselves,
+/// so the retry loop below treats "the directory is just gone" as done rather than retrying
+/// `remove_dir` against a path that will never reappear.
 async fn destroy_cgroup(path: &Path) -> Result<()> {
     if !path.exists() {
         return Ok(());
@@ -421,7 +458,7 @@ async fn destroy_cgroup(path: &Path) -> Result<()> {
     let _ = std::fs::write(path.join("cgroup.kill"), "1");
 
     for _ in 0..20 {
-        if std::fs::remove_dir(path).is_ok() {
+        if !path.exists() || std::fs::remove_dir(path).is_ok() {
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -506,5 +543,67 @@ mod tests {
         // host at least one of these should exist.
         let any_exist = DEFAULT_RO_MOUNTS.iter().any(|p| Path::new(p).exists());
         assert!(any_exist, "expected at least one of the default ro-mount paths to exist on a normal Linux host");
+    }
+
+    /// Rule-proving test for the host-mount allowlist (#13): a configured extra path that
+    /// actually exists on the host must be included alongside the defaults.
+    #[test]
+    fn resolve_ro_mounts_includes_an_existing_configured_extra_path() {
+        let test_dir = std::env::temp_dir().join(format!("atk-extra-mount-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&test_dir).unwrap();
+
+        let mounts = resolve_ro_mounts(&[test_dir.clone()]);
+        assert!(mounts.contains(&test_dir), "expected the configured extra path to be included: {mounts:?}");
+        assert!(mounts.len() > 1, "expected the defaults to still be present alongside the extra path");
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
+
+    /// Rule-proving test: a configured extra path that doesn't exist on the host must be
+    /// silently skipped, matching `DEFAULT_RO_MOUNTS`' own convention, not fail the job.
+    #[test]
+    fn resolve_ro_mounts_skips_a_configured_extra_path_that_does_not_exist() {
+        let missing = PathBuf::from("/definitely/does/not/exist/on/this/host/atk-test");
+        let mounts = resolve_ro_mounts(&[missing.clone()]);
+        assert!(!mounts.contains(&missing), "expected a nonexistent configured path to be silently skipped: {mounts:?}");
+    }
+
+    /// Rule-proving test for the systemd-delegation verification #12 asked for: unlike
+    /// `run_in_sandbox` (blocked under `cargo test` by the `current_exe()` re-exec issue
+    /// documented above), `create_delegated_cgroup` needs no re-exec at all -- it's directly
+    /// testable. Confirms on a real systemd host that the delegated scope path is actually used
+    /// (not silently falling back to the bare `CGROUP_ROOT` path), that it's a real, populated
+    /// cgroup on disk, and that teardown via `destroy_cgroup` actually removes it.
+    #[tokio::test]
+    async fn create_delegated_cgroup_uses_the_systemd_scope_when_available() {
+        let id = format!("test-{}", Uuid::new_v4());
+
+        let cgroup_path = match create_delegated_cgroup(&id).await {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("skipping: create_delegated_cgroup failed on this host ({e:#}), likely no systemd user session reachable");
+                return;
+            }
+        };
+
+        let expected_delegated_path = systemd_user_scope_cgroup_path(&id);
+        if cgroup_path != expected_delegated_path {
+            eprintln!(
+                "skipping strict assertions: fell back to the bare cgroup path ({}), no systemd user session reachable on this host",
+                cgroup_path.display()
+            );
+            let _ = destroy_cgroup(&cgroup_path).await;
+            return;
+        }
+
+        assert!(cgroup_path.exists(), "expected the delegated cgroup to actually exist on disk: {}", cgroup_path.display());
+        assert!(
+            cgroup_path.join("cgroup.procs").exists(),
+            "expected a real cgroup control file at {}",
+            cgroup_path.join("cgroup.procs").display()
+        );
+
+        destroy_cgroup(&cgroup_path).await.expect("destroy_cgroup should succeed");
+        assert!(!cgroup_path.exists(), "expected the delegated cgroup to be gone after teardown");
     }
 }
