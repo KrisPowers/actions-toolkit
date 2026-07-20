@@ -176,6 +176,38 @@ pub async fn sync(State(state): State<AppState>, Path(id): Path<String>, _user: 
     Ok(Json(SyncResponse { dispatched }))
 }
 
+/// Re-points a repo's GitHub webhook at the instance's currently configured base URL (the
+/// operator's pinned `public_url`, or `request_origin` if none is set), without touching the
+/// repo's workflows/secrets/run history the way a full disconnect+reconnect would. Deletes the
+/// existing hook first (best-effort tolerant of it already being gone, same as `delete`), then
+/// creates a fresh one and stores its id.
+pub async fn recreate_webhook(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    _user: CurrentUser,
+) -> AppResult<Json<RepoPublic>> {
+    let repo = repo_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
+    let settings = crate::db::queries::settings::get(&state.db).await?;
+    let github_client = client::shared(&state).await?;
+
+    if let Some(hook_id) = repo.github_hook_id {
+        if let Err(e) = hooks::delete_webhook(&github_client, &repo.owner, &repo.name, hook_id as u64).await {
+            tracing::warn!(error = %e, repo_id = %id, "failed to delete the old GitHub webhook before recreating it; attempting to create the new one anyway");
+        }
+    }
+
+    let webhook_secret = state.enc.decrypt_str(&repo.webhook_secret_encrypted, &repo.webhook_secret_nonce).map_err(AppError::Internal)?;
+    let payload_url = format!("{}/webhooks/github/{}", crate::api::webhook_base_url(&headers, &settings), repo.id);
+    let hook_id = hooks::create_webhook(&github_client, &repo.owner, &repo.name, &payload_url, &webhook_secret)
+        .await
+        .map_err(|e| AppError::BadRequest(format!("failed to create the GitHub webhook: {e}")))?;
+    repo_queries::set_github_hook_id(&state.db, &repo.id, hook_id as i64).await?;
+
+    let repo = repo_queries::find_by_id(&state.db, &repo.id).await?.ok_or(AppError::NotFound)?;
+    Ok(Json(to_public(&repo)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,5 +350,94 @@ mod tests {
         assert!(repo_queries::find_by_id(&state.db, &repo_id).await.unwrap().is_none());
         let requests = mock_server.received_requests().await.unwrap();
         assert!(requests.iter().any(|r| r.method.as_str() == "DELETE" && r.url.path() == "/repos/octocat/hello-world/hooks/777"));
+    }
+
+    /// Rule-proving test: recreating a webhook deletes the old GitHub-side hook and points the new
+    /// one at the operator's pinned `public_url`, not the request's (usually LAN) Host header.
+    #[tokio::test]
+    async fn recreate_webhook_deletes_the_old_hook_and_points_the_new_one_at_the_configured_public_url() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/repos/octocat/hello-world/hooks"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({ "id": 111 })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("DELETE"))
+            .and(path("/repos/octocat/hello-world/hooks/111"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/repos/octocat/hello-world/hooks"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({ "id": 222 })))
+            .mount(&mock_server)
+            .await;
+
+        let (state, user) = test_state(&mock_server).await;
+        let response = create(State(state.clone()), CurrentUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
+        let repo_id = response.0.repo.id.clone();
+
+        crate::db::queries::settings::update(
+            &state.db,
+            crate::db::queries::settings::SettingsPatch {
+                public_url: Some(Some("https://example.trycloudflare.com".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let recreated =
+            recreate_webhook(State(state.clone()), Path(repo_id.clone()), test_headers(), CurrentUser(user)).await.unwrap();
+
+        assert!(recreated.0.webhook_connected);
+        let repo = repo_queries::find_by_id(&state.db, &repo_id).await.unwrap().unwrap();
+        assert_eq!(repo.github_hook_id, Some(222));
+
+        let requests = mock_server.received_requests().await.unwrap();
+        assert!(requests.iter().any(|r| r.method.as_str() == "DELETE" && r.url.path() == "/repos/octocat/hello-world/hooks/111"));
+        let recreate_body: serde_json::Value = requests
+            .iter()
+            .filter(|r| r.method.as_str() == "POST" && r.url.path() == "/repos/octocat/hello-world/hooks")
+            .nth(1)
+            .expect("a second hook-create request for the recreate call")
+            .body_json()
+            .unwrap();
+        assert_eq!(
+            recreate_body["config"]["url"],
+            format!("https://example.trycloudflare.com/webhooks/github/{repo_id}")
+        );
+    }
+
+    /// Rule-proving test: a GitHub-side permission error on recreate surfaces as a clear message
+    /// rather than a generic failure, since the likely cause (the operator's GitHub App missing
+    /// the Webhooks repository permission) is otherwise invisible.
+    #[tokio::test]
+    async fn recreate_webhook_surfaces_the_github_error_message_on_failure() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/repos/octocat/hello-world/hooks"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({ "id": 333 })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("DELETE"))
+            .and(path("/repos/octocat/hello-world/hooks/333"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/repos/octocat/hello-world/hooks"))
+            .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({ "message": "insufficient permission" })))
+            .mount(&mock_server)
+            .await;
+
+        let (state, user) = test_state(&mock_server).await;
+        let response = create(State(state.clone()), CurrentUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
+        let repo_id = response.0.repo.id.clone();
+
+        let result = recreate_webhook(State(state.clone()), Path(repo_id), test_headers(), CurrentUser(user)).await;
+        assert!(result.is_err());
     }
 }
