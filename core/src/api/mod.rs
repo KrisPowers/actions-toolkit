@@ -30,6 +30,17 @@ pub(crate) fn request_origin(headers: &axum::http::HeaderMap) -> String {
     format!("{scheme}://{host}")
 }
 
+/// Same job as `request_origin`, but prefers the operator's pinned `public_url` (set from the
+/// Webhooks settings page, e.g. a Cloudflare Tunnel or ngrok hostname) when one is configured,
+/// since that's a real externally-reachable address where `request_origin` is usually just the
+/// LAN address of whatever browser happened to make the request.
+pub(crate) fn webhook_base_url(headers: &axum::http::HeaderMap, settings: &crate::db::models::Settings) -> String {
+    match settings.public_url.as_deref().map(str::trim) {
+        Some(url) if !url.is_empty() => url.trim_end_matches('/').to_string(),
+        _ => request_origin(headers),
+    }
+}
+
 pub fn router(state: AppState) -> Router {
     let api_routes = Router::new()
         .route("/auth/status", get(auth_handlers::status))
@@ -48,11 +59,13 @@ pub fn router(state: AppState) -> Router {
         .route("/github/accessible-repos", get(github_account::accessible_repos))
         .route("/settings", get(settings::get).patch(settings::update))
         .route("/settings/runtime-status", get(settings::runtime_status))
+        .route("/settings/network-info", get(settings::network_info))
         .route("/repos", get(repos::list).post(repos::create))
         .route("/repos/{id}", get(repos::get).delete(repos::delete))
         .route("/repos/{id}/test-connection", post(repos::test_connection))
         .route("/repos/{id}/sync", post(repos::sync))
         .route("/repos/{id}/webhook-events", get(repos::webhook_events))
+        .route("/repos/{id}/webhooks/recreate", post(repos::recreate_webhook))
         .route("/repos/{repo_id}/secrets", get(secrets::list_for_repo).post(secrets::create))
         .route("/repos/{repo_id}/secrets/{id}", delete(secrets::delete))
         .route("/repos/{repo_id}/workflows", get(workflows::list_for_repo).post(workflows::create))
