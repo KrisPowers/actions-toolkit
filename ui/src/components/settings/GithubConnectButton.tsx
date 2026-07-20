@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Loader2 } from "lucide-react";
 import GithubMark from "../common/GithubMark";
 import Button from "../common/Button";
+import Modal from "../common/Modal";
 import { githubAccountApi } from "../../api/githubAccount";
 
 type FlowState =
@@ -24,10 +25,15 @@ type FlowState =
 export default function GithubConnectButton({
   label = "Connect GitHub",
   variant = "primary",
+  presentation = "inline",
   onConnected,
 }: {
   label?: string;
   variant?: "primary" | "outline";
+  /** "modal" shows the device-code flow as a popup instead of growing the space around the
+   * button in place, for callers (like the site-wide reconnect banner) too height-constrained to
+   * absorb an inline block appearing underneath it. */
+  presentation?: "inline" | "modal";
   onConnected?: (hasInstallation: boolean) => void;
 }) {
   const [state, setState] = useState<FlowState>({ phase: "idle" });
@@ -105,8 +111,8 @@ export default function GithubConnectButton({
     );
   }
 
-  return (
-    <div className="rounded-md border border-neutral-700 bg-neutral-950 p-3 text-sm">
+  const flow = (
+    <div className={presentation === "inline" ? "rounded-md border border-neutral-700 bg-neutral-950 p-3 text-sm" : "text-sm"}>
       {state.phase === "waiting" && (
         <>
           <p className="flex items-center gap-1.5 text-neutral-300">
@@ -160,4 +166,14 @@ export default function GithubConnectButton({
       )}
     </div>
   );
+
+  if (presentation === "modal") {
+    return (
+      <Modal open onClose={() => setState({ phase: "idle" })} className="max-w-sm">
+        {flow}
+      </Modal>
+    );
+  }
+
+  return flow;
 }
