@@ -1,12 +1,9 @@
 import {
   AlertTriangle,
-  CircleDot,
-  GitPullRequest,
   Package,
   PlayCircle,
   ScrollText,
   SlidersHorizontal,
-  Tag,
   Workflow,
 } from "lucide-react";
 import { useRepoIdFromLocation } from "../../hooks/useRepoIdFromLocation";
@@ -18,9 +15,6 @@ const TABS = [
   { path: "logs", icon: ScrollText, label: "Logs" },
   { path: "artifacts", icon: Package, label: "Artifacts" },
   { path: "events", icon: AlertTriangle, label: "Flagged Events" },
-  { path: "issues", icon: CircleDot, label: "Issues" },
-  { path: "pulls", icon: GitPullRequest, label: "Pull Requests" },
-  { path: "releases", icon: Tag, label: "Releases" },
   { path: "settings", icon: SlidersHorizontal, label: "Settings" },
 ];
 

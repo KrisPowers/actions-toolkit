@@ -22,9 +22,6 @@ const ArtifactsPage = lazy(() => import("./pages/ArtifactsPage"));
 const RepoArtifactsPage = lazy(() => import("./pages/RepoArtifactsPage"));
 const RepoEventsPage = lazy(() => import("./pages/RepoEventsPage"));
 const RepoLogsPage = lazy(() => import("./pages/RepoLogsPage"));
-const IssuesPage = lazy(() => import("./pages/IssuesPage"));
-const PullRequestsPage = lazy(() => import("./pages/PullRequestsPage"));
-const ReleasesPage = lazy(() => import("./pages/ReleasesPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 
 function RouteFallback() {
@@ -59,9 +56,6 @@ export default function AppRoutes() {
         <Route path="/repos/:repoId/logs" element={<RepoLogsPage />} />
         <Route path="/repos/:repoId/artifacts" element={<RepoArtifactsPage />} />
         <Route path="/repos/:repoId/events" element={<RepoEventsPage />} />
-        <Route path="/repos/:repoId/issues" element={<IssuesPage />} />
-        <Route path="/repos/:repoId/pulls" element={<PullRequestsPage />} />
-        <Route path="/repos/:repoId/releases" element={<ReleasesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
