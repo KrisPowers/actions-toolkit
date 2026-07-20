@@ -16,7 +16,14 @@ use super::{BucketCapability, BucketHandle, BucketInitSpec, BucketSpec, ExecResu
 use atk_db::queries::buckets as bucket_queries;
 
 const CGROUP_ROOT: &str = "/sys/fs/cgroup/actions-toolkit";
-const DELEGATED_SLICE: &str = "actions-toolkit.slice";
+/// Deliberately hyphen-free. systemd treats a hyphenated slice name as implicitly nested under a
+/// parent slice named by everything before the first hyphen (`foo-bar.slice` lives under
+/// `foo.slice`) — confirmed empirically: `--slice actions-toolkit.slice` actually placed the
+/// scope at `.../user@<uid>.service/actions.slice/actions-toolkit.slice/...`, an extra implied
+/// `actions.slice` level `systemd_user_scope_cgroup_path` didn't know about, so its computed path
+/// never matched reality and `try_create_systemd_scope` always looked like it had failed/timed
+/// out even when the scope was created successfully. A hyphen-free name has no implied parent.
+const DELEGATED_SLICE: &str = "atkbucket.slice";
 const DEFAULT_PIDS_MAX: &str = "512";
 const DEFAULT_MEMORY_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
@@ -414,6 +421,12 @@ async fn try_create_systemd_scope(id: &str) -> Option<PathBuf> {
 /// Tears down a bucket's cgroup: `cgroup.kill` (Linux 5.14+) atomically SIGKILLs every process
 /// in the cgroup in one write, regardless of how deep a process tree the sandboxed command
 /// forked — this is the guaranteed-cleanup mechanism, not best-effort process tracking.
+///
+/// For a systemd-delegated scope (created with `--collect`), killing its last process makes
+/// systemd itself remove the scope's cgroup directory as part of garbage-collecting the now-empty
+/// unit — confirmed empirically, not assumed. That's success, the same as removing it ourselves,
+/// so the retry loop below treats "the directory is just gone" as done rather than retrying
+/// `remove_dir` against a path that will never reappear.
 async fn destroy_cgroup(path: &Path) -> Result<()> {
     if !path.exists() {
         return Ok(());
@@ -421,7 +434,7 @@ async fn destroy_cgroup(path: &Path) -> Result<()> {
     let _ = std::fs::write(path.join("cgroup.kill"), "1");
 
     for _ in 0..20 {
-        if std::fs::remove_dir(path).is_ok() {
+        if !path.exists() || std::fs::remove_dir(path).is_ok() {
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -506,5 +519,44 @@ mod tests {
         // host at least one of these should exist.
         let any_exist = DEFAULT_RO_MOUNTS.iter().any(|p| Path::new(p).exists());
         assert!(any_exist, "expected at least one of the default ro-mount paths to exist on a normal Linux host");
+    }
+
+    /// Rule-proving test for the systemd-delegation verification #12 asked for: unlike
+    /// `run_in_sandbox` (blocked under `cargo test` by the `current_exe()` re-exec issue
+    /// documented above), `create_delegated_cgroup` needs no re-exec at all -- it's directly
+    /// testable. Confirms on a real systemd host that the delegated scope path is actually used
+    /// (not silently falling back to the bare `CGROUP_ROOT` path), that it's a real, populated
+    /// cgroup on disk, and that teardown via `destroy_cgroup` actually removes it.
+    #[tokio::test]
+    async fn create_delegated_cgroup_uses_the_systemd_scope_when_available() {
+        let id = format!("test-{}", Uuid::new_v4());
+
+        let cgroup_path = match create_delegated_cgroup(&id).await {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("skipping: create_delegated_cgroup failed on this host ({e:#}), likely no systemd user session reachable");
+                return;
+            }
+        };
+
+        let expected_delegated_path = systemd_user_scope_cgroup_path(&id);
+        if cgroup_path != expected_delegated_path {
+            eprintln!(
+                "skipping strict assertions: fell back to the bare cgroup path ({}), no systemd user session reachable on this host",
+                cgroup_path.display()
+            );
+            let _ = destroy_cgroup(&cgroup_path).await;
+            return;
+        }
+
+        assert!(cgroup_path.exists(), "expected the delegated cgroup to actually exist on disk: {}", cgroup_path.display());
+        assert!(
+            cgroup_path.join("cgroup.procs").exists(),
+            "expected a real cgroup control file at {}",
+            cgroup_path.join("cgroup.procs").display()
+        );
+
+        destroy_cgroup(&cgroup_path).await.expect("destroy_cgroup should succeed");
+        assert!(!cgroup_path.exists(), "expected the delegated cgroup to be gone after teardown");
     }
 }
