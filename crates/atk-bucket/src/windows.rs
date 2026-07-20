@@ -20,7 +20,7 @@
 use std::io::{BufRead, BufReader};
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::FromRawHandle;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use sqlx::SqlitePool;
@@ -100,6 +100,8 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     let workspace = spec.workspace_host_path.to_path_buf();
     let profile_name = appcontainer_profile_name(&id);
     let workspace_for_setup = workspace.clone();
+    let extra_ro_mounts: Vec<PathBuf> = spec.extra_ro_mounts.iter().map(PathBuf::from).filter(|p| p.exists()).collect();
+    let extra_ro_mounts_for_setup = extra_ro_mounts.clone();
 
     // The Job Object is deliberately *not* created here: a named kernel object with no open
     // handle and no assigned process is destroyed immediately, and at this point there's no
@@ -117,6 +119,11 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
 
         grant_full_control(&workspace_for_setup, &sid_string).context("failed to grant AppContainer access to workspace")?;
         grant_ancestor_traverse_access(&workspace_for_setup, &sid_string);
+        for extra_path in &extra_ro_mounts_for_setup {
+            if let Err(e) = grant_read_execute_access(extra_path, &sid_string) {
+                tracing::warn!(error = %e, path = %extra_path.display(), "failed to grant configured extra host-mount access");
+            }
+        }
         Ok(())
     })
     .await
@@ -135,7 +142,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
     .await
     .context("failed to record bucket in database")?;
 
-    Ok(BucketHandle { id, workspace, root_skeleton, network_enabled: spec.network_enabled })
+    Ok(BucketHandle { id, workspace, root_skeleton, network_enabled: spec.network_enabled, extra_ro_mounts })
 }
 
 pub async fn exec_step<F>(
@@ -206,6 +213,10 @@ pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &atk_db::models::
         workspace: std::path::PathBuf::from(&row.workspace_path),
         root_skeleton: buckets_root.join(&row.id),
         network_enabled: row.network_enabled != 0,
+        // Only used by exec_step (a fresh step execution); this reconstruction path is for
+        // crash-recovery cleanup/reaping, which never calls exec_step, so leaving it empty here
+        // doesn't lose anything a real step could have used.
+        extra_ro_mounts: Vec::new(),
     }
 }
 
@@ -253,6 +264,29 @@ fn sid_to_string(sid: windows::Win32::Security::PSID) -> Result<String> {
 /// raw FFI.
 fn grant_full_control(path: &Path, sid_string: &str) -> Result<()> {
     let grant_arg = format!("*{sid_string}:(OI)(CI)F");
+    let output = std::process::Command::new("icacls")
+        .arg(path)
+        .arg("/grant")
+        .arg(&grant_arg)
+        .arg("/T")
+        .output()
+        .context("failed to invoke icacls")?;
+    if !output.status.success() {
+        bail!("icacls failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+    Ok(())
+}
+
+/// Read+execute (not full control) access to an operator-configured extra host path
+/// (`bucket_host_mounts_json`), for toolchains installed outside the base OS dirs `DEFAULT_RO_MOUNTS`
+/// covers. Deliberately best-effort: a bad or inaccessible configured path shouldn't block the
+/// whole bucket from starting, just leave that one path unreachable inside it (logged by the
+/// caller). Doesn't grant ancestor traverse access the way the workspace grant does — an operator
+/// who configures an extra mount path is expected to pick one that's already reachable (e.g.
+/// under their own home directory, which already has the traverse grants a normal user session
+/// gets), not an arbitrary path buried somewhere the AppContainer has no way to reach at all.
+fn grant_read_execute_access(path: &Path, sid_string: &str) -> Result<()> {
+    let grant_arg = format!("*{sid_string}:(OI)(CI)RX");
     let output = std::process::Command::new("icacls")
         .arg(path)
         .arg("/grant")
@@ -706,6 +740,7 @@ mod tests {
             job_run_id: "job-1",
             network_enabled: false,
             ttl: std::time::Duration::from_secs(3600),
+            extra_ro_mounts: &[],
         };
         let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
 
@@ -785,6 +820,7 @@ mod tests {
             job_run_id: "job-2",
             network_enabled: false,
             ttl: std::time::Duration::from_secs(3600),
+            extra_ro_mounts: &[],
         };
         let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
 
@@ -844,6 +880,7 @@ mod tests {
             job_run_id: "job-eap",
             network_enabled: false,
             ttl: std::time::Duration::from_secs(3600),
+            extra_ro_mounts: &[],
         };
         let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
 
@@ -897,6 +934,7 @@ mod tests {
             job_run_id: "job-eap-ok",
             network_enabled: false,
             ttl: std::time::Duration::from_secs(3600),
+            extra_ro_mounts: &[],
         };
         let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
 
@@ -1001,6 +1039,7 @@ mod tests {
             job_run_id: "job-3",
             network_enabled: true,
             ttl: std::time::Duration::from_secs(3600),
+            extra_ro_mounts: &[],
         };
         let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
 

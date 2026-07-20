@@ -43,6 +43,13 @@ pub struct BucketSpec<'a> {
     pub job_run_id: &'a str,
     pub network_enabled: bool,
     pub ttl: Duration,
+    /// Additive, operator-configured host paths (`settings.bucket_host_mounts_json`) exposed
+    /// read-only on top of `DEFAULT_RO_MOUNTS` — for toolchains installed under a user's home
+    /// directory (nvm, pyenv, `~/.cargo`) that the conservative built-in defaults don't cover.
+    /// Linux: bind-mounted read-only, same as the defaults. Windows: granted read+execute ACL for
+    /// this bucket's AppContainer SID, same lifetime as the workspace grant. Paths that don't
+    /// exist on the host are silently skipped, matching `DEFAULT_RO_MOUNTS`' own behavior.
+    pub extra_ro_mounts: &'a [String],
 }
 
 /// A live handle to a job's sandbox scaffolding (its cgroup and root-skeleton directory). Each
@@ -55,6 +62,12 @@ pub struct BucketHandle {
     pub workspace: PathBuf,
     pub(crate) root_skeleton: PathBuf,
     pub(crate) network_enabled: bool,
+    /// Filtered to paths that actually exist on the host at creation time, same convention as
+    /// `DEFAULT_RO_MOUNTS`. Read by Linux's `exec_step` on every step (mounts don't persist
+    /// across processes the way an ACL grant does); Windows only needs this at creation time to
+    /// grant the ACL once, so it's write-only there — hence the cfg_attr below.
+    #[cfg_attr(target_os = "windows", allow(dead_code))]
+    pub(crate) extra_ro_mounts: Vec<PathBuf>,
     #[cfg(target_os = "linux")]
     pub(crate) cgroup_path: PathBuf,
 }
