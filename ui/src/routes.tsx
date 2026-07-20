@@ -8,7 +8,12 @@ import { Loader2 } from "lucide-react";
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const RepoConnectPage = lazy(() => import("./pages/RepoConnectPage"));
-const RepoSettingsPage = lazy(() => import("./pages/RepoSettingsPage"));
+const RepoSettingsLayout = lazy(() => import("./pages/RepoSettingsLayout"));
+const RepoWebhooksPage = lazy(() => import("./pages/settings/RepoWebhooksPage"));
+const RepoSecretsSettingsPage = lazy(() => import("./pages/settings/RepoSecretsSettingsPage"));
+const RepoAccessSettingsPage = lazy(() => import("./pages/settings/RepoAccessSettingsPage"));
+const RepoDataSettingsPage = lazy(() => import("./pages/settings/RepoDataSettingsPage"));
+const RepoDangerSettingsPage = lazy(() => import("./pages/settings/RepoDangerSettingsPage"));
 const WorkflowListPage = lazy(() => import("./pages/WorkflowListPage"));
 const WorkflowEditorPage = lazy(() => import("./pages/WorkflowEditorPage"));
 const RunListPage = lazy(() => import("./pages/RunListPage"));
@@ -38,7 +43,14 @@ export default function AppRoutes() {
         <Route path="/analytics/:repoId" element={<AnalyticsPage />} />
         <Route path="/repos" element={<Navigate to="/" replace />} />
         <Route path="/repos/connect" element={<RepoConnectPage />} />
-        <Route path="/repos/:repoId/settings" element={<RepoSettingsPage />} />
+        <Route path="/repos/:repoId/settings" element={<RepoSettingsLayout />}>
+          <Route index element={<Navigate to="webhooks" replace />} />
+          <Route path="webhooks" element={<RepoWebhooksPage />} />
+          <Route path="secrets" element={<RepoSecretsSettingsPage />} />
+          <Route path="access" element={<RepoAccessSettingsPage />} />
+          <Route path="data" element={<RepoDataSettingsPage />} />
+          <Route path="danger" element={<RepoDangerSettingsPage />} />
+        </Route>
         <Route path="/repos/:repoId/workflows" element={<WorkflowListPage />} />
         <Route path="/repos/:repoId/workflows/:workflowId" element={<WorkflowEditorPage />} />
         <Route path="/repos/:repoId/runs" element={<RunListPage />} />
