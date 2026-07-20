@@ -160,6 +160,22 @@ pub async fn test_connection(
     }
 }
 
+#[derive(serde::Serialize)]
+pub struct SyncResponse {
+    /// Whether a new release was found and dispatched. `false` just means nothing new since the
+    /// last sync, not that anything went wrong.
+    pub dispatched: bool,
+}
+
+/// Manual trigger for the polling fallback (`runner::poll_sync`) — lets an operator sync
+/// immediately instead of waiting for the periodic sweep, e.g. right after publishing a release
+/// on a repo without a working webhook.
+pub async fn sync(State(state): State<AppState>, Path(id): Path<String>, _user: CurrentUser) -> AppResult<Json<SyncResponse>> {
+    let repo = repo_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
+    let dispatched = crate::runner::poll_sync::sync_repo_releases(&state, &repo).await.map_err(AppError::Internal)?;
+    Ok(Json(SyncResponse { dispatched }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,6 +196,7 @@ mod tests {
             created_at: "2020-01-01T00:00:00Z".to_string(),
             updated_at: "2020-01-01T00:00:00Z".to_string(),
             github_hook_id: None,
+            last_synced_release_id: None,
         };
         assert!(!to_public(&repo).webhook_connected);
     }

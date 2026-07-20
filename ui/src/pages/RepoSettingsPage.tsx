@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Download, RefreshCw, Trash2, Upload, Webhook, XCircle } from "lucide-react";
-import { useDeleteRepo, useRepo, useTestRepoConnection } from "../hooks/useRepos";
+import { AlertTriangle, CheckCircle2, Download, RefreshCw, RotateCw, Trash2, Upload, Webhook, XCircle } from "lucide-react";
+import { useDeleteRepo, useRepo, useSyncRepo, useTestRepoConnection } from "../hooks/useRepos";
 import { useCreateWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import GithubMark from "../components/common/GithubMark";
@@ -28,6 +28,7 @@ export default function RepoSettingsPage() {
   const { data: repo } = useRepo(repoId);
   const { data: workflows } = useWorkflows(repoId);
   const testConnection = useTestRepoConnection();
+  const syncRepo = useSyncRepo();
   const deleteRepo = useDeleteRepo();
   const createWorkflow = useCreateWorkflow(repoId as string);
   const navigate = useNavigate();
@@ -80,6 +81,24 @@ export default function RepoSettingsPage() {
           {!repo.webhook_connected && (
             <div className="mt-3">
               <WebhookUnreachableBanner />
+              <p className="mt-2 text-xs text-neutral-600">
+                Until that's fixed, this instance automatically polls for new releases every few minutes instead.{" "}
+              </p>
+              <Button
+                variant="default"
+                size="sm"
+                className="mt-2"
+                onClick={() => syncRepo.mutate(repo.id)}
+                disabled={syncRepo.isPending}
+              >
+                <RotateCw className={`h-3.5 w-3.5 ${syncRepo.isPending ? "animate-spin" : ""}`} strokeWidth={2} />
+                {syncRepo.isPending ? "Syncing…" : "Sync now"}
+              </Button>
+              {syncRepo.data && (
+                <p className="mt-2 text-xs text-neutral-500">
+                  {syncRepo.data.dispatched ? "Found and dispatched a new release." : "No new release since the last sync."}
+                </p>
+              )}
             </div>
           )}
 
