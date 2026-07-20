@@ -1,16 +1,46 @@
 import { useState } from "react";
+import type { ComponentType } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Cloud, Globe, Router, RotateCw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Cloud, Globe, Loader2, Router, RotateCw, X } from "lucide-react";
 import { useRepo, useSyncRepo } from "../hooks/useRepos";
-import { useNetworkInfo, useSettings } from "../hooks/useSettings";
+import { useCloudflareTunnelStatus, useNetworkInfo, useSettings, useStartCloudflareTunnel } from "../hooks/useSettings";
 import Button from "../components/common/Button";
 import Card from "../components/common/Card";
+import InfoTooltip from "../components/common/InfoTooltip";
+import Modal from "../components/common/Modal";
 import PageHeader from "../components/common/PageHeader";
-import { TabButton, TabList } from "../components/common/Tabs";
 import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
 import WebhookUrlField from "../components/webhooks/WebhookUrlField";
 
 type Method = "cloudflare" | "tunnel" | "manual";
+
+const METHODS: { id: Method; label: string; icon: ComponentType<{ className?: string; strokeWidth?: number }>; blurb: string }[] = [
+  { id: "cloudflare", label: "Cloudflare Tunnel", icon: Cloud, blurb: "One click, no router access needed." },
+  { id: "tunnel", label: "Other tunnel", icon: Globe, blurb: "Already running ngrok, Tailscale Funnel, or a proxy." },
+  { id: "manual", label: "Port forward", icon: Router, blurb: "Forward a port on your router. No HTTPS." },
+];
+
+function ModalHeader({
+  icon: Icon,
+  title,
+  onClose,
+}: {
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
+  title: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <Icon className="h-5 w-5 text-neutral-400" strokeWidth={2} />
+        <div className="text-sm font-medium text-neutral-200">{title}</div>
+      </div>
+      <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200">
+        <X className="h-4 w-4" strokeWidth={2} />
+      </button>
+    </div>
+  );
+}
 
 export default function RepoWebhooksPage() {
   const { repoId } = useParams();
@@ -18,7 +48,10 @@ export default function RepoWebhooksPage() {
   const { data: settings } = useSettings();
   const { data: networkInfo } = useNetworkInfo();
   const syncRepo = useSyncRepo();
-  const [method, setMethod] = useState<Method>("cloudflare");
+  const [openMethod, setOpenMethod] = useState<Method | null>(null);
+
+  const { data: tunnelStatus } = useCloudflareTunnelStatus();
+  const startTunnel = useStartCloudflareTunnel();
 
   if (!repo) return null;
 
@@ -26,9 +59,10 @@ export default function RepoWebhooksPage() {
   const portForwardUrl = networkInfo?.public_ip
     ? `http://${networkInfo.public_ip}:${networkInfo.port}${networkInfo.webhook_path_template.replace("{repo_id}", repo.id)}`
     : undefined;
+  const tunnelUrl = tunnelStatus?.status === "running" ? tunnelStatus.url : undefined;
 
   return (
-    <div className="flex max-w-3xl flex-col gap-5">
+    <div className="flex w-full flex-col gap-5">
       <PageHeader title="Webhooks" subtitle="How GitHub delivers push, pull request, and release events to this instance." />
 
       <Card className="p-5">
@@ -42,12 +76,17 @@ export default function RepoWebhooksPage() {
             <div className="text-sm font-medium text-neutral-200">
               {repo.webhook_connected ? "GitHub can reach this webhook" : "GitHub can't reach this webhook"}
             </div>
-            <code className="mt-2 block break-all rounded bg-neutral-950 px-2 py-1 text-xs text-neutral-400">{repo.webhook_url}</code>
+            <code className="mt-2 block w-fit max-w-full break-all rounded bg-neutral-950 px-2 py-1 text-xs text-neutral-400">
+              {repo.webhook_url}
+            </code>
             {settings?.public_url && (
-              <p className="mt-2 text-xs text-neutral-600">
-                Instance-wide public URL is set to <code className="text-neutral-400">{settings.public_url}</code>, which applies to
-                every connected repo on this instance, not just this one.
-              </p>
+              <div className="mt-2 flex items-center gap-1 text-xs text-neutral-600">
+                Instance-wide public URL: <code className="text-neutral-400">{settings.public_url}</code>
+                <InfoTooltip
+                  className="-my-2"
+                  text="This applies to every connected repo on this instance, not just the one you're looking at."
+                />
+              </div>
             )}
 
             {!repo.webhook_connected && (
@@ -81,78 +120,105 @@ export default function RepoWebhooksPage() {
         </p>
       </Card>
 
-      <Card className="p-0">
-        <div className="px-5 pt-4">
+      <div>
+        <div className="mb-3 flex items-center gap-1">
           <div className="text-sm font-medium text-neutral-200">Point GitHub at this instance</div>
-          <p className="mt-1 pb-3 text-xs text-neutral-500">
-            GitHub needs a real public URL to call back into this instance. Pick whichever matches how you're exposing it &mdash;
-            nothing is applied until you click "Use this URL".
+          <InfoTooltip text="GitHub needs a real public URL to call back into this instance. Pick whichever matches how you're exposing it — nothing is applied until you confirm inside." />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {METHODS.map(({ id, label, icon: Icon, blurb }) => (
+            <button
+              key={id}
+              onClick={() => setOpenMethod(id)}
+              className="flex flex-col items-start gap-2 rounded-md border border-neutral-800 bg-neutral-900 p-5 text-left transition-colors hover:border-neutral-700 hover:bg-neutral-800/40"
+            >
+              <Icon className="h-6 w-6 text-neutral-400" strokeWidth={2} />
+              <div className="text-sm font-medium text-neutral-200">{label}</div>
+              <p className="text-xs text-neutral-500">{blurb}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 text-xs text-neutral-600">
+        Permission errors when confirming a URL?
+        <InfoTooltip text='Your GitHub App needs the "Webhooks (read & write)" repository permission enabled. Enable it, then try again.' />
+      </div>
+
+      <Modal open={openMethod === "cloudflare"} onClose={() => setOpenMethod(null)} className="max-w-xl">
+        <ModalHeader icon={Cloud} title="Cloudflare Tunnel" onClose={() => setOpenMethod(null)} />
+        <div className="mt-3 flex items-start gap-1">
+          <p className="text-xs text-neutral-500">
+            Starts a tunnel to this instance and fills in its public URL automatically &mdash; no terminal, no copy-pasting.
           </p>
-          <TabList>
-            <TabButton active={method === "cloudflare"} onClick={() => setMethod("cloudflare")} icon={Cloud}>
-              Cloudflare Tunnel
-            </TabButton>
-            <TabButton active={method === "tunnel"} onClick={() => setMethod("tunnel")} icon={Globe}>
-              Other tunnel
-            </TabButton>
-            <TabButton active={method === "manual"} onClick={() => setMethod("manual")} icon={Router}>
-              Port forward
-            </TabButton>
-          </TabList>
+          <InfoTooltip
+            className="-mt-1"
+            text="This runs the cloudflared binary on the machine hosting this instance and reads back the URL it's assigned, so nothing manual is needed. If cloudflared isn't installed yet, starting the tunnel will say so with a link to install it."
+          />
         </div>
 
-        <div className="p-5">
-          {method === "cloudflare" && (
-            <>
-              <p className="text-xs text-neutral-500">Run this on the machine hosting this instance, then paste the URL it prints:</p>
-              <code className="mt-2 block break-all rounded bg-neutral-950 px-2 py-1 text-xs text-neutral-400">
-                cloudflared tunnel --url http://localhost:{port}
-              </code>
-              <WebhookUrlField repoId={repo.id} placeholder="https://random-words.trycloudflare.com" className="mt-3" />
-            </>
-          )}
-
-          {method === "tunnel" && (
-            <>
-              <p className="text-xs text-neutral-500">
-                ngrok, Tailscale Funnel, a reverse proxy you already run &mdash; paste whatever public URL it gives you.
-              </p>
-              <WebhookUrlField repoId={repo.id} placeholder="https://your-tunnel-url.example" className="mt-3" />
-            </>
-          )}
-
-          {method === "manual" && (
-            <>
-              <p className="text-xs text-neutral-500">
-                Forward port <code className="text-neutral-400">{port}</code> on your router to this machine, then use the assembled
-                URL below.
-              </p>
-              <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
-                <dt className="text-neutral-600">Public IP</dt>
-                <dd className="text-neutral-400">
-                  {networkInfo === undefined
-                    ? "detecting…"
-                    : (networkInfo.public_ip ?? "couldn't detect automatically — check your router's WAN page")}
-                </dd>
-                <dt className="text-neutral-600">Port</dt>
-                <dd className="text-neutral-400">{port}</dd>
-                <dt className="text-neutral-600">Path</dt>
-                <dd className="break-all text-neutral-400">{networkInfo?.webhook_path_template.replace("{repo_id}", repo.id) ?? "…"}</dd>
-              </dl>
-              <p className="mt-3 flex items-start gap-1.5 text-xs text-[var(--color-status-warning)]">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-                Plain port-forwarding has no TLS termination in front of it &mdash; the URL below is http, not https.
-              </p>
-              <WebhookUrlField repoId={repo.id} placeholder="http://your-public-ip:port" initialUrl={portForwardUrl} className="mt-3" />
-            </>
-          )}
+        <div className="mt-3 flex items-center gap-2">
+          <Button
+            variant="primary"
+            onClick={() => startTunnel.mutate()}
+            disabled={startTunnel.isPending || tunnelStatus?.status === "starting" || tunnelStatus?.status === "running"}
+          >
+            {tunnelStatus?.status === "starting" && <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />}
+            {tunnelStatus?.status === "running" ? "Tunnel running" : tunnelStatus?.status === "starting" ? "Starting…" : "Start tunnel"}
+          </Button>
+          {tunnelStatus?.status === "running" && <CheckCircle2 className="h-4 w-4 text-[var(--color-status-success)]" strokeWidth={2} />}
         </div>
-      </Card>
 
-      <p className="text-xs text-neutral-600">
-        If "Use this URL" fails with a permission error, make sure your GitHub App has the{" "}
-        <span className="text-neutral-400">Webhooks (read &amp; write)</span> repository permission enabled.
-      </p>
+        {tunnelStatus?.status === "starting" && (
+          <p className="mt-2 text-xs text-neutral-500">Waiting for cloudflared to report a tunnel URL, usually a few seconds…</p>
+        )}
+        {tunnelStatus?.status === "failed" && (
+          <p className="mt-2 flex items-start gap-1.5 text-xs text-[var(--color-status-error)]">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+            {tunnelStatus.message}
+          </p>
+        )}
+
+        <WebhookUrlField repoId={repo.id} placeholder="https://random-words.trycloudflare.com" initialUrl={tunnelUrl} className="mt-3" />
+      </Modal>
+
+      <Modal open={openMethod === "tunnel"} onClose={() => setOpenMethod(null)} className="max-w-xl">
+        <ModalHeader icon={Globe} title="Other tunnel" onClose={() => setOpenMethod(null)} />
+        <div className="mt-3 flex items-start gap-1">
+          <p className="text-xs text-neutral-500">Already running ngrok, Tailscale Funnel, or your own reverse proxy? Paste its public URL below.</p>
+          <InfoTooltip className="-mt-1" text={`Example: ngrok http ${port}, then paste the https://*.ngrok-free.app URL it prints.`} />
+        </div>
+        <WebhookUrlField repoId={repo.id} placeholder="https://your-tunnel-url.example" className="mt-3" />
+      </Modal>
+
+      <Modal open={openMethod === "manual"} onClose={() => setOpenMethod(null)} className="max-w-xl">
+        <ModalHeader icon={Router} title="Port forward" onClose={() => setOpenMethod(null)} />
+        <div className="mt-3 flex items-start gap-1">
+          <p className="text-xs text-neutral-500">
+            Forward port <code className="text-neutral-400">{port}</code> on your router to this machine, then confirm the assembled URL below.
+          </p>
+          <InfoTooltip
+            className="-mt-1"
+            text="Log into your router's admin page, find Port Forwarding, and map an external port to this machine's local IP and port. Exact steps vary by router."
+          />
+        </div>
+        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
+          <dt className="text-neutral-600">Public IP</dt>
+          <dd className="text-neutral-400">
+            {networkInfo === undefined ? "detecting…" : (networkInfo.public_ip ?? "couldn't detect automatically — check your router's WAN page")}
+          </dd>
+          <dt className="text-neutral-600">Port</dt>
+          <dd className="text-neutral-400">{port}</dd>
+          <dt className="text-neutral-600">Path</dt>
+          <dd className="break-all text-neutral-400">{networkInfo?.webhook_path_template.replace("{repo_id}", repo.id) ?? "…"}</dd>
+        </dl>
+        <p className="mt-3 flex items-start gap-1.5 text-xs text-[var(--color-status-warning)]">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+          Plain port-forwarding has no TLS termination in front of it &mdash; the URL below is http, not https.
+        </p>
+        <WebhookUrlField repoId={repo.id} placeholder="http://your-public-ip:port" initialUrl={portForwardUrl} className="mt-3" />
+      </Modal>
     </div>
   );
 }
