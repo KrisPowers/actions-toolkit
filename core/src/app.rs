@@ -43,6 +43,12 @@ pub struct AppStateInner {
     /// single-instance tool never has two connect attempts in flight together, so a new `start`
     /// simply replaces whatever was here.
     pub pending_device_flow: RwLock<Option<PendingDeviceFlow>>,
+    /// Serializes the GitHub App access-token refresh in `github::client::ensure_fresh_app_token`.
+    /// GitHub App refresh tokens are single-use: two callers racing to refresh the same stale
+    /// token at once (e.g. two workflow runs checking out code at the same moment) would have the
+    /// loser's exchange rejected by GitHub, wrongly marking a connection that the winner just
+    /// refreshed fine as needing reconnect.
+    pub token_refresh_lock: tokio::sync::Mutex<()>,
 }
 
 impl FromRef<AppState> for SqlitePool {

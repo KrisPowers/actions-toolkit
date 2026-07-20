@@ -159,6 +159,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         log_hub,
         github_client: RwLock::new(None),
         pending_device_flow: RwLock::new(None),
+        token_refresh_lock: tokio::sync::Mutex::new(()),
     }));
 
     // Repos GitHub can't reach with a real webhook still get their `on: release` workflows

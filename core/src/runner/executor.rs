@@ -479,6 +479,7 @@ mod tests {
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
+            token_refresh_lock: tokio::sync::Mutex::new(()),
         }));
 
         let out_file = "artifact.txt";
@@ -571,6 +572,7 @@ mod tests {
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
+            token_refresh_lock: tokio::sync::Mutex::new(()),
         }));
 
         let shell = if cfg!(windows) { Some("cmd".to_string()) } else { None };

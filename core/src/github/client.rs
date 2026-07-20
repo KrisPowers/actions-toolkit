@@ -17,14 +17,26 @@ const REFRESH_THRESHOLD_MINUTES: i64 = 5;
 /// connection: a legacy PAT, or a GitHub App user-to-server token (refreshed here if it's expired
 /// or close to it). Returns a client-facing 400 (not a 500) when no token has been configured yet,
 /// since that's an expected, user-actionable state, not a server bug.
+///
+/// A cache hit is only trusted once the underlying `github_app` row (if any) has been checked for
+/// expiry: the client used to be cached unconditionally after the first build, which meant a
+/// `github_app` token's 8-hour expiry was never re-checked for the rest of the process's life and
+/// every call through here silently 401'd against GitHub once it passed. Tests that pre-seed
+/// `github_client` without any DB row (to exercise unrelated logic without a real connection)
+/// still hit the fast path, since `cached_app_token_needs_refresh` only has an opinion when a
+/// `github_app` row actually exists.
 pub async fn shared(state: &AppState) -> AppResult<Octocrab> {
     if let Some(client) = state.github_client.read().await.clone() {
-        return Ok(client);
+        if !cached_app_token_needs_refresh(state).await? {
+            return Ok(client);
+        }
     }
 
     let mut guard = state.github_client.write().await;
     if let Some(client) = guard.clone() {
-        return Ok(client);
+        if !cached_app_token_needs_refresh(state).await? {
+            return Ok(client);
+        }
     }
 
     let row = token_queries::get(&state.db).await?.ok_or_else(|| AppError::BadRequest(NO_TOKEN_MESSAGE.into()))?;
@@ -39,17 +51,42 @@ pub async fn shared(state: &AppState) -> AppResult<Octocrab> {
     Ok(client)
 }
 
+async fn cached_app_token_needs_refresh(state: &AppState) -> AppResult<bool> {
+    match token_queries::get(&state.db).await? {
+        Some(row) if row.token_type == "github_app" => Ok(app_token_needs_refresh(&row)),
+        _ => Ok(false),
+    }
+}
+
+fn app_token_needs_refresh(row: &GithubToken) -> bool {
+    match row.expires_at.as_deref() {
+        Some(expires_at) => parse_iso(expires_at) <= chrono::Utc::now() + chrono::Duration::minutes(REFRESH_THRESHOLD_MINUTES),
+        None => true,
+    }
+}
+
 /// Returns a current access token for a `github_app` row, refreshing it first if it's expired or
 /// within `REFRESH_THRESHOLD_MINUTES` of expiring. A failed refresh (revoked refresh token,
 /// network error) marks the connection as needing reconnect rather than handing back a stale
 /// token that would just fail the next GitHub call with a confusing 401.
 async fn ensure_fresh_app_token(state: &AppState, row: &GithubToken) -> AppResult<String> {
-    let needs_refresh = match row.expires_at.as_deref() {
-        Some(expires_at) => parse_iso(expires_at) <= chrono::Utc::now() + chrono::Duration::minutes(REFRESH_THRESHOLD_MINUTES),
-        None => true,
-    };
+    if !app_token_needs_refresh(row) {
+        return state.enc.decrypt_str(&row.token_encrypted, &row.token_nonce).map_err(AppError::Internal);
+    }
 
-    if !needs_refresh {
+    // GitHub App refresh tokens are single-use: a concurrent caller (e.g. two workflow runs
+    // checking out code around the same moment) could otherwise read the same soon-to-expire row
+    // and race this exchange, with the loser's refresh token already spent by the winner. Without
+    // this lock the loser gets rejected and wrongly marks a connection the winner just refreshed
+    // fine as needing reconnect.
+    let _refresh_guard = state.token_refresh_lock.lock().await;
+
+    // Re-read after acquiring the lock: a caller that was waiting on it may have lost the race to
+    // one that already refreshed, in which case the row is fresh now and there's nothing to do.
+    let row = token_queries::get(&state.db)
+        .await?
+        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("github_app token row disappeared during refresh")))?;
+    if !app_token_needs_refresh(&row) {
         return state.enc.decrypt_str(&row.token_encrypted, &row.token_nonce).map_err(AppError::Internal);
     }
 
@@ -142,6 +179,7 @@ mod tests {
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
+            token_refresh_lock: tokio::sync::Mutex::new(()),
         }))
     }
 
@@ -174,6 +212,51 @@ mod tests {
 
         let row = token_queries::get(&state.db).await.unwrap().unwrap();
         assert_eq!(row.needs_reconnect, 1);
+    }
+
+    /// Rule-proving test: GitHub App refresh tokens are single-use, so two callers racing to
+    /// refresh the same about-to-expire token (e.g. two workflow runs checking out code around the
+    /// same moment) must not both spend it. Only the winner should actually call GitHub; the
+    /// loser, once unblocked by `token_refresh_lock`, must see the already-refreshed row and reuse
+    /// it rather than racing a second (rejected) exchange and wrongly flipping `needs_reconnect`.
+    #[tokio::test]
+    async fn concurrent_refreshes_do_not_race_the_single_use_refresh_token() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "refreshed-access-token",
+                "refresh_token": "refreshed-refresh-token",
+                "expires_in": 28800
+            })))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+        // Any second exchange (the bug this test guards against) hits this instead and would be
+        // rejected, since the refresh token the first exchange used is now spent.
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "error": "bad_refresh_token",
+                "error_description": "The refresh token passed is incorrect or expired."
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let state = test_state(mock_server.uri()).await;
+        let (token_encrypted, token_nonce) = state.enc.encrypt_str("stale-access-token").unwrap();
+        let (refresh_encrypted, refresh_nonce) = state.enc.encrypt_str("still-valid-refresh-token").unwrap();
+        let already_expired = (chrono::Utc::now() - chrono::Duration::minutes(1)).to_rfc3339();
+        token_queries::upsert_app_token(
+            &state.db, &token_encrypted, &token_nonce, &refresh_encrypted, &refresh_nonce, &already_expired, None, "octocat",
+        )
+        .await
+        .unwrap();
+
+        let (a, b) = tokio::join!(decrypted_token(&state), decrypted_token(&state));
+        assert!(a.is_ok(), "first concurrent refresh should succeed: {a:?}");
+        assert!(b.is_ok(), "second concurrent refresh should reuse the winner's result instead of racing GitHub: {b:?}");
+
+        let row = token_queries::get(&state.db).await.unwrap().unwrap();
+        assert_eq!(row.needs_reconnect, 0, "a concurrent refresh race must not wrongly mark a working connection as needing reconnect");
     }
 
     #[tokio::test]
