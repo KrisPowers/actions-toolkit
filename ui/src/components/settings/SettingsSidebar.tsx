@@ -1,10 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 import { NavLink } from "react-router-dom";
-import { AlertTriangle, Download, KeyRound, ShieldCheck, Webhook } from "lucide-react";
+import { AlertTriangle, Download, KeyRound, ShieldCheck } from "lucide-react";
 import { cn } from "../../lib/cn";
 
 const SECTIONS: { path: string; icon: LucideIcon; label: string; danger?: boolean }[] = [
-  { path: "webhooks", icon: Webhook, label: "Webhooks" },
   { path: "secrets", icon: KeyRound, label: "Secrets" },
   { path: "access", icon: ShieldCheck, label: "Access" },
   { path: "data", icon: Download, label: "Data" },

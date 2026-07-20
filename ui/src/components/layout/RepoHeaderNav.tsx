@@ -4,6 +4,7 @@ import {
   PlayCircle,
   ScrollText,
   SlidersHorizontal,
+  Webhook,
   Workflow,
 } from "lucide-react";
 import { useRepoIdFromLocation } from "../../hooks/useRepoIdFromLocation";
@@ -15,6 +16,7 @@ const TABS = [
   { path: "logs", icon: ScrollText, label: "Logs" },
   { path: "artifacts", icon: Package, label: "Artifacts" },
   { path: "events", icon: AlertTriangle, label: "Flagged Events" },
+  { path: "webhooks", icon: Webhook, label: "Webhooks" },
   { path: "settings", icon: SlidersHorizontal, label: "Settings" },
 ];
 

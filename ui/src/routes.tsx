@@ -9,7 +9,7 @@ const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const RepoConnectPage = lazy(() => import("./pages/RepoConnectPage"));
 const RepoSettingsLayout = lazy(() => import("./pages/RepoSettingsLayout"));
-const RepoWebhooksPage = lazy(() => import("./pages/settings/RepoWebhooksPage"));
+const RepoWebhooksPage = lazy(() => import("./pages/RepoWebhooksPage"));
 const RepoSecretsSettingsPage = lazy(() => import("./pages/settings/RepoSecretsSettingsPage"));
 const RepoAccessSettingsPage = lazy(() => import("./pages/settings/RepoAccessSettingsPage"));
 const RepoDataSettingsPage = lazy(() => import("./pages/settings/RepoDataSettingsPage"));
@@ -41,8 +41,7 @@ export default function AppRoutes() {
         <Route path="/repos" element={<Navigate to="/" replace />} />
         <Route path="/repos/connect" element={<RepoConnectPage />} />
         <Route path="/repos/:repoId/settings" element={<RepoSettingsLayout />}>
-          <Route index element={<Navigate to="webhooks" replace />} />
-          <Route path="webhooks" element={<RepoWebhooksPage />} />
+          <Route index element={<Navigate to="secrets" replace />} />
           <Route path="secrets" element={<RepoSecretsSettingsPage />} />
           <Route path="access" element={<RepoAccessSettingsPage />} />
           <Route path="data" element={<RepoDataSettingsPage />} />
@@ -56,6 +55,7 @@ export default function AppRoutes() {
         <Route path="/repos/:repoId/logs" element={<RepoLogsPage />} />
         <Route path="/repos/:repoId/artifacts" element={<RepoArtifactsPage />} />
         <Route path="/repos/:repoId/events" element={<RepoEventsPage />} />
+        <Route path="/repos/:repoId/webhooks" element={<RepoWebhooksPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

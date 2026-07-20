@@ -1,31 +1,24 @@
 import { useEffect, useState } from "react";
-import type { LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
 import { useRecreateWebhook } from "../../hooks/useRepos";
 import { useUpdateSettings } from "../../hooks/useSettings";
 import Button from "../common/Button";
-import Card from "../common/Card";
 import Input from "../common/Input";
 
 /**
- * Shared shape for every "point the webhook at this URL" quick action: pins the instance-wide
- * `public_url` setting, then re-creates the current repo's GitHub webhook against it. Nothing is
- * applied until the operator clicks the button, even when `initialUrl` prefills the field.
+ * Pins the instance-wide `public_url` setting, then re-creates the current repo's GitHub webhook
+ * against it. Nothing is applied until the operator clicks the button, even when `initialUrl`
+ * prefills the field.
  */
-export default function TunnelQuickActionCard({
-  icon: Icon,
-  title,
-  children,
+export default function WebhookUrlField({
+  repoId,
   placeholder,
   initialUrl,
-  repoId,
+  className,
 }: {
-  icon: LucideIcon;
-  title: string;
-  children?: ReactNode;
+  repoId: string;
   placeholder: string;
   initialUrl?: string;
-  repoId: string;
+  className?: string;
 }) {
   const [url, setUrl] = useState(initialUrl ?? "");
   const [touched, setTouched] = useState(false);
@@ -57,14 +50,8 @@ export default function TunnelQuickActionCard({
   }
 
   return (
-    <Card className="p-5">
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-neutral-500" strokeWidth={2} />
-        <div className="text-sm font-medium text-neutral-200">{title}</div>
-      </div>
-      {children}
-
-      <div className="mt-3 flex gap-2">
+    <div className={className}>
+      <div className="flex gap-2">
         <Input
           value={url}
           onChange={(e) => {
@@ -83,6 +70,6 @@ export default function TunnelQuickActionCard({
           {result.message}
         </p>
       )}
-    </Card>
+    </div>
   );
 }
