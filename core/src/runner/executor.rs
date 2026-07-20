@@ -4,7 +4,7 @@ use bollard::Docker;
 use crate::app::AppState;
 use crate::bucket;
 use crate::db::models::now_iso;
-use crate::db::queries::{artifacts as artifact_queries, buckets as bucket_queries, runs as run_queries};
+use crate::db::queries::{artifacts as artifact_queries, buckets as bucket_queries, runs as run_queries, secrets as secret_queries};
 use crate::runner::log_stream::LogLine;
 use crate::runner::{artifact_capture, docker as docker_ops, workspace};
 use crate::workflow::model::Job;
@@ -12,6 +12,7 @@ use crate::workflow::model::Job;
 pub struct CheckoutContext {
     pub owner: String,
     pub repo: String,
+    pub repo_id: String,
     pub pat: String,
     pub git_ref: String,
 }
@@ -44,9 +45,8 @@ pub async fn run_job(
     let workspace_dir = workspace::ensure(&state.config.workspaces_dir(), job_run_id)?;
 
     // Mirrors GitHub Actions' automatic `GITHUB_TOKEN`: steps need the same credential checkout
-    // already uses to reach the GitHub API themselves (e.g. to update a release), since this app
-    // has no separate secrets store yet.
-    let github_context_env: Vec<String> = checkout
+    // already uses to reach the GitHub API themselves (e.g. to update a release).
+    let mut injected_env: Vec<String> = checkout
         .as_ref()
         .map(|ctx| {
             vec![
@@ -55,6 +55,27 @@ pub async fn run_job(
             ]
         })
         .unwrap_or_default();
+
+    // Repo-scoped secrets, decrypted just-in-time and injected the same way: never written back
+    // to disk in plaintext, never logged (see the docs on the step_env merge below), only ever
+    // present as an env var inside the running job's own container/sandbox process.
+    if let Some(ctx) = &checkout {
+        match secret_queries::list_for_repo(&state.db, &ctx.repo_id).await {
+            Ok(secrets) => {
+                for secret in secrets {
+                    match state.enc.decrypt_str(&secret.value_encrypted, &secret.value_nonce) {
+                        Ok(value) => injected_env.push(format!("{}={value}", secret.name)),
+                        Err(e) => {
+                            emit_system_line(state, job_run_id, &format!("failed to decrypt secret '{}': {e}", secret.name)).await;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                emit_system_line(state, job_run_id, &format!("failed to look up secrets for this repo: {e}")).await;
+            }
+        }
+    }
 
     if let Some(ctx) = &checkout {
         let owner = ctx.owner.clone();
@@ -179,7 +200,7 @@ pub async fn run_job(
         let declared_keys: std::collections::HashSet<String> =
             step_env.iter().filter_map(|e| e.split('=').next().map(str::to_string)).collect();
         step_env.extend(
-            github_context_env
+            injected_env
                 .iter()
                 .filter(|e| !declared_keys.contains(e.split('=').next().unwrap_or_default()))
                 .cloned(),

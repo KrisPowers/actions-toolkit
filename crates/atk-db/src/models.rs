@@ -38,6 +38,10 @@ pub struct Repo {
     /// failed in a way that still left the repo row behind (shouldn't happen going forward, see
     /// `api::repos::create`, but kept nullable defensively for exactly that edge case).
     pub github_hook_id: Option<i64>,
+    /// The last release ID this instance already reacted to via polling (see
+    /// `core::runner::poll_sync`), so a repo without a working webhook doesn't re-dispatch
+    /// `on: release` workflows for the same release on every poll. `None` until the first sync.
+    pub last_synced_release_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -200,6 +204,24 @@ pub struct Artifact {
     pub size_bytes: i64,
     pub content_type: Option<String>,
     pub created_at: String,
+}
+
+/// A repo-scoped encrypted secret, injected into every job step's env the same way `GITHUB_TOKEN`
+/// already is. `value_encrypted`/`value_nonce` are skipped on serialization so this type is safe
+/// to return directly from a list/get API handler; only `core::secrets::decrypted_value` (which
+/// requires the app's own `EncryptionKey`) can recover the plaintext.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Secret {
+    pub id: String,
+    pub repo_id: String,
+    pub name: String,
+    #[serde(skip_serializing)]
+    pub value_encrypted: Vec<u8>,
+    #[serde(skip_serializing)]
+    pub value_nonce: Vec<u8>,
+    pub created_by: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]

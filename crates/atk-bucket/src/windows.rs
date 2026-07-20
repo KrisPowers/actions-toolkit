@@ -118,7 +118,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
         let sid_string = sid_string.context("failed to stringify AppContainer SID")?;
 
         grant_full_control(&workspace_for_setup, &sid_string).context("failed to grant AppContainer access to workspace")?;
-        grant_ancestor_traverse_access(&workspace_for_setup, &sid_string);
+        grant_ancestor_traverse_access(&workspace_for_setup);
         for extra_path in &extra_ro_mounts_for_setup {
             if let Err(e) = grant_read_execute_access(extra_path, &sid_string) {
                 tracing::warn!(error = %e, path = %extra_path.display(), "failed to grant configured extra host-mount access");
@@ -300,32 +300,55 @@ fn grant_read_execute_access(path: &Path, sid_string: &str) -> Result<()> {
     Ok(())
 }
 
-/// Grants the AppContainer SID traverse-only access (`(X)`, not full control, and not inherited
-/// by each ancestor's other children) to `path`'s two immediate ancestors — for a workspace at
-/// `<data_dir>/workspaces/<run_id>`, that's `<data_dir>/workspaces` and `<data_dir>` itself — on
-/// top of `grant_full_control`'s full-control grant on `path` itself.
+/// Grants the two well-known "any AppContainer" SIDs traverse-only access (`(X)`, not full
+/// control, and not inherited by each ancestor's other children) to `path`'s two immediate
+/// ancestors — for a workspace at `<data_dir>/workspaces/<run_id>`, that's
+/// `<data_dir>/workspaces` and `<data_dir>` itself — on top of `grant_full_control`'s full-control
+/// grant (scoped to this specific bucket's own SID) on `path` itself.
 ///
 /// AppContainer tokens don't hold the "bypass traverse checking" privilege normal user tokens get
-/// by default, so a workspace nested under the app's own data dir is otherwise only reachable by
-/// tools that don't validate their working directory at startup. `cmd.exe`'s inherited-cwd
-/// handling doesn't (file I/O inside the granted leaf directory works fine even without this), but
-/// PowerShell's `Set-Location`/`$PWD` initialization does, and fails with
-/// `UnauthorizedAccessException` without it — found by testing a real (non-`cmd`) default-shell
-/// step end-to-end, not from documentation.
+/// by default (confirmed: AppContainer tokens do inherit `SeChangeNotifyPrivilege` from the base
+/// user token, but the filesystem driver enforces a full traversal check for AppContainer tokens
+/// regardless, unless the volume's device object has `FILE_DEVICE_ALLOW_APPCONTAINER_TRAVERSAL`
+/// set, which no user-mode code controls). `cmd.exe`'s inherited-cwd handling doesn't need this
+/// (file I/O inside the granted leaf directory works fine even without it); PowerShell's
+/// `Set-Location`/`$PWD` initialization does.
 ///
-/// Deliberately bounded to 2 levels rather than walking to the drive root: this covers every
-/// directory the app itself creates without touching (and persistently modifying the ACLs of)
-/// arbitrary user-profile directories above `data_dir` that this process doesn't own — which, on
-/// top of the unbounded-depth version being needlessly invasive, also turned out to be extremely
-/// slow (one `icacls` process per ancestor, several of which took tens of seconds against real
-/// directories with large existing ACLs).
-fn grant_ancestor_traverse_access(path: &Path, sid_string: &str) {
-    let grant_arg = format!("*{sid_string}:(X)");
+/// Grants the well-known `ALL APPLICATION PACKAGES` (`S-1-15-2-1`) and
+/// `ALL RESTRICTED APPLICATION PACKAGES` (`S-1-15-2-2`) SIDs — which cover every AppContainer
+/// token on the system, not just this bucket's own — rather than this bucket's unique per-run
+/// SID. This is deliberate, not a broadening of scope: traverse-only access doesn't expose an
+/// ancestor's contents (no read/list), only lets a token pass through it to reach something it's
+/// separately been granted deeper down, and it's what makes repeated calls across many buckets
+/// idempotent instead of accumulating. The previous per-bucket-SID version left a permanent,
+/// never-removed ACE on these shared directories for every bucket ever created (see the tracking
+/// issue for the ACL growth this caused); granting the same two well-known trustees every time is
+/// a no-op once already granted (verified: `icacls` on the *same* trustee repeatedly stays at one
+/// ACE and takes ~15ms per call, not growing or slowing down).
+///
+/// Still bounded to 2 levels, unchanged from before. A separate investigation tried widening this
+/// to cover the OS-standard default data dir's full ancestor chain (6 levels) in the hope of also
+/// fixing the deeper-nesting cwd-fallback problem tracked in a linked issue, but that was
+/// empirically disproven: even with the well-known SIDs verified present (via `icacls`) on every
+/// ancestor up to and including `%LOCALAPPDATA%`, the underlying PowerShell cwd-initialization
+/// failure still reproduced. Ancestor ACL grants are necessary but evidently not sufficient for
+/// that problem, whose real root cause is still unknown — not fixed here, left to that issue.
+fn grant_ancestor_traverse_access(path: &Path) {
+    const ALL_APPLICATION_PACKAGES_SID: &str = "S-1-15-2-1";
+    const ALL_RESTRICTED_APPLICATION_PACKAGES_SID: &str = "S-1-15-2-2";
+
     for ancestor in path.ancestors().skip(1).take(2) {
         if ancestor.parent().is_none() {
             break;
         }
-        match std::process::Command::new("icacls").arg(ancestor).arg("/grant").arg(&grant_arg).output() {
+        match std::process::Command::new("icacls")
+            .arg(ancestor)
+            .arg("/grant")
+            .arg(format!("*{ALL_APPLICATION_PACKAGES_SID}:(X)"))
+            .arg("/grant")
+            .arg(format!("*{ALL_RESTRICTED_APPLICATION_PACKAGES_SID}:(X)"))
+            .output()
+        {
             Ok(output) if !output.status.success() => {
                 tracing::warn!(
                     path = %ancestor.display(),
@@ -958,6 +981,57 @@ mod tests {
         assert!(out_path.exists());
 
         remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Rule-proving test for the ACL-accumulation fix (#73): creating several buckets whose
+    /// workspaces share the same ancestor directory must leave exactly one ACE per well-known
+    /// SID on that ancestor, not one per bucket. Before this fix, each bucket granted its own
+    /// unique per-run SID, so this would have left 3 separate entries after 3 buckets.
+    #[tokio::test]
+    async fn repeated_bucket_creation_does_not_accumulate_ancestor_acl_entries() {
+        let capability = probe_capability().await;
+        if !capability.ok {
+            eprintln!("skipping: host does not support Bucket ({:?})", capability.reason);
+            return;
+        }
+
+        let test_id = Uuid::new_v4().to_string();
+        let base = std::env::temp_dir().join(format!("atk-bucket-test-acl-growth-{test_id}"));
+        let buckets_root = base.join("buckets");
+        std::fs::create_dir_all(&buckets_root).unwrap();
+
+        let db_path = base.join("test.db");
+        let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
+        seed_fk_chain(&pool, "repo-acl", "workflow-acl", "run-acl", "job-acl-0").await;
+
+        // Three separate buckets, three separate workspaces, but all sharing `base` as a common
+        // ancestor -- the thing that used to accumulate one SID grant per bucket.
+        for i in 0..3 {
+            let workspace = base.join(format!("workspace-{i}"));
+            std::fs::create_dir_all(&workspace).unwrap();
+            let spec = BucketSpec {
+                workspace_host_path: &workspace,
+                run_id: "run-acl",
+                job_run_id: "job-acl-0",
+                network_enabled: false,
+                ttl: std::time::Duration::from_secs(3600),
+                extra_ro_mounts: &[],
+            };
+            let handle = create_job_bucket(&pool, &buckets_root, spec).await.expect("create_job_bucket should succeed");
+            remove_bucket(&pool, &handle).await.expect("remove_bucket should succeed");
+        }
+
+        let output = std::process::Command::new("icacls").arg(&base).output().expect("icacls should run");
+        let acl_text = String::from_utf8_lossy(&output.stdout);
+        println!("ACL on shared ancestor after 3 buckets:\n{acl_text}");
+
+        let all_app_packages_count = acl_text.matches("ALL APPLICATION PACKAGES").count();
+        assert_eq!(
+            all_app_packages_count, 1,
+            "expected exactly one ALL APPLICATION PACKAGES entry after 3 buckets, not one per bucket: {acl_text}"
+        );
+
         let _ = std::fs::remove_dir_all(&base);
     }
 
