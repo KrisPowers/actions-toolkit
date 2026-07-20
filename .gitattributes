@@ -6,4 +6,4 @@
 # CRLF checkout produces a different checksum than the one recorded by an
 # existing database, which breaks startup with "migration N was previously
 # applied but has been modified".
-migrations/*.sql text eol=lf
+**/migrations/*.sql text eol=lf
