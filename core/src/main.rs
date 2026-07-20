@@ -161,6 +161,10 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         pending_device_flow: RwLock::new(None),
     }));
 
+    // Repos GitHub can't reach with a real webhook still get their `on: release` workflows
+    // dispatched, just on a poll instead of a push.
+    tokio::spawn(runner::poll_sync::run_periodic_sync(state.clone(), std::time::Duration::from_secs(300)));
+
     let app = api::router(state);
 
     let listener = bind_with_fallback(&bind_addr, port).await?;

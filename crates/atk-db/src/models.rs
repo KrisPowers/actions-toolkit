@@ -38,6 +38,10 @@ pub struct Repo {
     /// failed in a way that still left the repo row behind (shouldn't happen going forward, see
     /// `api::repos::create`, but kept nullable defensively for exactly that edge case).
     pub github_hook_id: Option<i64>,
+    /// The last release ID this instance already reacted to via polling (see
+    /// `core::runner::poll_sync`), so a repo without a working webhook doesn't re-dispatch
+    /// `on: release` workflows for the same release on every poll. `None` until the first sync.
+    pub last_synced_release_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
