@@ -9,6 +9,7 @@ import Button, { buttonClass } from "../components/common/Button";
 import Card from "../components/common/Card";
 import PageHeader from "../components/common/PageHeader";
 import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
+import SecretsCard from "../components/settings/SecretsCard";
 import { workflowsApi } from "../api/workflows";
 
 function nameFromYaml(text: string, fallback: string): string {
@@ -157,6 +158,8 @@ export default function RepoSettingsPage() {
             )}
           </div>
         </Card>
+
+        <SecretsCard repoId={repo.id} />
 
         <Card className="border-[var(--color-status-error)]/30 bg-[var(--color-status-error)]/5 p-5 xl:col-span-2">
           <div className="flex items-center gap-2 text-[var(--color-status-error)]">

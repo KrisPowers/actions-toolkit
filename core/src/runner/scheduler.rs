@@ -109,6 +109,7 @@ async fn run_inner(
             let checkout = checkout.as_ref().map(|c| CheckoutContext {
                 owner: c.owner.clone(),
                 repo: c.repo.clone(),
+                repo_id: c.repo_id.clone(),
                 pat: c.pat.clone(),
                 git_ref: c.git_ref.clone(),
             });
