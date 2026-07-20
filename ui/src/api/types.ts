@@ -57,6 +57,7 @@ export interface Settings {
   bucket_cpu_limit_millis: number | null;
   bucket_memory_limit_mb: number | null;
   bucket_host_mounts_json: string;
+  public_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -75,6 +76,15 @@ export interface UpdateSettingsRequest {
   bucket_cpu_limit_millis?: number;
   bucket_memory_limit_mb?: number;
   bucket_host_mounts_json?: string;
+  /** Empty string clears the override back to auto-detecting from the request. */
+  public_url?: string;
+}
+
+export interface NetworkInfo {
+  public_ip: string | null;
+  port: number;
+  configured_public_url: string | null;
+  webhook_path_template: string;
 }
 
 export interface AccessibleRepo {
