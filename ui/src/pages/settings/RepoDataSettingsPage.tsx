@@ -91,7 +91,7 @@ export default function RepoDataSettingsPage() {
                   <XCircle className="h-3.5 w-3.5 shrink-0 text-[var(--color-status-error)]" strokeWidth={2} />
                 )}
                 <span className="text-neutral-300">{r.fileName}</span>
-                {!r.ok && <span className="text-neutral-500">— {r.message}</span>}
+                {!r.ok && <span className="text-neutral-500">: {r.message}</span>}
               </li>
             ))}
           </ul>

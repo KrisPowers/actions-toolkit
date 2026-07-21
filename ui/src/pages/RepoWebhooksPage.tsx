@@ -123,7 +123,7 @@ export default function RepoWebhooksPage() {
       <div>
         <div className="mb-3 flex items-center gap-1">
           <div className="text-sm font-medium text-neutral-200">Point GitHub at this instance</div>
-          <InfoTooltip text="GitHub needs a real public URL to call back into this instance. Pick whichever matches how you're exposing it — nothing is applied until you confirm inside." />
+          <InfoTooltip text="GitHub needs a real public URL to call back into this instance. Pick whichever matches how you're exposing it. Nothing is applied until you confirm inside." />
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -150,7 +150,7 @@ export default function RepoWebhooksPage() {
         <ModalHeader icon={Cloud} title="Cloudflare Tunnel" onClose={() => setOpenMethod(null)} />
         <div className="mt-3 flex items-start gap-1">
           <p className="text-xs text-neutral-500">
-            Starts a tunnel to this instance and fills in its public URL automatically &mdash; no terminal, no copy-pasting.
+            Starts a tunnel to this instance and fills in its public URL automatically, no terminal, no copy-pasting.
           </p>
           <InfoTooltip
             className="-mt-1"
@@ -206,7 +206,7 @@ export default function RepoWebhooksPage() {
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
           <dt className="text-neutral-600">Public IP</dt>
           <dd className="text-neutral-400">
-            {networkInfo === undefined ? "detecting…" : (networkInfo.public_ip ?? "couldn't detect automatically — check your router's WAN page")}
+            {networkInfo === undefined ? "detecting…" : (networkInfo.public_ip ?? "couldn't detect automatically, check your router's WAN page")}
           </dd>
           <dt className="text-neutral-600">Port</dt>
           <dd className="text-neutral-400">{port}</dd>
@@ -215,7 +215,7 @@ export default function RepoWebhooksPage() {
         </dl>
         <p className="mt-3 flex items-start gap-1.5 text-xs text-[var(--color-status-warning)]">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-          Plain port-forwarding has no TLS termination in front of it &mdash; the URL below is http, not https.
+          Plain port-forwarding has no TLS termination in front of it. The URL below is http, not https.
         </p>
         <WebhookUrlField repoId={repo.id} placeholder="http://your-public-ip:port" initialUrl={portForwardUrl} className="mt-3" />
       </Modal>
