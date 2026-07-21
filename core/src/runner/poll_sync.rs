@@ -29,14 +29,20 @@ pub async fn sync_repo_releases(state: &AppState, repo: &Repo) -> Result<bool> {
     let payload_json = payload.to_string();
     let delivery_id = format!("poll-release-{latest_id}");
 
-    let mut matched_ids = Vec::new();
+    let mut matches = Vec::new();
     let workflows = workflow_queries::list_enabled_for_repo(&state.db, &repo.id).await?;
     for workflow_row in workflows {
         let Ok(model) = yaml::parse(&workflow_row.yaml_source) else { continue };
         let Some(matched) = trigger_match::matches(&model, "release", &payload) else { continue };
+        matches.push((workflow_row, matched));
+    }
 
-        matched_ids.push(workflow_row.id.clone());
+    let matched_ids: Vec<&str> = matches.iter().map(|(w, _)| w.id.as_str()).collect();
+    let matched_json = serde_json::to_string(&matched_ids).unwrap_or_else(|_| "[]".to_string());
+    let event = event_queries::record(&state.db, Some(&repo.id), "release", Some(&delivery_id), &payload_json, true, &matched_json).await;
+    let event_id = event.as_ref().ok().map(|e| e.id.as_str());
 
+    for (workflow_row, matched) in matches {
         if let Err(e) = crate::runner::dispatch::spawn_run(
             state,
             &workflow_row,
@@ -45,15 +51,13 @@ pub async fn sync_repo_releases(state: &AppState, repo: &Repo) -> Result<bool> {
             Some(&payload_json),
             matched.ref_name.as_deref(),
             matched.commit_sha.as_deref(),
+            event_id,
         )
         .await
         {
             tracing::error!(error = %e, workflow_id = %workflow_row.id, "failed to spawn run for polled release");
         }
     }
-
-    let matched_json = serde_json::to_string(&matched_ids).unwrap_or_else(|_| "[]".to_string());
-    let _ = event_queries::record(&state.db, Some(&repo.id), "release", Some(&delivery_id), &payload_json, true, &matched_json).await;
 
     repo_queries::set_last_synced_release_id(&state.db, &repo.id, latest_id).await?;
 

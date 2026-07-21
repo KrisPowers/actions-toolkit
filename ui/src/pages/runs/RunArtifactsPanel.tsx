@@ -1,11 +1,10 @@
 import { useParams } from "react-router-dom";
 import { Download, Package } from "lucide-react";
-import { useArtifacts } from "../hooks/useArtifacts";
-import { artifactsApi } from "../api/artifacts";
-import { buttonClass } from "../components/common/Button";
-import PageHeader from "../components/common/PageHeader";
-import { listCardClass } from "../components/common/Card";
-import EmptyState from "../components/common/EmptyState";
+import { useArtifacts } from "../../hooks/useArtifacts";
+import { artifactsApi } from "../../api/artifacts";
+import { buttonClass } from "../../components/common/Button";
+import { listCardClass } from "../../components/common/Card";
+import EmptyState from "../../components/common/EmptyState";
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -13,17 +12,15 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function ArtifactsPage() {
+export default function RunArtifactsPanel() {
   const { runId } = useParams();
   const { data: artifacts, isLoading } = useArtifacts(runId);
 
   return (
-    <div>
-      <PageHeader title="Artifacts" backTo={`/runs/${runId}`} backLabel="Back to run" />
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      {isLoading && <p className="text-sm text-neutral-500">Loading…</p>}
 
-      {isLoading && <p className="mt-6 text-sm text-neutral-500">Loading…</p>}
-
-      <div className={listCardClass("mt-4")}>
+      <div className={listCardClass()}>
         {(artifacts ?? []).map((a) => (
           <div key={a.id} className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-2">

@@ -156,6 +156,7 @@ pub struct WorkflowRun {
     pub started_at: Option<String>,
     pub finished_at: Option<String>,
     pub created_at: String,
+    pub webhook_event_id: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]
