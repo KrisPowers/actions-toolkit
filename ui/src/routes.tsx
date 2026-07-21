@@ -17,11 +17,10 @@ const RepoDangerSettingsPage = lazy(() => import("./pages/settings/RepoDangerSet
 const WorkflowListPage = lazy(() => import("./pages/WorkflowListPage"));
 const WorkflowEditorPage = lazy(() => import("./pages/WorkflowEditorPage"));
 const RunListPage = lazy(() => import("./pages/RunListPage"));
-const RunDetailPage = lazy(() => import("./pages/RunDetailPage"));
-const ArtifactsPage = lazy(() => import("./pages/ArtifactsPage"));
-const RepoArtifactsPage = lazy(() => import("./pages/RepoArtifactsPage"));
-const RepoEventsPage = lazy(() => import("./pages/RepoEventsPage"));
-const RepoLogsPage = lazy(() => import("./pages/RepoLogsPage"));
+const RunDetailLayout = lazy(() => import("./pages/RunDetailLayout"));
+const RunLogsPanel = lazy(() => import("./pages/runs/RunLogsPanel"));
+const RunArtifactsPanel = lazy(() => import("./pages/runs/RunArtifactsPanel"));
+const RunInsightsPanel = lazy(() => import("./pages/runs/RunInsightsPanel"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 
 function RouteFallback() {
@@ -50,11 +49,12 @@ export default function AppRoutes() {
         <Route path="/repos/:repoId/workflows" element={<WorkflowListPage />} />
         <Route path="/repos/:repoId/workflows/:workflowId" element={<WorkflowEditorPage />} />
         <Route path="/repos/:repoId/runs" element={<RunListPage />} />
-        <Route path="/runs/:runId" element={<RunDetailPage />} />
-        <Route path="/runs/:runId/artifacts" element={<ArtifactsPage />} />
-        <Route path="/repos/:repoId/logs" element={<RepoLogsPage />} />
-        <Route path="/repos/:repoId/artifacts" element={<RepoArtifactsPage />} />
-        <Route path="/repos/:repoId/events" element={<RepoEventsPage />} />
+        <Route path="/runs/:runId" element={<RunDetailLayout />}>
+          <Route index element={<Navigate to="logs" replace />} />
+          <Route path="logs" element={<RunLogsPanel />} />
+          <Route path="artifacts" element={<RunArtifactsPanel />} />
+          <Route path="insights" element={<RunInsightsPanel />} />
+        </Route>
         <Route path="/repos/:repoId/webhooks" element={<RepoWebhooksPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
