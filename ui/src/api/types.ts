@@ -87,6 +87,12 @@ export interface NetworkInfo {
   webhook_path_template: string;
 }
 
+export type CloudflareTunnelState =
+  | { status: "idle" }
+  | { status: "starting" }
+  | { status: "running"; url: string }
+  | { status: "failed"; message: string };
+
 export interface AccessibleRepo {
   owner: string;
   name: string;

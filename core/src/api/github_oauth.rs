@@ -152,6 +152,7 @@ mod tests {
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
             token_refresh_lock: tokio::sync::Mutex::new(()),
+            cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
         }));
 
         (state, user)

@@ -60,6 +60,10 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(settings::get).patch(settings::update))
         .route("/settings/runtime-status", get(settings::runtime_status))
         .route("/settings/network-info", get(settings::network_info))
+        .route(
+            "/settings/cloudflare-tunnel",
+            get(settings::cloudflare_tunnel_status).post(settings::start_cloudflare_tunnel).delete(settings::stop_cloudflare_tunnel),
+        )
         .route("/repos", get(repos::list).post(repos::create))
         .route("/repos/{id}", get(repos::get).delete(repos::delete))
         .route("/repos/{id}/test-connection", post(repos::test_connection))
