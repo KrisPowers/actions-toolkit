@@ -481,6 +481,7 @@ mod tests {
             pending_device_flow: RwLock::new(None),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
+            tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
         }));
 
         let out_file = "artifact.txt";
@@ -575,6 +576,7 @@ mod tests {
             pending_device_flow: RwLock::new(None),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
+            tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
         }));
 
         let shell = if cfg!(windows) { Some("cmd".to_string()) } else { None };

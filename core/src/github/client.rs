@@ -181,6 +181,7 @@ mod tests {
             pending_device_flow: RwLock::new(None),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
+            tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
         }))
     }
 

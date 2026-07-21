@@ -6,6 +6,7 @@ mod error;
 mod github;
 mod runner;
 mod telemetry;
+mod tailscale;
 mod tunnel;
 mod ws;
 
@@ -162,6 +163,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         pending_device_flow: RwLock::new(None),
         token_refresh_lock: tokio::sync::Mutex::new(()),
         cloudflare_tunnel: Arc::new(tunnel::CloudflareTunnel::new()),
+        tailscale_tunnel: Arc::new(tailscale::TailscaleTunnel::new()),
     }));
 
     // Repos GitHub can't reach with a real webhook still get their `on: release` workflows

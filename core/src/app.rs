@@ -52,6 +52,9 @@ pub struct AppStateInner {
     /// The instance-wide "one click" Cloudflare Quick Tunnel started from the Webhooks page.
     /// Shared (not per-repo): a tunnel exposes this instance's port, not any single repo.
     pub cloudflare_tunnel: Arc<crate::tunnel::CloudflareTunnel>,
+    /// The instance-wide "one click" Tailscale Funnel started from the Webhooks page. Same
+    /// shared-not-per-repo reasoning as `cloudflare_tunnel`.
+    pub tailscale_tunnel: Arc<crate::tailscale::TailscaleTunnel>,
 }
 
 impl FromRef<AppState> for SqlitePool {

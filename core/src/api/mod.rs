@@ -64,6 +64,11 @@ pub fn router(state: AppState) -> Router {
             "/settings/cloudflare-tunnel",
             get(settings::cloudflare_tunnel_status).post(settings::start_cloudflare_tunnel).delete(settings::stop_cloudflare_tunnel),
         )
+        .route(
+            "/settings/tailscale-tunnel",
+            get(settings::tailscale_tunnel_status).post(settings::start_tailscale_tunnel).delete(settings::stop_tailscale_tunnel),
+        )
+        .route("/settings/tunnel-availability", get(settings::tunnel_availability))
         .route("/repos", get(repos::list).post(repos::create))
         .route("/repos/{id}", get(repos::get).delete(repos::delete))
         .route("/repos/{id}/test-connection", post(repos::test_connection))
