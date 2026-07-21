@@ -4,6 +4,7 @@ import type { RunLog, RunTree, WorkflowRun } from "./types";
 export const runsApi = {
   listForRepo: (repoId: string, limit?: number) =>
     api.get<WorkflowRun[]>(`/repos/${repoId}/runs${limit ? `?limit=${limit}` : ""}`),
+  listForWebhookEvent: (eventId: string) => api.get<WorkflowRun[]>(`/webhook-events/${eventId}/runs`),
   get: (id: string) => api.get<RunTree>(`/runs/${id}`),
   cancel: (id: string) => api.post<void>(`/runs/${id}/cancel`),
   rerun: (id: string) => api.post<WorkflowRun>(`/runs/${id}/rerun`),
