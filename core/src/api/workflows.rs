@@ -232,6 +232,7 @@ pub async fn dispatch(
         None,
         Some(&format!("refs/heads/{}", repo.default_branch)),
         None,
+        None,
     )
     .await
     .map_err(AppError::Internal)?;

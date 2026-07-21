@@ -74,6 +74,7 @@ pub fn router(state: AppState) -> Router {
         .route("/repos/{id}/test-connection", post(repos::test_connection))
         .route("/repos/{id}/sync", post(repos::sync))
         .route("/repos/{id}/webhook-events", get(repos::webhook_events))
+        .route("/webhook-events/{id}/runs", get(runs::list_for_webhook_event))
         .route("/repos/{id}/webhooks/recreate", post(repos::recreate_webhook))
         .route("/repos/{repo_id}/secrets", get(secrets::list_for_repo).post(secrets::create))
         .route("/repos/{repo_id}/secrets/{id}", delete(secrets::delete))

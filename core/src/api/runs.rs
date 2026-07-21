@@ -25,6 +25,15 @@ pub async fn list_for_repo(
     Ok(Json(runs))
 }
 
+pub async fn list_for_webhook_event(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    _user: CurrentUser,
+) -> AppResult<Json<Vec<WorkflowRun>>> {
+    let runs = run_queries::list_for_webhook_event(&state.db, &id).await?;
+    Ok(Json(runs))
+}
+
 pub async fn get(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -108,6 +117,7 @@ pub async fn rerun(
         previous.trigger_payload_json.as_deref(),
         previous.ref_name.as_deref(),
         previous.commit_sha.as_deref(),
+        previous.webhook_event_id.as_deref(),
     )
     .await
     .map_err(AppError::Internal)?;
