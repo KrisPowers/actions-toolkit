@@ -355,6 +355,42 @@ mod tests {
         assert!(requests.iter().any(|r| r.method.as_str() == "DELETE" && r.url.path() == "/repos/octocat/hello-world/hooks/777"));
     }
 
+    /// Rule-proving test: a repo with existing run and webhook-event history can still be
+    /// disconnected. workflow_runs.repo_id and webhook_events.repo_id both reference repos(id)
+    /// directly (not just transitively through workflows), so without ON DELETE CASCADE on those
+    /// columns this used to fail with a foreign key constraint violation surfaced as a generic
+    /// 500 to the caller.
+    #[tokio::test]
+    async fn delete_succeeds_when_the_repo_has_run_and_webhook_event_history() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/repos/octocat/hello-world/hooks"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({ "id": 777 })))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("DELETE"))
+            .and(path("/repos/octocat/hello-world/hooks/777"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&mock_server)
+            .await;
+
+        let (state, user) = test_state(&mock_server).await;
+        let response = create(State(state.clone()), CurrentUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
+        let repo_id = response.0.repo.id.clone();
+
+        let workflow = crate::db::queries::workflows::create(&state.db, &repo_id, "CI", None, ".github/workflows/ci.yml", "on: push\njobs: {}", "{}")
+            .await
+            .unwrap();
+        let webhook_event = event_queries::record(&state.db, Some(&repo_id), "push", Some("delivery-1"), "{}", true, "[]").await.unwrap();
+        crate::db::queries::runs::create_run(&state.db, &workflow.id, &repo_id, "push", None, Some("refs/heads/main"), None, Some(&webhook_event.id))
+            .await
+            .unwrap();
+
+        delete(State(state.clone()), Path(repo_id.clone()), CurrentUser(user)).await.unwrap();
+
+        assert!(repo_queries::find_by_id(&state.db, &repo_id).await.unwrap().is_none());
+    }
+
     /// Rule-proving test: recreating a webhook deletes the old GitHub-side hook and points the new
     /// one at the operator's pinned `public_url`, not the request's (usually LAN) Host header.
     #[tokio::test]
