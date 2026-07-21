@@ -65,7 +65,7 @@ async fn bind_with_fallback(bind_addr: &str, preferred_port: u16) -> anyhow::Res
 /// Plain, synchronous entry point (deliberately *not* `#[tokio::main]`): the hidden
 /// `__bucket-init` subcommand must run before any tokio runtime exists. Tokio's multi-thread
 /// runtime spawns its worker threads as soon as it's built, and `bucket_init::run` needs to
-/// `fork()` from a genuinely single-threaded process — if that dispatch happened from inside an
+/// `fork()` from a genuinely single-threaded process. If that dispatch happened from inside an
 /// already-running tokio runtime, the fork would be unsound. Every other subcommand builds its
 /// own runtime after this check, unaffected.
 fn main() -> anyhow::Result<()> {

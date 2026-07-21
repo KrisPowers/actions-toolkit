@@ -167,7 +167,7 @@ pub struct SyncResponse {
     pub dispatched: bool,
 }
 
-/// Manual trigger for the polling fallback (`runner::poll_sync`) — lets an operator sync
+/// Manual trigger for the polling fallback (`runner::poll_sync`), lets an operator sync
 /// immediately instead of waiting for the periodic sweep, e.g. right after publishing a release
 /// on a repo without a working webhook.
 pub async fn sync(State(state): State<AppState>, Path(id): Path<String>, _user: CurrentUser) -> AppResult<Json<SyncResponse>> {

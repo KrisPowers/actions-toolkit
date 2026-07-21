@@ -11,11 +11,11 @@
 //! 1. joins the pre-created cgroup (must happen before pivot_root severs the host cgroupfs path)
 //! 2. assembles the sandbox root (bind-mount workspace + curated read-only host dirs) and
 //!    `pivot_root`s into it, so anything not explicitly mounted is invisible at the path level
-//! 3. forks once more — this fork is the one that actually lands inside the new PID namespace,
+//! 3. forks once more, this fork is the one that actually lands inside the new PID namespace,
 //!    becoming its PID 1
 //! 4. PID 1 mounts a fresh `/proc`, installs a seccomp filter, drops all capabilities, and
 //!    `execve`s the step's shell command
-//! 5. this process just waits on PID 1 and exits with its status — PID 1 dying for any reason
+//! 5. this process just waits on PID 1 and exits with its status. PID 1 dying for any reason
 //!    (including this process itself being killed, via `PR_SET_PDEATHSIG`) tears down every
 //!    remaining task in the namespace automatically
 

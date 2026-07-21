@@ -52,7 +52,7 @@ pub async fn mark_reaped(pool: &SqlitePool, id: &str) -> sqlx::Result<()> {
     Ok(())
 }
 
-/// Buckets whose TTL has already passed and that nothing has reaped yet — the periodic sweep
+/// Buckets whose TTL has already passed and that nothing has reaped yet, the periodic sweep
 /// target.
 pub async fn list_expired(pool: &SqlitePool) -> sqlx::Result<Vec<Bucket>> {
     sqlx::query_as::<_, Bucket>(
@@ -63,13 +63,13 @@ pub async fn list_expired(pool: &SqlitePool) -> sqlx::Result<Vec<Bucket>> {
     .await
 }
 
-/// Every still-open bucket regardless of TTL — used once at startup to find sandboxes that
+/// Every still-open bucket regardless of TTL, used once at startup to find sandboxes that
 /// outlived a crash of the previous process and must be force-cleaned unconditionally.
 pub async fn list_unreaped(pool: &SqlitePool) -> sqlx::Result<Vec<Bucket>> {
     sqlx::query_as::<_, Bucket>("SELECT * FROM buckets WHERE reaped_at IS NULL").fetch_all(pool).await
 }
 
-/// Still-open buckets belonging to a given run — the cancel handler's target, so a cancelled
+/// Still-open buckets belonging to a given run, the cancel handler's target, so a cancelled
 /// run's sandboxes are torn down immediately instead of waiting for the TTL reaper.
 pub async fn list_unreaped_for_run(pool: &SqlitePool, workflow_run_id: &str) -> sqlx::Result<Vec<Bucket>> {
     sqlx::query_as::<_, Bucket>("SELECT * FROM buckets WHERE reaped_at IS NULL AND workflow_run_id = ?")
