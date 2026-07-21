@@ -57,32 +57,18 @@ pub async fn receive(
         return StatusCode::UNAUTHORIZED;
     }
 
-    let mut matched_ids = Vec::new();
+    let mut matches = Vec::new();
     if let Ok(workflows) = workflow_queries::list_enabled_for_repo(&state.db, &repo_id).await {
         for workflow_row in workflows {
             let Ok(model) = yaml::parse(&workflow_row.yaml_source) else { continue };
             let Some(matched) = trigger_match::matches(&model, &github_event, &payload) else { continue };
-
-            matched_ids.push(workflow_row.id.clone());
-
-            if let Err(e) = crate::runner::dispatch::spawn_run(
-                &state,
-                &workflow_row,
-                &repo,
-                &github_event,
-                Some(&payload_json),
-                matched.ref_name.as_deref(),
-                matched.commit_sha.as_deref(),
-            )
-            .await
-            {
-                tracing::error!(error = %e, workflow_id = %workflow_row.id, "failed to spawn run for matched webhook");
-            }
+            matches.push((workflow_row, matched));
         }
     }
 
+    let matched_ids: Vec<&str> = matches.iter().map(|(w, _)| w.id.as_str()).collect();
     let matched_json = serde_json::to_string(&matched_ids).unwrap_or_else(|_| "[]".to_string());
-    let _ = event_queries::record(
+    let event = event_queries::record(
         &state.db,
         Some(&repo_id),
         &github_event,
@@ -92,6 +78,25 @@ pub async fn receive(
         &matched_json,
     )
     .await;
+
+    let event_id = event.as_ref().ok().map(|e| e.id.as_str());
+
+    for (workflow_row, matched) in matches {
+        if let Err(e) = crate::runner::dispatch::spawn_run(
+            &state,
+            &workflow_row,
+            &repo,
+            &github_event,
+            Some(&payload_json),
+            matched.ref_name.as_deref(),
+            matched.commit_sha.as_deref(),
+            event_id,
+        )
+        .await
+        {
+            tracing::error!(error = %e, workflow_id = %workflow_row.id, "failed to spawn run for matched webhook");
+        }
+    }
 
     StatusCode::OK
 }
