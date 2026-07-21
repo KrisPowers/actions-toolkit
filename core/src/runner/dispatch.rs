@@ -20,6 +20,7 @@ pub async fn spawn_run(
     trigger_payload_json: Option<&str>,
     ref_name: Option<&str>,
     commit_sha: Option<&str>,
+    webhook_event_id: Option<&str>,
 ) -> Result<WorkflowRun> {
     let model: Workflow = yaml::parse(&workflow_row.yaml_source)?;
 
@@ -31,6 +32,7 @@ pub async fn spawn_run(
         trigger_payload_json,
         ref_name,
         commit_sha,
+        webhook_event_id,
     )
     .await?;
 
