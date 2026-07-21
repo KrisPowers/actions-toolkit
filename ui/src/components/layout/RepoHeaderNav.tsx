@@ -1,21 +1,10 @@
-import {
-  AlertTriangle,
-  Package,
-  PlayCircle,
-  ScrollText,
-  SlidersHorizontal,
-  Webhook,
-  Workflow,
-} from "lucide-react";
+import { PlayCircle, SlidersHorizontal, Webhook, Workflow } from "lucide-react";
 import { useRepoIdFromLocation } from "../../hooks/useRepoIdFromLocation";
 import { TabLink } from "../common/Tabs";
 
 const TABS = [
   { path: "workflows", icon: Workflow, label: "Workflows" },
   { path: "runs", icon: PlayCircle, label: "Runs" },
-  { path: "logs", icon: ScrollText, label: "Logs" },
-  { path: "artifacts", icon: Package, label: "Artifacts" },
-  { path: "events", icon: AlertTriangle, label: "Flagged Events" },
   { path: "webhooks", icon: Webhook, label: "Webhooks" },
   { path: "settings", icon: SlidersHorizontal, label: "Settings" },
 ];
