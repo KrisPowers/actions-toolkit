@@ -91,7 +91,7 @@ pub async fn create(
         Ok(hook_id) => repo_queries::set_github_hook_id(&state.db, &repo.id, hook_id as i64).await?,
         Err(e) => {
             let _ = repo_queries::delete(&state.db, &repo.id).await;
-            return Err(AppError::BadRequest(format!("connected the repo but failed to create its GitHub webhook: {e}")));
+            return Err(AppError::BadRequest(format!("connected the repo but failed to create its GitHub webhook: {e:#}")));
         }
     }
 
@@ -201,7 +201,7 @@ pub async fn recreate_webhook(
     let payload_url = format!("{}/webhooks/github/{}", crate::api::webhook_base_url(&headers, &settings), repo.id);
     let hook_id = hooks::create_webhook(&github_client, &repo.owner, &repo.name, &payload_url, &webhook_secret)
         .await
-        .map_err(|e| AppError::BadRequest(format!("failed to create the GitHub webhook: {e}")))?;
+        .map_err(|e| AppError::BadRequest(format!("{e:#}")))?;
     repo_queries::set_github_hook_id(&state.db, &repo.id, hook_id as i64).await?;
 
     let repo = repo_queries::find_by_id(&state.db, &repo.id).await?.ok_or(AppError::NotFound)?;
@@ -441,6 +441,7 @@ mod tests {
         let repo_id = response.0.repo.id.clone();
 
         let result = recreate_webhook(State(state.clone()), Path(repo_id), test_headers(), CurrentUser(user)).await;
-        assert!(result.is_err());
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("insufficient permission"), "message did not surface the GitHub error: {message}");
     }
 }
