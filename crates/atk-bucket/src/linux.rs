@@ -18,7 +18,7 @@ use atk_db::queries::buckets as bucket_queries;
 const CGROUP_ROOT: &str = "/sys/fs/cgroup/actions-toolkit";
 /// Deliberately hyphen-free. systemd treats a hyphenated slice name as implicitly nested under a
 /// parent slice named by everything before the first hyphen (`foo-bar.slice` lives under
-/// `foo.slice`) — confirmed empirically: `--slice actions-toolkit.slice` actually placed the
+/// `foo.slice`), confirmed empirically: `--slice actions-toolkit.slice` actually placed the
 /// scope at `.../user@<uid>.service/actions.slice/actions-toolkit.slice/...`, an extra implied
 /// `actions.slice` level `systemd_user_scope_cgroup_path` didn't know about, so its computed path
 /// never matched reality and `try_create_systemd_scope` always looked like it had failed/timed
@@ -192,7 +192,7 @@ struct StepInvocation<'a> {
 }
 
 /// Read-only mounts for a step: `DEFAULT_RO_MOUNTS` plus the operator-configured
-/// `extra_ro_mounts` (deduplicated isn't needed — bind-mounting the same path twice is harmless),
+/// `extra_ro_mounts` (deduplicated isn't needed, bind-mounting the same path twice is harmless),
 /// filtered to paths that actually exist on the host. Pure and separate from `run_in_sandbox` so
 /// the merge/filter behavior is directly testable without needing a real sandboxed execution.
 fn resolve_ro_mounts(extra_ro_mounts: &[PathBuf]) -> Vec<PathBuf> {
@@ -200,7 +200,7 @@ fn resolve_ro_mounts(extra_ro_mounts: &[PathBuf]) -> Vec<PathBuf> {
 }
 
 /// Spawns `__bucket-init` with the namespace-unshare `pre_exec` hook, streams its stdout/stderr
-/// line-by-line to `on_line`, and returns its exit code — this is the actual per-step sandbox
+/// line-by-line to `on_line`, and returns its exit code. This is the actual per-step sandbox
 /// execution shared by `exec_step` and the capability probe.
 async fn run_in_sandbox<F>(
     root_skeleton: &Path,
@@ -246,7 +246,7 @@ where
         .stderr(std::process::Stdio::piped());
 
     // SAFETY: the closure below only calls unshare(2) and writes to this freshly-forked child's
-    // own /proc/self/{setgroups,uid_map,gid_map} before exec — no heap allocation, no locks, no
+    // own /proc/self/{setgroups,uid_map,gid_map} before exec, no heap allocation, no locks, no
     // access to state shared with other threads, satisfying pre_exec's async-signal-safety
     // requirement for the fork-to-exec window.
     unsafe {
@@ -302,14 +302,14 @@ where
 /// Runs in the freshly-forked, still-single-threaded child between `fork()` and `execve()` (see
 /// `Command::pre_exec`). Puts the child into new user/mount/uts/ipc/net/pid namespaces (cgroup
 /// is handled separately, see below) and maps its own (unprivileged) uid/gid to 0 inside the new
-/// user namespace — the standard
+/// user namespace, the standard
 /// unprivileged-user-namespace pattern (`man 7 user_namespaces`), safe here because a process
 /// that just created a user namespace via `unshare` automatically holds full capabilities
 /// within that namespace, including the `CAP_SETUID`/`CAP_SETGID` needed to write its own map.
 ///
 /// Deliberately excludes `CLONE_NEWCGROUP` here: per `cgroup_namespaces(7)`, a cgroup namespace
 /// has to be entered *after* the process has already been moved into its target cgroup, not
-/// before — joining a cgroup via its absolute host path while already inside a fresh cgroup
+/// before, joining a cgroup via its absolute host path while already inside a fresh cgroup
 /// namespace fails with EIO, since that path is no longer a descendant of the namespace's own
 /// root. `bucket_init::join_cgroup` does the join first; `unshare(CLONE_NEWCGROUP)` happens
 /// separately right after, giving the sandboxed process a namespaced view rooted at its own
@@ -335,7 +335,7 @@ fn unshare_into_new_namespaces() -> std::io::Result<()> {
 }
 
 /// Best-effort: enables the pids/memory/cpu controllers for delegation down to per-bucket
-/// cgroups. A failure here isn't fatal to sandbox creation — `cgroup.kill` (the guaranteed
+/// cgroups. A failure here isn't fatal to sandbox creation, `cgroup.kill` (the guaranteed
 /// teardown mechanism relied on elsewhere) is a core cgroup v2 interface file available
 /// regardless of which resource controllers happen to be delegated.
 fn ensure_cgroup_controllers() -> Result<()> {
@@ -378,7 +378,7 @@ fn create_cgroup(path: &Path) -> Result<()> {
 ///
 /// NOTE: the delegated-scope path has been reviewed against documented systemd/cgroup-v2
 /// semantics but has not been exercised end-to-end on a real systemd host (this was implemented
-/// without one available) — treat it as unverified until it's actually run against `systemd-run
+/// without one available), treat it as unverified until it's actually run against `systemd-run
 /// --user --scope` on a live system, same as the rest of the Bucket adversarial-validation work.
 async fn create_delegated_cgroup(id: &str) -> Result<PathBuf> {
     if let Some(path) = try_create_systemd_scope(id).await {
@@ -444,11 +444,11 @@ async fn try_create_systemd_scope(id: &str) -> Option<PathBuf> {
 
 /// Tears down a bucket's cgroup: `cgroup.kill` (Linux 5.14+) atomically SIGKILLs every process
 /// in the cgroup in one write, regardless of how deep a process tree the sandboxed command
-/// forked — this is the guaranteed-cleanup mechanism, not best-effort process tracking.
+/// forked. This is the guaranteed-cleanup mechanism, not best-effort process tracking.
 ///
 /// For a systemd-delegated scope (created with `--collect`), killing its last process makes
 /// systemd itself remove the scope's cgroup directory as part of garbage-collecting the now-empty
-/// unit — confirmed empirically, not assumed. That's success, the same as removing it ourselves,
+/// unit, confirmed empirically, not assumed. That's success, the same as removing it ourselves,
 /// so the retry loop below treats "the directory is just gone" as done rather than retrying
 /// `remove_dir` against a path that will never reappear.
 async fn destroy_cgroup(path: &Path) -> Result<()> {
@@ -472,10 +472,10 @@ async fn destroy_cgroup(path: &Path) -> Result<()> {
 /// stack, rather than hand-rolled veth+NAT+iptables, which would mutate host-global network state
 /// that a fork bomb or crash on our side could leave dangling. `pasta` attaches to the target
 /// PID's network namespace by number and is expected to keep running until that namespace is no
-/// longer referenced by any process, then exit on its own — not waited on here (see below).
+/// longer referenced by any process, then exit on its own, not waited on here (see below).
 ///
 /// NOTE: written from documented `pasta`/`passt` behavior, not exercised against a real `pasta`
-/// binary (none was available while writing this) — treat the exact invocation and the
+/// binary (none was available while writing this), treat the exact invocation and the
 /// fire-and-forget assumption below as unverified until run on a live host. In particular: if
 /// `pasta` does *not* actually daemonize/return once attached (this implementation doesn't wait
 /// on it, on the assumption that it does), the step's network may not be ready the instant its
@@ -501,7 +501,7 @@ mod tests {
     // `cargo test` resolves to the test harness binary rather than the real `actions-toolkit`
     // binary (Cargo doesn't set `CARGO_BIN_EXE_*` for a crate's own unit tests, only for
     // separate integration-test/example targets, and this crate has no library target to give
-    // such a target access to these internals anyway) — so it isn't exercised here. It's been
+    // such a target access to these internals anyway), so it isn't exercised here. It's been
     // verified manually against a real build instead; see the Bucket plan's verification notes.
 
     #[test]

@@ -167,7 +167,7 @@ pub struct SyncResponse {
     pub dispatched: bool,
 }
 
-/// Manual trigger for the polling fallback (`runner::poll_sync`) — lets an operator sync
+/// Manual trigger for the polling fallback (`runner::poll_sync`), lets an operator sync
 /// immediately instead of waiting for the periodic sweep, e.g. right after publishing a release
 /// on a repo without a working webhook.
 pub async fn sync(State(state): State<AppState>, Path(id): Path<String>, _user: CurrentUser) -> AppResult<Json<SyncResponse>> {
@@ -273,6 +273,7 @@ mod tests {
             pending_device_flow: RwLock::new(None),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
+            tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
         }));
 
         // Pre-seed the cached client pointed at the mock server, since client::shared() would

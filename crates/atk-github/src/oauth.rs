@@ -39,7 +39,7 @@ struct DeviceCodeResponse {
 
 /// Starts a device-flow connect attempt: GitHub returns a `user_code` to show the operator and a
 /// `device_code` this instance polls with. No client secret is sent (device flow is the one
-/// GitHub OAuth flow that genuinely doesn't need one — see the doc comment on `refresh_access_token`
+/// GitHub OAuth flow that genuinely doesn't need one, see the doc comment on `refresh_access_token`
 /// for why the redirect-based authorization-code flow this replaced needed one after all).
 pub async fn start_device_flow(device_code_url: &str, client_id: &str) -> Result<DeviceCodeStart> {
     let client = reqwest::Client::new();

@@ -4,7 +4,7 @@
 //! AppContainer (not restricted tokens + low integrity level) is the primary isolation
 //! primitive here: an AppContainer token has no access to any file or registry key that isn't
 //! explicitly ACL'd to its SID, and it has no network capability at all unless a capability SID
-//! (`internetClient` etc.) is present at process-creation time — both filesystem and network
+//! (`internetClient` etc.) is present at process-creation time. Both filesystem and network
 //! default-deny come from one coherent, Microsoft-supported mechanism, rather than needing a
 //! hand-rolled Windows Filtering Platform policy on top of a restricted token. Job Objects are
 //! the orthogonal third leg: `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` guarantees every process
@@ -221,7 +221,7 @@ pub(crate) fn handle_from_bucket_row(buckets_root: &Path, row: &atk_db::models::
 }
 
 /// Creates the AppContainer profile and returns the freshly-derived SID (caller must
-/// `FreeSid` it). No capability SIDs are granted, i.e. no network access — matches the Linux
+/// `FreeSid` it). No capability SIDs are granted, i.e. no network access, matches the Linux
 /// backend's current default-deny-only behavior (opt-in `network: true` support is a shared
 /// follow-up on both backends, not yet wired on either).
 fn create_appcontainer(profile_name: &str, description: &str) -> Result<windows::Win32::Security::PSID> {
@@ -258,7 +258,7 @@ fn sid_to_string(sid: windows::Win32::Security::PSID) -> Result<String> {
 }
 
 /// Grants the AppContainer SID full control over the workspace directory, recursively, via
-/// `icacls` rather than hand-rolled `SetNamedSecurityInfoW`/ACL-builder calls — `icacls` is the
+/// `icacls` rather than hand-rolled `SetNamedSecurityInfoW`/ACL-builder calls. `icacls` is the
 /// standard, well-tested tool for exactly this operation, which meaningfully lowers the risk of
 /// a subtle ACL-construction bug in security-critical code compared to reimplementing it with
 /// raw FFI.
@@ -281,7 +281,7 @@ fn grant_full_control(path: &Path, sid_string: &str) -> Result<()> {
 /// (`bucket_host_mounts_json`), for toolchains installed outside the base OS dirs `DEFAULT_RO_MOUNTS`
 /// covers. Deliberately best-effort: a bad or inaccessible configured path shouldn't block the
 /// whole bucket from starting, just leave that one path unreachable inside it (logged by the
-/// caller). Doesn't grant ancestor traverse access the way the workspace grant does — an operator
+/// caller). Doesn't grant ancestor traverse access the way the workspace grant does, an operator
 /// who configures an extra mount path is expected to pick one that's already reachable (e.g.
 /// under their own home directory, which already has the traverse grants a normal user session
 /// gets), not an arbitrary path buried somewhere the AppContainer has no way to reach at all.
@@ -302,8 +302,8 @@ fn grant_read_execute_access(path: &Path, sid_string: &str) -> Result<()> {
 
 /// Grants the two well-known "any AppContainer" SIDs traverse-only access (`(X)`, not full
 /// control, and not inherited by each ancestor's other children) to `path`'s two immediate
-/// ancestors — for a workspace at `<data_dir>/workspaces/<run_id>`, that's
-/// `<data_dir>/workspaces` and `<data_dir>` itself — on top of `grant_full_control`'s full-control
+/// ancestors, for a workspace at `<data_dir>/workspaces/<run_id>`, that's
+/// `<data_dir>/workspaces` and `<data_dir>` itself, on top of `grant_full_control`'s full-control
 /// grant (scoped to this specific bucket's own SID) on `path` itself.
 ///
 /// AppContainer tokens don't hold the "bypass traverse checking" privilege normal user tokens get
@@ -315,8 +315,8 @@ fn grant_read_execute_access(path: &Path, sid_string: &str) -> Result<()> {
 /// `Set-Location`/`$PWD` initialization does.
 ///
 /// Grants the well-known `ALL APPLICATION PACKAGES` (`S-1-15-2-1`) and
-/// `ALL RESTRICTED APPLICATION PACKAGES` (`S-1-15-2-2`) SIDs — which cover every AppContainer
-/// token on the system, not just this bucket's own — rather than this bucket's unique per-run
+/// `ALL RESTRICTED APPLICATION PACKAGES` (`S-1-15-2-2`) SIDs, which cover every AppContainer
+/// token on the system, not just this bucket's own, rather than this bucket's unique per-run
 /// SID. This is deliberate, not a broadening of scope: traverse-only access doesn't expose an
 /// ancestor's contents (no read/list), only lets a token pass through it to reach something it's
 /// separately been granted deeper down, and it's what makes repeated calls across many buckets
@@ -332,7 +332,7 @@ fn grant_read_execute_access(path: &Path, sid_string: &str) -> Result<()> {
 /// empirically disproven: even with the well-known SIDs verified present (via `icacls`) on every
 /// ancestor up to and including `%LOCALAPPDATA%`, the underlying PowerShell cwd-initialization
 /// failure still reproduced. Ancestor ACL grants are necessary but evidently not sufficient for
-/// that problem, whose real root cause is still unknown — not fixed here, left to that issue.
+/// that problem, whose real root cause is still unknown, not fixed here, left to that issue.
 fn grant_ancestor_traverse_access(path: &Path) {
     const ALL_APPLICATION_PACKAGES_SID: &str = "S-1-15-2-1";
     const ALL_RESTRICTED_APPLICATION_PACKAGES_SID: &str = "S-1-15-2-2";
@@ -367,7 +367,7 @@ fn grant_ancestor_traverse_access(path: &Path) {
 /// Builds the capability SIDs granted when `network: true` is requested: `internetClient` for
 /// outbound internet access, `privateNetworkClientServer` for also reaching other hosts on the
 /// local/private network. Returns the raw SID byte buffers alongside the `SID_AND_ATTRIBUTES`
-/// array pointing into them — the caller must keep the buffers alive for as long as the array is
+/// array pointing into them. The caller must keep the buffers alive for as long as the array is
 /// used (through the `CreateProcessW` call), since `SID_AND_ATTRIBUTES::Sid` is a raw pointer.
 fn network_capability_sids() -> Result<(Vec<Vec<u8>>, Vec<windows::Win32::Security::SID_AND_ATTRIBUTES>)> {
     use windows::Win32::Security::{WinCapabilityInternetClientSid, WinCapabilityPrivateNetworkClientServerSid};
@@ -668,7 +668,7 @@ fn pwsh_available() -> bool {
 
 /// Resolves a step's `shell:` override into the full command line `CreateProcessW` execs
 /// directly (no `cmd.exe` wrapper unless `cmd` is explicitly requested). Defaults to `pwsh`,
-/// falling back to the always-present `powershell.exe` when `pwsh.exe` isn't on `PATH` — matches
+/// falling back to the always-present `powershell.exe` when `pwsh.exe` isn't on `PATH`, matches
 /// real GitHub Actions' Windows runner default. An explicit `shell: pwsh` is honored as-is (no
 /// silent fallback) so a missing pwsh install fails loudly instead of quietly using a different
 /// shell than the one the workflow author asked for.
@@ -704,7 +704,7 @@ fn resolve_shell_cmdline(shell: Option<&str>, shell_command: &str) -> String {
 /// `-Command "<script>"` naively wraps the script in one pair of double quotes with no escaping,
 /// so any double quote in the script (i.e. almost any real PowerShell script) truncates the
 /// argument early and corrupts everything after it. `-EncodedCommand` takes base64'd UTF-16LE
-/// instead, sidestepping command-line quoting entirely — the same approach GitHub Actions' own
+/// instead, sidestepping command-line quoting entirely. The same approach GitHub Actions' own
 /// Windows runner uses for multi-line `run:` steps.
 /// PowerShell's default `$ErrorActionPreference` is `Continue`: a non-terminating cmdlet error
 /// (the overwhelming majority of built-in cmdlet failures) prints to stderr and lets the script
@@ -930,7 +930,7 @@ mod tests {
     }
 
     /// Confirms `$ErrorActionPreference = 'Stop'` doesn't turn an *already-successful* step into
-    /// a false failure — the wrapper must be additive, not change behavior for scripts that were
+    /// a false failure. The wrapper must be additive, not change behavior for scripts that were
     /// already correct.
     #[tokio::test]
     async fn successful_powershell_step_still_reports_success_with_the_wrapper() {
@@ -1085,7 +1085,7 @@ mod tests {
     /// through without erroring. Deliberately targets a real external host, not loopback: Windows
     /// blocks AppContainer loopback access unconditionally via a separate mechanism
     /// (`NetworkIsolationSetAppContainerConfig`'s loopback-exemption list), independent of
-    /// capability SIDs — discovered by first writing this test against 127.0.0.1 and watching it
+    /// capability SIDs, discovered by first writing this test against 127.0.0.1 and watching it
     /// fail even with the capability granted, which is exactly the kind of thing only running it
     /// for real (not just compiling) catches.
     #[tokio::test]

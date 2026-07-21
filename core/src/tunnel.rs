@@ -102,6 +102,14 @@ pub async fn start(tunnel: Arc<CloudflareTunnel>, port: u16) {
     });
 }
 
+/// Whether `cloudflared` is on PATH, used to enable/disable the "Cloudflare Tunnel" button on the
+/// Webhooks page before the operator ever clicks it and only then discovers the binary is missing.
+pub async fn is_installed() -> bool {
+    let check =
+        Command::new("cloudflared").arg("--version").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    matches!(tokio::time::timeout(std::time::Duration::from_secs(3), check).await, Ok(Ok(_)))
+}
+
 /// Kills the running `cloudflared` process, if any, and resets state to `Idle`.
 pub async fn stop(tunnel: &CloudflareTunnel) {
     if let Some(mut child) = tunnel.child.lock().await.take() {

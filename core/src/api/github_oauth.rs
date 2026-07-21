@@ -153,6 +153,7 @@ mod tests {
             pending_device_flow: RwLock::new(None),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
+            tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
         }));
 
         (state, user)
@@ -228,12 +229,12 @@ mod tests {
     }
 
     /// Rule-proving test: once the locally-tracked deadline has passed, `device_poll` must report
-    /// `Expired` and clear the attempt *without* ever calling GitHub — proven here by mounting no
+    /// `Expired` and clear the attempt *without* ever calling GitHub, proven here by mounting no
     /// mock at all, so any HTTP call would fail the request rather than silently succeed.
     #[tokio::test]
     async fn poll_reports_expired_locally_without_calling_github() {
         let mock_server = MockServer::start().await;
-        // Deliberately no `Mock::given(...).mount(...)` — any request to this server 404s.
+        // Deliberately no `Mock::given(...).mount(...)`, any request to this server 404s.
 
         let (state, user) = test_state(&mock_server).await;
         *state.pending_device_flow.write().await = Some(pending(chrono::Duration::seconds(-5)));
@@ -276,7 +277,7 @@ mod tests {
 
     /// Rule-proving test for the milestone's "tokens are unreadable directly in the database"
     /// rule: the encrypted bytes stored for a token must not contain the plaintext anywhere, and
-    /// must only be recoverable by decrypting through `state.enc` — not by, say, reading the
+    /// must only be recoverable by decrypting through `state.enc`, not by, say, reading the
     /// database file directly with a hex editor or `strings`.
     #[tokio::test]
     async fn stored_tokens_are_unreadable_without_the_encryption_key() {

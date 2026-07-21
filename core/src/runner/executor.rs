@@ -20,7 +20,7 @@ pub struct CheckoutContext {
 /// Which backend is actually running this job's `run:` steps: Docker exec when the job declares
 /// a `container:`, or the native Bucket sandbox otherwise. Decided once up front so the step loop
 /// and artifact capture don't need to re-derive it. `uses: docker://` steps are unaffected by
-/// this — they always get their own one-off container regardless of which backend the job uses.
+/// this, they always get their own one-off container regardless of which backend the job uses.
 enum RunBackend {
     Docker { docker: Docker, container_id: String },
     Bucket { handle: bucket::BucketHandle },
@@ -394,7 +394,7 @@ fn bucket_ttl_from_settings(settings: Option<&crate::db::models::Settings>) -> s
 
 /// Parses the operator-configured extra host-mount allowlist (`settings.bucket_host_mounts_json`,
 /// a JSON array of path strings). A missing settings row, unparseable JSON, or a value that isn't
-/// a JSON array of strings all resolve to "no extra mounts" rather than failing the job — this is
+/// a JSON array of strings all resolve to "no extra mounts" rather than failing the job. This is
 /// an additive convenience on top of `DEFAULT_RO_MOUNTS`, not something a job should fail over.
 fn bucket_extra_ro_mounts_from_settings(settings: Option<&crate::db::models::Settings>) -> Vec<String> {
     settings
@@ -481,6 +481,7 @@ mod tests {
             pending_device_flow: RwLock::new(None),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
+            tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
         }));
 
         let out_file = "artifact.txt";
@@ -575,6 +576,7 @@ mod tests {
             pending_device_flow: RwLock::new(None),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
+            tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
         }));
 
         let shell = if cfg!(windows) { Some("cmd".to_string()) } else { None };

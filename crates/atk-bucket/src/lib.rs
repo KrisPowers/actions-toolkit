@@ -33,7 +33,7 @@ pub const DEFAULT_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 /// sandbox otherwise having no visibility into the host filesystem. Paths that don't exist on
 /// the host are silently skipped. This is a conservative default, not a completeness guarantee;
 /// toolchains installed under a user's home directory (nvm, pyenv, `~/.cargo`) are not covered
-/// and need an explicit host-mount allowlist entry (settings-level, not yet wired — see plan).
+/// and need an explicit host-mount allowlist entry (settings-level, not yet wired, see plan).
 pub const DEFAULT_RO_MOUNTS: &[&str] =
     &["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ssl/certs", "/etc/alternatives", "/etc/resolv.conf"];
 
@@ -44,7 +44,7 @@ pub struct BucketSpec<'a> {
     pub network_enabled: bool,
     pub ttl: Duration,
     /// Additive, operator-configured host paths (`settings.bucket_host_mounts_json`) exposed
-    /// read-only on top of `DEFAULT_RO_MOUNTS` — for toolchains installed under a user's home
+    /// read-only on top of `DEFAULT_RO_MOUNTS`, for toolchains installed under a user's home
     /// directory (nvm, pyenv, `~/.cargo`) that the conservative built-in defaults don't cover.
     /// Linux: bind-mounted read-only, same as the defaults. Windows: granted read+execute ACL for
     /// this bucket's AppContainer SID, same lifetime as the workspace grant. Paths that don't
@@ -65,7 +65,7 @@ pub struct BucketHandle {
     /// Filtered to paths that actually exist on the host at creation time, same convention as
     /// `DEFAULT_RO_MOUNTS`. Read by Linux's `exec_step` on every step (mounts don't persist
     /// across processes the way an ACL grant does); Windows only needs this at creation time to
-    /// grant the ACL once, so it's write-only there — hence the cfg_attr below.
+    /// grant the ACL once, so it's write-only there, hence the cfg_attr below.
     #[cfg_attr(target_os = "windows", allow(dead_code))]
     pub(crate) extra_ro_mounts: Vec<PathBuf>,
     #[cfg(target_os = "linux")]
