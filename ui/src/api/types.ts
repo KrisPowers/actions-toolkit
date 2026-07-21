@@ -93,6 +93,17 @@ export type CloudflareTunnelState =
   | { status: "running"; url: string }
   | { status: "failed"; message: string };
 
+export type TailscaleTunnelState =
+  | { status: "idle" }
+  | { status: "starting" }
+  | { status: "running"; url: string }
+  | { status: "failed"; message: string };
+
+export interface TunnelAvailability {
+  cloudflared_available: boolean;
+  tailscale_available: boolean;
+}
+
 export interface AccessibleRepo {
   owner: string;
   name: string;

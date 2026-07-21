@@ -5,8 +5,9 @@ import { cn } from "../../lib/cn";
 
 /**
  * A hover/focus-triggered "i" icon that reveals a clear instructional panel, instead of cramming
- * that explanation into the surrounding text. Sized well above a bare icon (32px hit target, 18px
- * glyph) so it's actually easy to hover/tap, not a barely-visible dot.
+ * that explanation into the surrounding text. The visible glyph sits flush with adjacent body
+ * text (no manual margin nudging needed at call sites) while `before:-inset-2` pads the actual
+ * hit target out to a comfortable 32px square without affecting layout.
  */
 export default function InfoTooltip({ text, className }: { text: ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -23,15 +24,15 @@ export default function InfoTooltip({ text, className }: { text: ReactNode; clas
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onClick={() => setOpen((o) => !o)}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200"
+        className="relative flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-neutral-500 before:absolute before:-inset-2 before:content-[''] hover:text-neutral-200"
       >
-        <Info className="h-[18px] w-[18px]" strokeWidth={2} />
+        <Info className="h-3.5 w-3.5" strokeWidth={2} />
       </button>
       {open && (
         <div
           id={id}
           role="tooltip"
-          className="absolute left-1/2 top-full z-20 mt-1 w-80 max-w-[90vw] -translate-x-1/2 rounded-md border border-neutral-800 bg-neutral-950 p-3 text-xs leading-relaxed text-neutral-300 shadow-xl"
+          className="absolute left-1/2 top-full z-20 mt-2 w-80 max-w-[90vw] -translate-x-1/2 rounded-md border border-neutral-800 bg-neutral-950 p-3 text-xs leading-relaxed text-neutral-300 shadow-xl"
         >
           {text}
         </div>
