@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::models::{now_iso, JobRun, JobRunTree, RunLog, RunTree, StepRun, WorkflowRun};
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create_run(
     pool: &SqlitePool,
     workflow_id: &str,
@@ -11,12 +12,13 @@ pub async fn create_run(
     trigger_payload_json: Option<&str>,
     ref_name: Option<&str>,
     commit_sha: Option<&str>,
+    webhook_event_id: Option<&str>,
 ) -> sqlx::Result<WorkflowRun> {
     let id = Uuid::new_v4().to_string();
     let now = now_iso();
     sqlx::query(
         "INSERT INTO workflow_runs (id, workflow_id, repo_id, trigger_event, trigger_payload_json, \
-         ref_name, commit_sha, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?)",
+         ref_name, commit_sha, status, created_at, webhook_event_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)",
     )
     .bind(&id)
     .bind(workflow_id)
@@ -26,6 +28,7 @@ pub async fn create_run(
     .bind(ref_name)
     .bind(commit_sha)
     .bind(&now)
+    .bind(webhook_event_id)
     .execute(pool)
     .await?;
 
@@ -45,6 +48,15 @@ pub async fn list_runs_for_repo(pool: &SqlitePool, repo_id: &str, limit: i64) ->
     )
     .bind(repo_id)
     .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn list_for_webhook_event(pool: &SqlitePool, webhook_event_id: &str) -> sqlx::Result<Vec<WorkflowRun>> {
+    sqlx::query_as::<_, WorkflowRun>(
+        "SELECT * FROM workflow_runs WHERE webhook_event_id = ? ORDER BY created_at DESC",
+    )
+    .bind(webhook_event_id)
     .fetch_all(pool)
     .await
 }
