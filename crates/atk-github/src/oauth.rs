@@ -20,6 +20,20 @@ pub struct PendingDeviceFlow {
     pub expires_at: DateTime<Utc>,
 }
 
+/// The terminal outcome of a device-flow attempt, written by the background poller
+/// (`api::github_oauth::run_device_flow_poller`) once GitHub reports something other than
+/// "still pending", and read by `/auth/github/device/poll`. Polling happens server-side
+/// specifically so the connect attempt still completes and gets persisted even if the browser
+/// tab that started it is closed the moment the operator finishes authorizing on GitHub, rather
+/// than depending on that tab's JS timer staying alive for the whole wait.
+#[derive(Clone)]
+pub enum DeviceFlowResult {
+    Denied,
+    Expired,
+    Connected { github_login: String, has_installation: bool },
+    Failed { message: String },
+}
+
 pub struct DeviceCodeStart {
     pub device_code: String,
     pub user_code: String,

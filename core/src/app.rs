@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 use crate::auth::jwt::JwtCodec;
 use crate::config::AppConfig;
 use crate::crypto::EncryptionKey;
-use crate::github::oauth::PendingDeviceFlow;
+use crate::github::oauth::{DeviceFlowResult, PendingDeviceFlow};
 use crate::runner::log_stream::LogHub;
 
 #[derive(Clone)]
@@ -43,6 +43,11 @@ pub struct AppStateInner {
     /// single-instance tool never has two connect attempts in flight together, so a new `start`
     /// simply replaces whatever was here.
     pub pending_device_flow: RwLock<Option<PendingDeviceFlow>>,
+    /// Set once the server-side poller (spawned by `device_start`) sees a terminal outcome for
+    /// the current `pending_device_flow` attempt. `/auth/github/device/poll` just reads this
+    /// rather than calling GitHub itself, so the attempt still completes (and, on success, gets
+    /// persisted) even if no browser tab is polling at the moment GitHub reports success.
+    pub device_flow_result: RwLock<Option<DeviceFlowResult>>,
     /// Serializes the GitHub App access-token refresh in `github::client::ensure_fresh_app_token`.
     /// GitHub App refresh tokens are single-use: two callers racing to refresh the same stale
     /// token at once (e.g. two workflow runs checking out code at the same moment) would have the
