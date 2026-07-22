@@ -360,8 +360,16 @@ mod tests {
     /// directly (not just transitively through workflows), so without ON DELETE CASCADE on those
     /// columns this used to fail with a foreign key constraint violation surfaced as a generic
     /// 500 to the caller.
+    ///
+    /// This also seeds a job_run, step_run, and bucket under the run, because the fix for the
+    /// above (recreating workflow_runs to add the missing cascade) has its own failure mode:
+    /// SQLite's DROP TABLE performs an implicit delete of the table's rows, which cascades
+    /// through every table that references workflow_runs ON DELETE CASCADE. Without care, "fixing"
+    /// the repo_id constraint would silently wipe job/step run history as a side effect. This test
+    /// fails loudly (via the row still existing after unrelated data is untouched) if that
+    /// regresses, rather than passing on an empty table by coincidence.
     #[tokio::test]
-    async fn delete_succeeds_when_the_repo_has_run_and_webhook_event_history() {
+    async fn delete_succeeds_and_preserves_unrelated_run_detail_history() {
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/repos/octocat/hello-world/hooks"))
@@ -373,6 +381,11 @@ mod tests {
             .respond_with(ResponseTemplate::new(204))
             .mount(&mock_server)
             .await;
+        Mock::given(method("POST"))
+            .and(path("/repos/octocat/other-repo/hooks"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({ "id": 888 })))
+            .mount(&mock_server)
+            .await;
 
         let (state, user) = test_state(&mock_server).await;
         let response = create(State(state.clone()), CurrentUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
@@ -382,13 +395,35 @@ mod tests {
             .await
             .unwrap();
         let webhook_event = event_queries::record(&state.db, Some(&repo_id), "push", Some("delivery-1"), "{}", true, "[]").await.unwrap();
-        crate::db::queries::runs::create_run(&state.db, &workflow.id, &repo_id, "push", None, Some("refs/heads/main"), None, Some(&webhook_event.id))
+        let run = crate::db::queries::runs::create_run(&state.db, &workflow.id, &repo_id, "push", None, Some("refs/heads/main"), None, Some(&webhook_event.id))
             .await
             .unwrap();
+        let job_run = crate::db::queries::runs::create_job_run(&state.db, &run.id, "build", None, "[]").await.unwrap();
+        crate::db::queries::runs::create_step_run(&state.db, &job_run.id, 0, Some("checkout"), "run").await.unwrap();
+
+        // A second, wholly unrelated repo's run detail history must survive the first repo's
+        // deletion; this is what proves the fix doesn't over-cascade.
+        let other = create(
+            State(state.clone()),
+            CurrentUser(user.clone()),
+            test_headers(),
+            Json(CreateRepoRequest { owner: "octocat".to_string(), name: "other-repo".to_string(), default_branch: None }),
+        )
+        .await
+        .unwrap();
+        let other_workflow =
+            crate::db::queries::workflows::create(&state.db, &other.0.repo.id, "CI", None, ".github/workflows/ci.yml", "on: push\njobs: {}", "{}")
+                .await
+                .unwrap();
+        let other_run = crate::db::queries::runs::create_run(&state.db, &other_workflow.id, &other.0.repo.id, "push", None, None, None, None).await.unwrap();
+        let other_job_run = crate::db::queries::runs::create_job_run(&state.db, &other_run.id, "build", None, "[]").await.unwrap();
+        crate::db::queries::runs::create_step_run(&state.db, &other_job_run.id, 0, Some("checkout"), "run").await.unwrap();
 
         delete(State(state.clone()), Path(repo_id.clone()), CurrentUser(user)).await.unwrap();
 
         assert!(repo_queries::find_by_id(&state.db, &repo_id).await.unwrap().is_none());
+        assert!(crate::db::queries::runs::find_job_run(&state.db, &other_job_run.id).await.unwrap().is_some(), "unrelated job_run must survive");
+        assert!(repo_queries::find_by_id(&state.db, &other.0.repo.id).await.unwrap().is_some(), "unrelated repo must survive");
     }
 
     /// Rule-proving test: recreating a webhook deletes the old GitHub-side hook and points the new
