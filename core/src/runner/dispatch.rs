@@ -40,6 +40,7 @@ pub async fn spawn_run(
         webhook_event_id,
     )
     .await?;
+    state.activity_hub.publish(&repo.id, run.clone());
 
     let mut job_runs = Vec::new();
     for (job_key, job) in &model.jobs {
