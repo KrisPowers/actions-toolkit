@@ -15,9 +15,14 @@ use crate::workflow::model::Workflow;
 
 /// Control-plane side of running a workflow: spawns the shell subprocess that actually drives the
 /// job DAG (see `run_inner`, which now runs *inside* that subprocess, not here), waits for it to
-/// exit, then reports the run's outcome back to GitHub as a commit status. The GitHub client (the
-/// instance-wide App token) is a control-plane-only credential, so this step deliberately stays
-/// here rather than moving into the shell along with everything else.
+/// exit, then reports the run's outcome back to GitHub — both as a commit status
+/// (`github_status::report_success`/`report_failure`) and, when `check_run_id` is `Some` (the
+/// check started fine back in `dispatch::spawn_run`), by completing that GitHub check run too.
+/// The GitHub client (the instance-wide App token) is a control-plane-only credential, so this
+/// step deliberately stays here rather than moving into the shell along with everything else.
+/// `commit_sha` is `None` for runs with no specific commit (e.g. manual dispatch against no
+/// particular ref), in which case all of that reporting is skipped entirely.
+#[allow(clippy::too_many_arguments)]
 pub async fn supervise_shell(
     state: Arc<AppState>,
     mut child: tokio::process::Child,
@@ -25,6 +30,7 @@ pub async fn supervise_shell(
     repo_owner: String,
     repo_name: String,
     commit_sha: Option<String>,
+    check_run_id: Option<u64>,
 ) {
     match child.wait().await {
         Ok(status) if !status.success() => {
@@ -52,6 +58,13 @@ pub async fn supervise_shell(
         };
         if let Err(e) = report {
             tracing::warn!(error = format!("{e:#}"), workflow_run_id, sha, "failed to post the final GitHub commit status");
+        }
+
+        if let Some(check_run_id) = check_run_id {
+            if let Err(e) = crate::runner::github_status::complete_check(&state, &repo_owner, &repo_name, check_run_id, succeeded).await
+            {
+                tracing::warn!(error = format!("{e:#}"), workflow_run_id, check_run_id, "failed to complete the GitHub check run");
+            }
         }
     }
 }
