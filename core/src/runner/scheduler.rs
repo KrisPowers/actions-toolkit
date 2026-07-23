@@ -42,7 +42,51 @@ pub async fn supervise_shell(
         _ => {}
     }
 
-    let succeeded = run_queries::find_run(&state.db, &workflow_run_id)
+    report_run_outcome(&state, &workflow_run_id, &repo_owner, &repo_name, commit_sha, check_run_id).await;
+}
+
+/// Same GitHub reporting `supervise_shell` does, but for a shell scheduled onto a remote agent:
+/// there's no local child process to await, so this polls the run's own status instead, stopping
+/// once it reaches a terminal state (a shell only sets one via `set_run_status` at the very end of
+/// `run_inner`, so seeing one here already means the run is fully done, not just close to it).
+const REMOTE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+const REMOTE_POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+
+#[allow(clippy::too_many_arguments)]
+pub async fn supervise_remote_shell(
+    state: Arc<AppState>,
+    workflow_run_id: String,
+    repo_owner: String,
+    repo_name: String,
+    commit_sha: Option<String>,
+    check_run_id: Option<u64>,
+) {
+    let deadline = tokio::time::Instant::now() + REMOTE_POLL_TIMEOUT;
+    loop {
+        match run_queries::find_run(&state.db, &workflow_run_id).await {
+            Ok(Some(run)) if matches!(run.status.as_str(), "succeeded" | "failed" | "cancelled") => break,
+            Ok(_) => {}
+            Err(e) => tracing::warn!(error = %e, workflow_run_id, "failed polling a remote shell's run status"),
+        }
+        if tokio::time::Instant::now() >= deadline {
+            tracing::warn!(workflow_run_id, "gave up polling a remote shell's run status; Janga's sweep on the agent side is the backstop for a shell that never reports back");
+            return;
+        }
+        tokio::time::sleep(REMOTE_POLL_INTERVAL).await;
+    }
+
+    report_run_outcome(&state, &workflow_run_id, &repo_owner, &repo_name, commit_sha, check_run_id).await;
+}
+
+async fn report_run_outcome(
+    state: &AppState,
+    workflow_run_id: &str,
+    repo_owner: &str,
+    repo_name: &str,
+    commit_sha: Option<String>,
+    check_run_id: Option<u64>,
+) {
+    let succeeded = run_queries::find_run(&state.db, workflow_run_id)
         .await
         .ok()
         .flatten()
@@ -50,19 +94,18 @@ pub async fn supervise_shell(
         .unwrap_or(false);
 
     if let Some(sha) = commit_sha {
-        let target_url = crate::runner::github_status::run_target_url(&state, &workflow_run_id).await;
+        let target_url = crate::runner::github_status::run_target_url(state, workflow_run_id).await;
         let report = if succeeded {
-            crate::runner::github_status::report_success(&state, &repo_owner, &repo_name, &sha, target_url).await
+            crate::runner::github_status::report_success(state, repo_owner, repo_name, &sha, target_url).await
         } else {
-            crate::runner::github_status::report_failure(&state, &repo_owner, &repo_name, &sha, target_url).await
+            crate::runner::github_status::report_failure(state, repo_owner, repo_name, &sha, target_url).await
         };
         if let Err(e) = report {
             tracing::warn!(error = format!("{e:#}"), workflow_run_id, sha, "failed to post the final GitHub commit status");
         }
 
         if let Some(check_run_id) = check_run_id {
-            if let Err(e) = crate::runner::github_status::complete_check(&state, &repo_owner, &repo_name, check_run_id, succeeded).await
-            {
+            if let Err(e) = crate::runner::github_status::complete_check(state, repo_owner, repo_name, check_run_id, succeeded).await {
                 tracing::warn!(error = format!("{e:#}"), workflow_run_id, check_run_id, "failed to complete the GitHub check run");
             }
         }

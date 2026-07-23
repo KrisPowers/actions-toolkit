@@ -43,6 +43,41 @@ pub enum Command {
     /// meant to be invoked directly; hidden from `--help`.
     #[command(name = "__shell-run", hide = true)]
     ShellRun(ShellRunArgs),
+
+    /// Runs this machine as a worker agent: registers with a control plane (using a join token
+    /// minted from its Agents settings page), then polls for shells scheduled onto it and runs
+    /// them locally. The control plane's own UI/API/database always stay on their own machine;
+    /// this is only for taking on the heavier workflow-run workload.
+    Agent(AgentArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct AgentArgs {
+    /// Base URL of the control plane to join/report to, e.g. `http://192.168.1.10:7890`.
+    #[arg(long, env = "ATK_CONTROL_PLANE_URL")]
+    pub control_plane_url: String,
+
+    /// Single-use join token minted from the control plane's Agents settings page. Only needed
+    /// the first time this machine joins; the identity it's issued is persisted under
+    /// `--data-dir` and reused on every later `agent` invocation.
+    #[arg(long, env = "ATK_JOIN_TOKEN")]
+    pub join_token: Option<String>,
+
+    /// Display name for this agent in the control plane's Agents list. Defaults to this
+    /// machine's hostname.
+    #[arg(long)]
+    pub name: Option<String>,
+
+    /// Extra labels beyond the automatic `os=<os>`/`arch=<arch>` ones, for matching a job's
+    /// `runs_on` against something more specific than just the operating system.
+    #[arg(long = "label")]
+    pub labels: Vec<String>,
+
+    /// Directory used to persist this agent's issued identity (agent id + auth token) across
+    /// restarts, and as a workspace/buckets/artifacts root for shells it runs. Defaults to an
+    /// OS-standard per-user data directory, same convention as the server's own `--data-dir`.
+    #[arg(long, env = "DATA_DIR")]
+    pub data_dir: Option<PathBuf>,
 }
 
 #[derive(Args, Debug, Clone)]

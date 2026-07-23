@@ -5,5 +5,6 @@
 
 pub mod framing;
 pub mod local;
+pub mod tcp;
 
 pub use local::{connect, endpoint_for_bucket, LocalListener};

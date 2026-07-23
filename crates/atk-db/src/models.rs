@@ -317,6 +317,12 @@ pub struct Shell {
     pub finished_at: Option<String>,
     pub outcome_persisted_at: Option<String>,
     pub reaped_at: Option<String>,
+    /// Only set for a shell scheduled onto a remote agent, which fetches it over the API rather
+    /// than a local spec file. Contains a serialized `ShellRunSpec`, including the checkout PAT —
+    /// deliberately not exposed to just any authenticated caller, only the owning agent (see
+    /// `api::agents::fetch_shell_spec`'s ownership check).
+    #[serde(skip_serializing)]
+    pub spec_json: Option<String>,
 }
 
 /// One bucket-scoped shared resource (e.g. a `node_modules` produced by `npm ci`) that sibling
@@ -350,7 +356,7 @@ pub struct Agent {
     pub labels_json: String,
     pub capacity: i64,
     #[serde(skip_serializing)]
-    pub mtls_fingerprint: String,
+    pub auth_token_hash: String,
     pub status: String,
     pub last_heartbeat_at: Option<String>,
     pub version: Option<String>,

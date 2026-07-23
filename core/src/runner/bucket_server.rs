@@ -14,44 +14,74 @@ use crate::runner::log_stream::LogHub;
 use crate::runner::rcp_protocol::{ArtifactInfo, Hello, RcpRequest, RcpResponse};
 use crate::runner::run_client::{LocalRunClient, RunClient};
 
-/// Starts this bucket's RCP server as a background task and returns immediately; the task runs
-/// for the bucket's whole lifetime, accepting one connection per shell spawned inside it.
-pub fn spawn(db: SqlitePool, log_hub: Arc<LogHub>, bucket_id: String, repo_id: String, auth_token_hash: String, endpoint: String, durable_enc: atk_crypto::EncryptionKey) {
-    tokio::spawn(async move {
-        if let Err(e) = run(db, log_hub, bucket_id.clone(), repo_id, auth_token_hash, endpoint, durable_enc).await {
-            tracing::error!(error = %e, bucket_id, "bucket RCP server exited with an error");
-        }
-    });
-}
-
-async fn run(
+/// Binds this bucket's RCP listeners (a local named-pipe/Unix-socket endpoint for same-machine
+/// shells, plus a TCP listener for shells scheduled onto a remote agent — see the security note
+/// on `atk_rcp::tcp` about that transport's current lack of TLS), starts serving both as a
+/// background task, and returns the bound TCP address so the caller can hand it to a remote
+/// agent. Binding happens before this function returns (not inside the background task) so a
+/// caller never races a shell trying to connect before the listener actually exists.
+#[allow(clippy::too_many_arguments)]
+pub async fn spawn(
     db: SqlitePool,
     log_hub: Arc<LogHub>,
     bucket_id: String,
     repo_id: String,
     auth_token_hash: String,
-    endpoint: String,
+    local_endpoint: String,
     durable_enc: atk_crypto::EncryptionKey,
-) -> Result<()> {
+) -> Result<std::net::SocketAddr> {
     let run_client = Arc::new(
         LocalRunClient::new(db.clone(), log_hub, bucket_id.clone(), &repo_id, &durable_enc)
             .await
             .context("failed to build this bucket's local run client")?,
     );
 
-    let mut listener = atk_rcp::LocalListener::bind(&endpoint).with_context(|| format!("failed to bind bucket RCP endpoint {endpoint}"))?;
+    let local_listener =
+        atk_rcp::LocalListener::bind(&local_endpoint).with_context(|| format!("failed to bind bucket RCP endpoint {local_endpoint}"))?;
+    let tcp_listener = atk_rcp::tcp::TcpListener::bind(None).await.context("failed to bind bucket TCP RCP listener")?;
+    let tcp_addr = tcp_listener.local_addr()?;
+
+    tokio::spawn(serve_local(local_listener, run_client.clone(), db.clone(), bucket_id.clone(), auth_token_hash.clone()));
+    tokio::spawn(serve_tcp(tcp_listener, run_client, db, bucket_id, auth_token_hash));
+
+    Ok(tcp_addr)
+}
+
+async fn serve_local(mut listener: atk_rcp::LocalListener, run_client: Arc<LocalRunClient>, db: SqlitePool, bucket_id: String, auth_token_hash: String) {
     loop {
-        let stream = listener.accept().await.context("failed accepting an RCP connection")?;
-        let run_client = run_client.clone();
-        let db = db.clone();
-        let bucket_id = bucket_id.clone();
-        let auth_token_hash = auth_token_hash.clone();
-        tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, run_client, db, &bucket_id, &auth_token_hash).await {
-                tracing::warn!(error = %e, bucket_id, "RCP connection ended with an error");
+        let stream = match listener.accept().await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(error = %e, bucket_id, "failed accepting a local RCP connection");
+                return;
             }
-        });
+        };
+        spawn_connection_handler(stream, run_client.clone(), db.clone(), bucket_id.clone(), auth_token_hash.clone());
     }
+}
+
+async fn serve_tcp(mut listener: atk_rcp::tcp::TcpListener, run_client: Arc<LocalRunClient>, db: SqlitePool, bucket_id: String, auth_token_hash: String) {
+    loop {
+        let stream = match listener.accept().await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(error = %e, bucket_id, "failed accepting a TCP RCP connection");
+                return;
+            }
+        };
+        spawn_connection_handler(stream, run_client.clone(), db.clone(), bucket_id.clone(), auth_token_hash.clone());
+    }
+}
+
+fn spawn_connection_handler<S>(stream: S, run_client: Arc<LocalRunClient>, db: SqlitePool, bucket_id: String, auth_token_hash: String)
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        if let Err(e) = handle_connection(stream, run_client, db, &bucket_id, &auth_token_hash).await {
+            tracing::warn!(error = %e, bucket_id, "RCP connection ended with an error");
+        }
+    });
 }
 
 async fn handle_connection<S>(mut stream: S, run_client: Arc<LocalRunClient>, db: SqlitePool, bucket_id: &str, auth_token_hash: &str) -> Result<()>
