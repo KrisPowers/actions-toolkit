@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AlertTriangle, ChevronDown, ChevronRight, Clock, PlayCircle, ShieldCheck, ShieldX } from "lucide-react";
+import { AlertTriangle, Boxes, ChevronDown, ChevronRight, Clock, PlayCircle, ShieldCheck, ShieldX } from "lucide-react";
 import { useRuns, useRunsForEvent } from "../hooks/useRuns";
 import { useRepoWebhookEvents } from "../hooks/useRepos";
+import { useBucketForWebhookEvent } from "../hooks/useRunstats";
 import type { WebhookEvent } from "../api/types";
 import StatusBadge from "../components/common/StatusBadge";
 import PageHeader from "../components/common/PageHeader";
@@ -28,13 +29,14 @@ function prettyPayload(event: WebhookEvent): string {
 
 function TriggeredRuns({ eventId }: { eventId: string }) {
   const { data: runs, isLoading } = useRunsForEvent(eventId);
+  const { data: bucket } = useBucketForWebhookEvent(eventId);
 
   if (isLoading) return <p className="mt-2 text-xs text-neutral-600">Loading runs…</p>;
-  if (!runs || runs.length === 0) return <p className="mt-2 text-xs text-neutral-600">No workflow runs came from this event.</p>;
 
   return (
     <div className="mt-2 flex flex-col gap-1.5">
-      {runs.map((run) => (
+      {(!runs || runs.length === 0) && <p className="text-xs text-neutral-600">No workflow runs came from this event.</p>}
+      {(runs ?? []).map((run) => (
         <Link
           key={run.id}
           to={`/runs/${run.id}`}
@@ -44,6 +46,15 @@ function TriggeredRuns({ eventId }: { eventId: string }) {
           <StatusBadge status={run.status} />
         </Link>
       ))}
+      {bucket && (
+        <Link
+          to={`/buckets/${bucket.id}`}
+          className="mt-1 inline-flex items-center gap-1.5 self-start text-xs text-[var(--color-status-info)] hover:underline"
+        >
+          <Boxes className="h-3.5 w-3.5" strokeWidth={2} />
+          View backend for this trigger
+        </Link>
+      )}
     </div>
   );
 }

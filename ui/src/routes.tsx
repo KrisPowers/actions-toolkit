@@ -21,6 +21,8 @@ const RunDetailLayout = lazy(() => import("./pages/RunDetailLayout"));
 const RunLogsPanel = lazy(() => import("./pages/runs/RunLogsPanel"));
 const RunArtifactsPanel = lazy(() => import("./pages/runs/RunArtifactsPanel"));
 const RunInsightsPanel = lazy(() => import("./pages/runs/RunInsightsPanel"));
+const RunBackendPanel = lazy(() => import("./pages/runs/RunBackendPanel"));
+const BucketDetailPage = lazy(() => import("./pages/BucketDetailPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 
 function RouteFallback() {
@@ -54,7 +56,9 @@ export default function AppRoutes() {
           <Route path="logs" element={<RunLogsPanel />} />
           <Route path="artifacts" element={<RunArtifactsPanel />} />
           <Route path="insights" element={<RunInsightsPanel />} />
+          <Route path="backend" element={<RunBackendPanel />} />
         </Route>
+        <Route path="/buckets/:bucketId" element={<BucketDetailPage />} />
         <Route path="/repos/:repoId/webhooks" element={<RepoWebhooksPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

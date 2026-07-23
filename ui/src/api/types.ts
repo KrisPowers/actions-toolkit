@@ -210,6 +210,93 @@ export interface ArtifactWithContext extends Artifact {
   run_created_at: string;
 }
 
+export interface Bucket {
+  id: string;
+  trigger_kind: string;
+  webhook_event_id: string | null;
+  repo_id: string;
+  status: string;
+  rcp_endpoint: string;
+  created_at: string;
+  completed_at: string | null;
+  reaped_at: string | null;
+}
+
+export interface Shell {
+  id: string;
+  bucket_id: string;
+  workflow_run_id: string;
+  agent_id: string | null;
+  target_os: string;
+  pid: number | null;
+  status: string;
+  exit_code: number | null;
+  started_at: string;
+  finished_at: string | null;
+  outcome_persisted_at: string | null;
+  reaped_at: string | null;
+  cache_hits: number;
+  cache_misses: number;
+}
+
+export interface Shard {
+  id: string;
+  job_run_id: string;
+  workflow_run_id: string;
+  os_pid: number | null;
+  os_handle_json: string | null;
+  workspace_path: string;
+  network_enabled: number;
+  created_at: string;
+  ttl_expires_at: string;
+  reaped_at: string | null;
+}
+
+export interface ResourceSample {
+  id: number;
+  subject_type: "shell" | "shard";
+  subject_id: string;
+  workflow_run_id: string | null;
+  ts: string;
+  cpu_percent: number | null;
+  memory_bytes: number | null;
+  disk_read_bytes: number | null;
+  disk_write_bytes: number | null;
+  process_count: number | null;
+  host_cpu_percent: number | null;
+  host_memory_percent: number | null;
+}
+
+export interface BucketSummary {
+  bucket: Bucket;
+  assets_cached: number;
+  shell_count: number;
+}
+
+export interface ShellNode {
+  shell: Shell;
+  shards: Shard[];
+}
+
+export interface RunTopology {
+  bucket: BucketSummary | null;
+  shell: ShellNode | null;
+}
+
+export interface BucketTopology {
+  bucket: BucketSummary;
+  shells: ShellNode[];
+}
+
+export interface RunStatsSummary {
+  samples: ResourceSample[];
+  cache_hits: number;
+  cache_misses: number;
+  assets_cached: number;
+  peak_cpu_percent: number | null;
+  peak_memory_bytes: number | null;
+}
+
 export interface WebhookEvent {
   id: string;
   repo_id: string | null;

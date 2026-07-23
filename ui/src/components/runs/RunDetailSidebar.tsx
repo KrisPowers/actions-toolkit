@@ -1,12 +1,13 @@
 import type { LucideIcon } from "lucide-react";
 import { NavLink } from "react-router-dom";
-import { Gauge, Package, ScrollText } from "lucide-react";
+import { Boxes, Gauge, Package, ScrollText } from "lucide-react";
 import { cn } from "../../lib/cn";
 
 const SECTIONS: { path: string; icon: LucideIcon; label: string }[] = [
   { path: "logs", icon: ScrollText, label: "Logs" },
   { path: "artifacts", icon: Package, label: "Artifacts" },
   { path: "insights", icon: Gauge, label: "Insights" },
+  { path: "backend", icon: Boxes, label: "Backend" },
 ];
 
 export default function RunDetailSidebar({ runId }: { runId: string }) {
