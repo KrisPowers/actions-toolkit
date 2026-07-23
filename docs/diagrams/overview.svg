@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 380" font-family="'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+    <marker id="arrowDashed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1180" height="380" fill="#ffffff"/>
+  <text x="590" y="26" text-anchor="middle" font-size="15" font-weight="600" fill="#1f2430">From a GitHub event to a running job</text>
+
+  <!-- A: GitHub -->
+  <rect x="20" y="115" width="140" height="90" rx="10" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/>
+  <text x="90" y="150" text-anchor="middle" font-size="13" font-weight="600" fill="#24292f">GitHub</text>
+  <text x="90" y="168" text-anchor="middle" font-size="11" fill="#57606a">push / PR / release</text>
+  <text x="90" y="183" text-anchor="middle" font-size="11" fill="#57606a">via the shared App</text>
+
+  <!-- B: control plane -->
+  <rect x="200" y="90" width="220" height="140" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="310" y="115" text-anchor="middle" font-size="13" font-weight="600" fill="#1e3a8a">actions-toolkit</text>
+  <text x="310" y="130" text-anchor="middle" font-size="11" fill="#1e3a8a">control plane</text>
+  <text x="310" y="152" text-anchor="middle" font-size="10.5" fill="#1e40af">verifies webhook signature</text>
+  <text x="310" y="167" text-anchor="middle" font-size="10.5" fill="#1e40af">matches on: triggers</text>
+  <text x="310" y="182" text-anchor="middle" font-size="10.5" fill="#1e40af">creates workflow_run +</text>
+  <text x="310" y="196" text-anchor="middle" font-size="10.5" fill="#1e40af">job_run rows</text>
+  <text x="310" y="215" text-anchor="middle" font-size="10" fill="#3b82f6" font-style="italic">core/src/runner/dispatch.rs</text>
+
+  <!-- C: Bucket -->
+  <rect x="460" y="90" width="190" height="140" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="555" y="115" text-anchor="middle" font-size="13" font-weight="600" fill="#4c1d95">Bucket</text>
+  <text x="555" y="132" text-anchor="middle" font-size="10.5" fill="#4c1d95">1 per triggering event</text>
+  <text x="555" y="154" text-anchor="middle" font-size="10.5" fill="#5b21b6">owns the DB pool,</text>
+  <text x="555" y="169" text-anchor="middle" font-size="10.5" fill="#5b21b6">encryption key, resource</text>
+  <text x="555" y="184" text-anchor="middle" font-size="10.5" fill="#5b21b6">cache, and RCP server</text>
+  <text x="555" y="215" text-anchor="middle" font-size="10" fill="#7c3aed" font-style="italic">see the Buckets diagram &#8594;</text>
+
+  <!-- D: Shell -->
+  <rect x="680" y="90" width="180" height="140" rx="10" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="770" y="115" text-anchor="middle" font-size="13" font-weight="600" fill="#134e4a">Shell</text>
+  <text x="770" y="132" text-anchor="middle" font-size="10.5" fill="#134e4a">1 per workflow run</text>
+  <text x="770" y="154" text-anchor="middle" font-size="10.5" fill="#115e59">a subprocess that drives</text>
+  <text x="770" y="169" text-anchor="middle" font-size="10.5" fill="#115e59">the job DAG, one job</text>
+  <text x="770" y="184" text-anchor="middle" font-size="10.5" fill="#115e59">at a time per slot</text>
+  <text x="770" y="215" text-anchor="middle" font-size="10" fill="#0d9488" font-style="italic">__shell-run</text>
+
+  <!-- E1: Docker -->
+  <rect x="900" y="45" width="240" height="65" rx="10" fill="#cffafe" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="1020" y="68" text-anchor="middle" font-size="12" font-weight="600" fill="#164e63">Docker container</text>
+  <text x="1020" y="85" text-anchor="middle" font-size="10.5" fill="#155e75">job declares container:</text>
+
+  <!-- E2: Shard -->
+  <rect x="900" y="160" width="240" height="65" rx="10" fill="#ffedd5" stroke="#f97316" stroke-width="1.5"/>
+  <text x="1020" y="183" text-anchor="middle" font-size="12" font-weight="600" fill="#7c2d12">Shard sandbox</text>
+  <text x="1020" y="200" text-anchor="middle" font-size="10.5" fill="#9a3412">no container: needed</text>
+
+  <!-- bottom UI band -->
+  <rect x="200" y="300" width="940" height="55" rx="10" fill="#f6f8fa" stroke="#8b949e" stroke-width="1.25" stroke-dasharray="4 3"/>
+  <text x="670" y="322" text-anchor="middle" font-size="12" font-weight="600" fill="#24292f">React/TS UI, served from the same binary</text>
+  <text x="670" y="340" text-anchor="middle" font-size="10.5" fill="#57606a">live logs &#183; run history &#183; analytics, updated as rows change</text>
+
+  <!-- arrows main row -->
+  <path d="M160,160 L198,160" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+  <text x="179" y="150" text-anchor="middle" font-size="9.5" fill="#57606a">webhook</text>
+
+  <path d="M420,160 L458,160" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+  <text x="439" y="150" text-anchor="middle" font-size="9.5" fill="#57606a">opens/reuses</text>
+
+  <path d="M650,160 L678,160" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+  <text x="664" y="150" text-anchor="middle" font-size="9.5" fill="#57606a">spawns</text>
+
+  <path d="M860,130 C880,110 885,90 898,79" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+  <path d="M860,190 C880,205 885,215 898,193" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)" fill="none"/>
+
+  <!-- dashed status arrow back to GitHub -->
+  <path d="M300,90 C280,70 130,70 100,113" stroke="#8b949e" stroke-width="1.25" stroke-dasharray="4 3" marker-end="url(#arrowDashed)" fill="none"/>
+  <text x="200" y="63" text-anchor="middle" font-size="9.5" fill="#8b949e">check run / commit status</text>
+
+  <!-- dashed arrows down to UI -->
+  <path d="M555,230 L555,298" stroke="#8b949e" stroke-width="1.25" stroke-dasharray="4 3" marker-end="url(#arrowDashed)" fill="none"/>
+  <path d="M770,230 L770,298" stroke="#8b949e" stroke-width="1.25" stroke-dasharray="4 3" marker-end="url(#arrowDashed)" fill="none"/>
+</svg>
