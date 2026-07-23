@@ -1,8 +1,8 @@
-# actions-toolkit
+# Actions Toolkit - ATK
 
-A self-hosted, local alternative to GitHub Actions. actions-toolkit runs your CI/CD workflows
-**on your own machine** instead of GitHub-hosted runners, so you stop paying for Actions minutes
-while keeping a workflow-file-driven, trigger-based pipeline you already know.
+A self-hosted, local alternative to GitHub Actions. ATK runs your CI/CD workflows **on your own
+machine** instead of GitHub-hosted runners, so you stop paying for Actions minutes while keeping a
+workflow-file-driven, trigger-based pipeline you already know.
 
 - **Rust backend** (axum + SQLite) serves a REST/WebSocket API and executes workflow jobs on the
   host, mirroring GitHub Actions' execution model: as Docker containers for jobs that declare a
@@ -13,35 +13,6 @@ while keeping a workflow-file-driven, trigger-based pipeline you already know.
   builder (React Flow) for triggers, jobs, steps, and conditions. Both edit the same underlying
   workflow definition; saving from visual mode regenerates the YAML, so hand-written comments and
   formatting don't survive a visual-mode save.
-
-## How it works
-
-1. On first run, a setup wizard walks you through creating an admin account, then a "Connect
-   GitHub" button that sends you to GitHub to authorize the shared actions-toolkit App. No token
-   to generate or paste, and nothing is ever written to an env file.
-2. Pick which repos to connect from the App installation's accessible-repos list (or extend the
-   installation from GitHub's own settings if a repo you want isn't listed yet).
-3. Connecting a repo automatically creates its webhook on GitHub, there's no manual payload
-   URL/secret step. If this server isn't publicly reachable, see "Exposing your webhook" below for
-   what it needs to be reachable at.
-4. Define workflows (`on:` triggers, `jobs:`, `steps:`) either as YAML or visually.
-5. When a matching event arrives (or you click "Run now"), actions-toolkit checks out your repo,
-   starts each job (a Docker container if it declares one, a Shard sandbox otherwise), runs each
-   step, streams logs live to the UI, and captures any declared artifacts, all on your own
-   hardware.
-
-<p align="center">
-  <img src="docs/diagrams/overview.svg" alt="Diagram: a GitHub webhook flows through actions-toolkit's control plane, which opens a Bucket, which spawns a Shell, which runs each job as either a Docker container or a Shard sandbox, streaming logs and status to the UI the whole way." width="100%">
-</p>
-
-One GitHub connection covers every repo the App installation grants access to; there's no
-per-repo credential to manage, and the underlying token is never entered, displayed, or stored as
-an environment variable.
-
-If you're upgrading an existing install that was still using the old personal-access-token flow,
-Settings will show a persistent "Reconnect" banner after upgrading. Your existing token keeps
-working exactly as before until you click it; reconnecting swaps it for an App connection with no
-other downtime.
 
 ## Install
 
@@ -78,17 +49,46 @@ whichever one it actually bound to, so a busy default port won't stop it from st
 `--port <n>` (or `--bind-addr <addr>`) to change it; the value is saved to the database, so a
 later plain `start` remembers it.
 
-No prebuilt binary for your OS/architecture yet? Build from source, see below.
+No prebuilt binary for your OS/architecture yet? Build from source, see [Development](#development)
+below.
 
 ## Prerequisites
 
-- [Rust](https://rustup.rs/) (stable toolchain)
-- [Node.js](https://nodejs.org/) 20+ and npm
+- [Rust](https://rustup.rs/) (stable toolchain) and [Node.js](https://nodejs.org/) 20+/npm, only
+  if building from source
 - [Docker](https://www.docker.com/) running locally, only if a workflow's job declares a
   `container:` image. Jobs without one run through the built-in Shard sandbox (native Linux
   namespaces/cgroups/seccomp or a Windows AppContainer) instead, with no Docker involved at all.
 - A GitHub account that can install the shared actions-toolkit App (see below) on whichever repos
   you want to connect. No token to generate ahead of time.
+
+## How it works
+
+1. On first run, a setup wizard walks you through creating an admin account, then a "Connect
+   GitHub" button that sends you to GitHub to authorize the shared actions-toolkit App. No token
+   to generate or paste, and nothing is ever written to an env file.
+2. Pick which repos to connect from the App installation's accessible-repos list (or extend the
+   installation from GitHub's own settings if a repo you want isn't listed yet).
+3. Connecting a repo automatically creates its webhook on GitHub, there's no manual payload
+   URL/secret step.
+4. Define workflows (`on:` triggers, `jobs:`, `steps:`) either as YAML or visually.
+5. When a matching event arrives (or you click "Run now"), actions-toolkit checks out your repo,
+   starts each job (a Docker container if it declares one, a Shard sandbox otherwise), runs each
+   step, streams logs live to the UI, and captures any declared artifacts, all on your own
+   hardware.
+
+<p align="center">
+  <img src="docs/diagrams/overview.svg" alt="Diagram: a GitHub webhook flows through actions-toolkit's control plane, which opens a Bucket, which spawns a Shell, which runs each job as either a Docker container or a Shard sandbox, streaming logs and status to the UI the whole way." width="100%">
+</p>
+
+One GitHub connection covers every repo the App installation grants access to; there's no
+per-repo credential to manage, and the underlying token is never entered, displayed, or stored as
+an environment variable.
+
+If you're upgrading an existing install that was still using the old personal-access-token flow,
+Settings will show a persistent "Reconnect" banner after upgrading. Your existing token keeps
+working exactly as before until you click it; reconnecting swaps it for an App connection with no
+other downtime.
 
 ## GitHub App
 
@@ -121,7 +121,7 @@ npm run dev
 Open `http://localhost:5173`. On first run the setup wizard walks you through creating an admin
 account and connecting your GitHub token.
 
-## Production build
+### Production build
 
 The backend embeds the UI's built assets into a single binary via `rust-embed`, so the UI must
 be built first:
@@ -141,23 +141,6 @@ Then open `http://<host>:7890`. Port and bind address are set with `start --port
 (persisted to the database for next time); bind address, Docker host override, and max concurrent
 jobs can also be changed from the Settings page in the UI. `.env.example` covers the remaining
 advanced overrides: a custom data directory, and recovery of the JWT/encryption secrets.
-
-## Exposing your webhook
-
-GitHub needs to reach this server to deliver push/PR/release events. Connecting a repo creates its
-webhook automatically, pointed at this instance's own address, so this only matters if that
-address isn't reachable from the internet:
-
-- The Webhooks page has a "Start tunnel" button for a Cloudflare Quick Tunnel or a Tailscale
-  Funnel, actions-toolkit runs `cloudflared`/`tailscale funnel` for you and picks up the assigned
-  URL automatically, no terminal or copy-pasted URL required.
-- Or run your own tunnel (`ngrok http 7890`, etc.) *before* connecting the repo, so the webhook
-  actions-toolkit creates points at a reachable URL from the start.
-- Or run actions-toolkit on a host that's already reachable on your network/VPN.
-- For a host webhooks can't reach at all, a repo's Settings page has a manual "Sync now" action
-  that checks GitHub's releases API directly as a fallback for `release`-triggered workflows.
-
-There's no manual payload URL or secret to copy anywhere, connecting the repo is the whole step.
 
 ## Architecture
 
@@ -239,22 +222,6 @@ A few things worth calling out from that diagram:
 - **Multi-machine is the same code path, not a special case.** A Shell scheduled onto a remote
   Agent runs the exact same `__shell-run` entry point a local Shell does; the only difference is
   which RCP listener it dials.
-
-## Releasing
-
-Pushing a `v*` tag (e.g. `v0.2.0`) runs `.github/workflows/release.yml`, which builds the UI,
-compiles release binaries for macOS (arm64 and x86_64), Linux (x86_64), and Windows (x86_64), and
-attaches them (with `.sha256` checksums; Windows ships as `.zip`, the rest as `.tar.gz`) to a
-GitHub Release. `install.sh`/`install.ps1` always download the `latest` release unless
-`ACTIONS_TOOLKIT_VERSION` is set.
-
-After a release finishes, refresh the Homebrew formula's pinned version and checksums:
-
-```bash
-scripts/bump-formula.sh 0.2.0
-```
-
-Review the diff and commit `Formula/actions-toolkit.rb`.
 
 ## License
 
