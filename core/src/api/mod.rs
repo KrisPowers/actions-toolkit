@@ -88,6 +88,7 @@ pub fn router(state: AppState) -> Router {
         .route("/workflows/{id}/export", get(workflows::export))
         .route("/workflows/validate", post(workflows::validate_workflow))
         .route("/repos/{repo_id}/runs", get(runs::list_for_repo))
+        .route("/repos/{repo_id}/activity/ws", get(crate::ws::run_activity_ws))
         .route("/runs/{id}", get(runs::get))
         .route("/runs/{id}/cancel", post(runs::cancel))
         .route("/runs/{id}/rerun", post(runs::rerun))
