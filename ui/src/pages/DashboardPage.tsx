@@ -68,7 +68,7 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-neutral-200">Repositories</h2>
         <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {(repos ?? []).map((r) => (
-            <Link key={r.id} to={`/repos/${r.id}/workflows`} className={cardClass("p-4 transition-colors hover:border-accent/50")}>
+            <Link key={r.id} to={`/repos/${r.id}/overview`} className={cardClass("p-4 transition-colors hover:border-accent/50")}>
               <div className="flex items-center gap-2 text-sm font-semibold text-neutral-100">
                 <Avatar login={r.owner} size={18} />
                 {r.owner}/{r.name}

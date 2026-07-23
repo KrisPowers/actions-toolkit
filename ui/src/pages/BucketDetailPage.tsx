@@ -17,8 +17,8 @@ export default function BucketDetailPage() {
         <PageHeader
           title="Bucket backend"
           subtitle="Every shell (and its shards) this triggering event spawned, with live runtime insights."
-          backTo={`/repos/${topology.bucket.bucket.repo_id}/runs`}
-          backLabel="Runs"
+          backTo={`/repos/${topology.bucket.bucket.repo_id}/overview`}
+          backLabel="Overview"
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
