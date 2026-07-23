@@ -19,4 +19,8 @@ export const runsApi = {
     const params = stepRunId ? `?step_run_id=${stepRunId}` : "";
     return `${proto}//${window.location.host}/api/runs/${id}/logs/ws${params}`;
   },
+  activityWsUrl: (repoId: string) => {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}/api/repos/${repoId}/activity/ws`;
+  },
 };

@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useDeleteWorkflow, useDispatchWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import { useRepo } from "../hooks/useRepos";
-import { useRuns } from "../hooks/useRuns";
+import { useLiveRunActivity, useRuns } from "../hooks/useRuns";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import AddWorkflowModal from "../components/workflows/AddWorkflowModal";
 import GithubWorkflowsSection from "../components/workflows/GithubWorkflowsSection";
@@ -130,6 +130,7 @@ export default function OverviewPage() {
   const { data: workflows } = useWorkflows(repoId);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const { data: allRuns, isLoading: runsLoading } = useRuns(repoId, 100);
+  useLiveRunActivity(repoId);
   const runs = selectedWorkflowId ? (allRuns ?? []).filter((r) => r.workflow_id === selectedWorkflowId) : allRuns;
 
   const deleteWorkflow = useDeleteWorkflow(repoId as string);
