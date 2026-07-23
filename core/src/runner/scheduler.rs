@@ -16,10 +16,12 @@ use crate::workflow::model::Workflow;
 /// a failure (unless they opt in via `if: always()`), and marks the run terminal once every
 /// job has reached a terminal state.
 ///
-/// `repo_owner`/`repo_name`/`commit_sha` exist only to report the run's outcome back to GitHub
-/// as a commit status (see `github_status::report_success`/`report_failure`) once it finishes;
-/// `commit_sha` is `None` for runs with no specific commit (e.g. manual dispatch against no
-/// particular ref), in which case that reporting is skipped entirely.
+/// `repo_owner`/`repo_name`/`commit_sha` exist only to report the run's outcome back to GitHub,
+/// both as a commit status (see `github_status::report_success`/`report_failure`) and, when
+/// `check_run_id` is `Some` (the check started fine back in `dispatch::spawn_run`), by completing
+/// that GitHub check run, once the run here finishes. `commit_sha` is `None` for runs with no
+/// specific commit (e.g. manual dispatch against no particular ref), in which case all of that
+/// reporting is skipped entirely.
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     state: Arc<AppState>,
@@ -30,6 +32,7 @@ pub async fn run(
     repo_owner: String,
     repo_name: String,
     commit_sha: Option<String>,
+    check_run_id: Option<u64>,
 ) {
     let result = run_inner(&state, &workflow_run_id, &workflow, checkout, &trigger_event).await;
     let succeeded = match &result {
@@ -50,6 +53,13 @@ pub async fn run(
         };
         if let Err(e) = report {
             tracing::warn!(error = format!("{e:#}"), workflow_run_id, sha, "failed to post the final GitHub commit status");
+        }
+
+        if let Some(check_run_id) = check_run_id {
+            if let Err(e) = crate::runner::github_status::complete_check(&state, &repo_owner, &repo_name, check_run_id, succeeded).await
+            {
+                tracing::warn!(error = format!("{e:#}"), workflow_run_id, check_run_id, "failed to complete the GitHub check run");
+            }
         }
     }
 }
