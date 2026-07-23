@@ -714,10 +714,18 @@ fn resolve_shell_cmdline(shell: Option<&str>, shell_command: &str) -> String {
 /// sets a nonzero exit code without PowerShell itself raising an error, which `Stop` alone doesn't
 /// catch. Both are exactly what GitHub Actions' own Windows runner does for `shell: powershell`/
 /// `shell: pwsh` steps (confirmed against the runner's actual behavior, not assumed).
+///
+/// `$ProgressPreference = 'SilentlyContinue'` is also load-bearing, not cosmetic: with output
+/// redirected (our case, since every step's stdout/stderr is captured rather than attached to a
+/// real console), PowerShell serializes its progress stream as CLIXML onto stderr instead of
+/// rendering a progress bar, e.g. "Preparing modules for first use" firing on module auto-load
+/// even for a trivial one-line script. Without suppressing it, that raw CLIXML lands in the
+/// step's captured log output right alongside the script's actual output, unreadable and with no
+/// indication it isn't part of what the script printed.
 fn encode_powershell_command(script: &str) -> String {
     use base64::Engine;
     let wrapped = format!(
-        "$ErrorActionPreference = 'Stop'\n{script}\nif (Test-Path -LiteralPath variable:\\LASTEXITCODE) {{ exit $LASTEXITCODE }}"
+        "$ErrorActionPreference = 'Stop'\n$ProgressPreference = 'SilentlyContinue'\n{script}\nif (Test-Path -LiteralPath variable:\\LASTEXITCODE) {{ exit $LASTEXITCODE }}"
     );
     let utf16le: Vec<u8> = wrapped.encode_utf16().flat_map(|unit| unit.to_le_bytes()).collect();
     base64::engine::general_purpose::STANDARD.encode(utf16le)
