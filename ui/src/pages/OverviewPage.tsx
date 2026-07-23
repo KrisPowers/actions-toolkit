@@ -187,7 +187,7 @@ export default function OverviewPage() {
         </section>
 
         <section className="min-w-0">
-          <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="mb-2 flex min-h-7 items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-neutral-200">Recent activity</h2>
             {selectedWorkflow && (
               <button
