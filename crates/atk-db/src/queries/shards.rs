@@ -33,6 +33,15 @@ pub async fn find(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<Shard>> {
     sqlx::query_as::<_, Shard>("SELECT * FROM shards WHERE id = ?").bind(id).fetch_optional(pool).await
 }
 
+/// Every shard (one per job) a workflow run's shell has driven, regardless of status — the
+/// per-run topology's leaf nodes.
+pub async fn list_for_workflow_run(pool: &SqlitePool, workflow_run_id: &str) -> sqlx::Result<Vec<Shard>> {
+    sqlx::query_as::<_, Shard>("SELECT * FROM shards WHERE workflow_run_id = ? ORDER BY created_at ASC")
+        .bind(workflow_run_id)
+        .fetch_all(pool)
+        .await
+}
+
 pub async fn set_os_handle(pool: &SqlitePool, id: &str, os_pid: i64, os_handle_json: &str) -> sqlx::Result<()> {
     sqlx::query("UPDATE shards SET os_pid = ?, os_handle_json = ? WHERE id = ?")
         .bind(os_pid)

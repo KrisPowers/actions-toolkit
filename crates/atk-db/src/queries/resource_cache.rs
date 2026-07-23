@@ -68,6 +68,17 @@ pub async fn complete_build(pool: &SqlitePool, id: &str, path_on_disk: &str, siz
     Ok(())
 }
 
+/// How many distinct resources this bucket's shells have successfully cached, the "assets cached"
+/// number shown on the Bucket/run Backend views. Deliberately just a count, never the entries
+/// themselves — no cache key, path, or size crosses into that view.
+pub async fn count_ready_for_bucket(pool: &SqlitePool, bucket_id: &str) -> sqlx::Result<i64> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM bucket_resource_cache WHERE bucket_id = ? AND status = 'ready'")
+        .bind(bucket_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
+}
+
 pub async fn fail_build(pool: &SqlitePool, id: &str) -> sqlx::Result<()> {
     sqlx::query("UPDATE bucket_resource_cache SET status = 'failed', failed_at = ? WHERE id = ?")
         .bind(now_iso())

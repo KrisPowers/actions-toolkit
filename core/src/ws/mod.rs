@@ -72,3 +72,37 @@ async fn handle_socket(state: AppState, run_id: String, step_filter: Option<Stri
         }
     }
 }
+
+/// Live resource-sample tail for a run, the `StatsHub` equivalent of `run_logs_ws`. Unlike logs
+/// (per-step channels fanned out over the whole run tree), stats are already published under one
+/// channel per `workflow_run_id` (see `stats_hub::StatsHub`), so there's only ever one receiver to
+/// drive here.
+pub async fn run_stats_ws(State(state): State<AppState>, Path(run_id): Path<String>, _user: CurrentUser, ws: WebSocketUpgrade) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_stats_socket(state, run_id, socket))
+}
+
+async fn handle_stats_socket(state: AppState, run_id: String, mut socket: WebSocket) {
+    let mut rx = state.stats_hub.subscribe(&run_id);
+    loop {
+        tokio::select! {
+            result = rx.recv() => {
+                match result {
+                    Ok(sample) => {
+                        let payload = serde_json::to_string(&sample).unwrap_or_default();
+                        if socket.send(Message::Text(payload.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => continue,
+                }
+            }
+            incoming = socket.recv() => {
+                match incoming {
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Err(_)) => break,
+                    _ => continue,
+                }
+            }
+        }
+    }
+}
