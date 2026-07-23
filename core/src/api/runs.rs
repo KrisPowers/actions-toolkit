@@ -86,7 +86,7 @@ pub async fn cancel(
     let buckets_root = state.config.buckets_dir();
     for row in sandboxes {
         let handle = crate::bucket::handle_from_sandbox_row(&buckets_root, &row);
-        if let Err(e) = crate::bucket::remove_sandbox(&state.db, &handle).await {
+        if let Err(e) = crate::bucket::remove_sandbox(&handle).await {
             tracing::warn!(error = %e, sandbox_id = %row.id, "failed to remove job sandbox on cancel");
         }
         if let Err(e) = sandbox_queries::mark_reaped(&state.db, &row.id).await {

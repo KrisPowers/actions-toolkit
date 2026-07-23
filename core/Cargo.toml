@@ -68,6 +68,7 @@ atk-config = { path = "../crates/atk-config" }
 atk-crypto = { path = "../crates/atk-crypto" }
 atk-db = { path = "../crates/atk-db" }
 atk-github = { path = "../crates/atk-github" }
+atk-rcp = { path = "../crates/atk-rcp" }
 atk-workflow = { path = "../crates/atk-workflow" }
 
 [target.'cfg(target_os = "linux")'.dependencies]

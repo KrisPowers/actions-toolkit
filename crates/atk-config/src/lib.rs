@@ -37,12 +37,25 @@ pub enum Command {
     /// meant to be invoked directly; hidden from `--help`.
     #[command(name = "__sandbox-init", hide = true)]
     SandboxInit(SandboxInitArgs),
+
+    /// Internal: what a bucket actually spawns per triggered workflow run. Drives that run's job
+    /// DAG and talks back to its owning bucket over RCP; never touches the database directly. Not
+    /// meant to be invoked directly; hidden from `--help`.
+    #[command(name = "__shell-run", hide = true)]
+    ShellRun(ShellRunArgs),
 }
 
 #[derive(Args, Debug, Clone)]
 pub struct SandboxInitArgs {
     /// Path to the JSON-serialized `bucket::SandboxInitSpec` describing the sandbox to set up
     /// and the command to run inside it.
+    pub spec_path: PathBuf,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct ShellRunArgs {
+    /// Path to the JSON-serialized `ShellRunSpec` describing which workflow run to drive and how
+    /// to reach its owning bucket over RCP.
     pub spec_path: PathBuf,
 }
 

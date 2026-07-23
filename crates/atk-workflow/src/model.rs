@@ -200,6 +200,8 @@ impl Step {
             "uses_docker"
         } else if self.uses.as_deref() == Some("checkout") {
             "checkout"
+        } else if self.uses.as_deref() == Some("cache") {
+            "cache"
         } else {
             "run"
         }

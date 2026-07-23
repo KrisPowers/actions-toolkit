@@ -1,10 +1,15 @@
+pub mod agent_join_tokens;
+pub mod agents;
 pub mod artifacts;
+pub mod buckets;
 pub mod job_sandboxes;
 pub mod github_token;
 pub mod repos;
+pub mod resource_cache;
 pub mod runs;
 pub mod secrets;
 pub mod settings;
+pub mod shells;
 pub mod users;
 pub mod webhook_events;
 pub mod workflows;

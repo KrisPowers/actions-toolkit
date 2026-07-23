@@ -1,9 +1,13 @@
 pub mod artifact_capture;
+pub mod bucket_server;
 pub mod dispatch;
 pub mod docker;
 pub mod executor;
 pub mod github_status;
 pub mod log_stream;
 pub mod poll_sync;
+pub mod rcp_protocol;
+pub mod run_client;
 pub mod scheduler;
+pub mod shell_run;
 pub mod workspace;
