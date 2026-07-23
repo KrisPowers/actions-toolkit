@@ -4,7 +4,7 @@ use bollard::Docker;
 use crate::app::AppState;
 use crate::bucket;
 use crate::db::models::now_iso;
-use crate::db::queries::{artifacts as artifact_queries, buckets as bucket_queries, runs as run_queries, secrets as secret_queries};
+use crate::db::queries::{artifacts as artifact_queries, job_sandboxes as sandbox_queries, runs as run_queries, secrets as secret_queries};
 use crate::runner::log_stream::LogLine;
 use crate::runner::{artifact_capture, docker as docker_ops, workspace};
 use crate::workflow::model::Job;
@@ -23,7 +23,7 @@ pub struct CheckoutContext {
 /// this, they always get their own one-off container regardless of which backend the job uses.
 enum RunBackend {
     Docker { docker: Docker, container_id: String },
-    Bucket { handle: bucket::BucketHandle },
+    Sandbox { handle: bucket::SandboxHandle },
 }
 
 /// Execute a single job: checkout (if configured), start its container or sandbox, run each step
@@ -154,7 +154,7 @@ pub async fn run_job(
             let settings = crate::db::queries::settings::get(&state.db).await.ok();
             let ttl = bucket_ttl_from_settings(settings.as_ref());
             let extra_ro_mounts = bucket_extra_ro_mounts_from_settings(settings.as_ref());
-            let spec = bucket::BucketSpec {
+            let spec = bucket::SandboxSpec {
                 workspace_host_path: &workspace_dir,
                 run_id: workflow_run_id,
                 job_run_id,
@@ -162,8 +162,8 @@ pub async fn run_job(
                 ttl,
                 extra_ro_mounts: &extra_ro_mounts,
             };
-            match bucket::create_job_bucket(&state.db, &state.config.buckets_dir(), spec).await {
-                Ok(handle) => RunBackend::Bucket { handle },
+            match bucket::create_job_sandbox(&state.db, &state.config.buckets_dir(), spec).await {
+                Ok(handle) => RunBackend::Sandbox { handle },
                 Err(e) => {
                     emit_system_line(state, job_run_id, &format!("failed to create sandbox: {e}")).await;
                     run_queries::set_job_status(&state.db, job_run_id, "failed", Some(-1), true).await?;
@@ -226,7 +226,7 @@ pub async fn run_job(
                         .await
                         .map(|r| r.exit_code)
                 }
-                RunBackend::Bucket { handle } => {
+                RunBackend::Sandbox { handle } => {
                     bucket::exec_step(handle, command, step.shell.as_deref(), None, &step_env, on_line).await.map(|r| r.exit_code)
                 }
             };
@@ -284,7 +284,7 @@ pub async fn run_job(
                 )
                 .await
             }
-            RunBackend::Bucket { .. } => {
+            RunBackend::Sandbox { .. } => {
                 artifact_capture::capture_from_workspace(
                     &state.db,
                     &workspace_dir,
@@ -307,12 +307,12 @@ pub async fn run_job(
                 tracing::warn!(error = %e, container_id, "failed to remove job container");
             }
         }
-        RunBackend::Bucket { handle } => {
-            if let Err(e) = bucket::remove_bucket(&state.db, handle).await {
-                tracing::warn!(error = %e, bucket_id = %handle.id, "failed to remove bucket");
+        RunBackend::Sandbox { handle } => {
+            if let Err(e) = bucket::remove_sandbox(&state.db, handle).await {
+                tracing::warn!(error = %e, sandbox_id = %handle.id, "failed to remove job sandbox");
             }
-            if let Err(e) = bucket_queries::mark_reaped(&state.db, &handle.id).await {
-                tracing::warn!(error = %e, bucket_id = %handle.id, "failed to mark bucket reaped");
+            if let Err(e) = sandbox_queries::mark_reaped(&state.db, &handle.id).await {
+                tracing::warn!(error = %e, sandbox_id = %handle.id, "failed to mark job sandbox reaped");
             }
         }
     }

@@ -1,6 +1,6 @@
 use sqlx::SqlitePool;
 
-use crate::models::{now_iso, Bucket};
+use crate::models::{now_iso, JobSandbox};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn create(
@@ -11,9 +11,9 @@ pub async fn create(
     workspace_path: &str,
     network_enabled: bool,
     ttl_expires_at: &str,
-) -> sqlx::Result<Bucket> {
+) -> sqlx::Result<JobSandbox> {
     sqlx::query(
-        "INSERT INTO buckets (id, job_run_id, workflow_run_id, workspace_path, network_enabled, \
+        "INSERT INTO job_sandboxes (id, job_run_id, workflow_run_id, workspace_path, network_enabled, \
          created_at, ttl_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id)
@@ -29,12 +29,12 @@ pub async fn create(
     find(pool, id).await?.ok_or(sqlx::Error::RowNotFound)
 }
 
-pub async fn find(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<Bucket>> {
-    sqlx::query_as::<_, Bucket>("SELECT * FROM buckets WHERE id = ?").bind(id).fetch_optional(pool).await
+pub async fn find(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<JobSandbox>> {
+    sqlx::query_as::<_, JobSandbox>("SELECT * FROM job_sandboxes WHERE id = ?").bind(id).fetch_optional(pool).await
 }
 
 pub async fn set_os_handle(pool: &SqlitePool, id: &str, os_pid: i64, os_handle_json: &str) -> sqlx::Result<()> {
-    sqlx::query("UPDATE buckets SET os_pid = ?, os_handle_json = ? WHERE id = ?")
+    sqlx::query("UPDATE job_sandboxes SET os_pid = ?, os_handle_json = ? WHERE id = ?")
         .bind(os_pid)
         .bind(os_handle_json)
         .bind(id)
@@ -44,7 +44,7 @@ pub async fn set_os_handle(pool: &SqlitePool, id: &str, os_pid: i64, os_handle_j
 }
 
 pub async fn mark_reaped(pool: &SqlitePool, id: &str) -> sqlx::Result<()> {
-    sqlx::query("UPDATE buckets SET reaped_at = ? WHERE id = ?")
+    sqlx::query("UPDATE job_sandboxes SET reaped_at = ? WHERE id = ?")
         .bind(now_iso())
         .bind(id)
         .execute(pool)
@@ -54,9 +54,9 @@ pub async fn mark_reaped(pool: &SqlitePool, id: &str) -> sqlx::Result<()> {
 
 /// Buckets whose TTL has already passed and that nothing has reaped yet, the periodic sweep
 /// target.
-pub async fn list_expired(pool: &SqlitePool) -> sqlx::Result<Vec<Bucket>> {
-    sqlx::query_as::<_, Bucket>(
-        "SELECT * FROM buckets WHERE reaped_at IS NULL AND ttl_expires_at < ? ORDER BY ttl_expires_at ASC",
+pub async fn list_expired(pool: &SqlitePool) -> sqlx::Result<Vec<JobSandbox>> {
+    sqlx::query_as::<_, JobSandbox>(
+        "SELECT * FROM job_sandboxes WHERE reaped_at IS NULL AND ttl_expires_at < ? ORDER BY ttl_expires_at ASC",
     )
     .bind(now_iso())
     .fetch_all(pool)
@@ -65,14 +65,14 @@ pub async fn list_expired(pool: &SqlitePool) -> sqlx::Result<Vec<Bucket>> {
 
 /// Every still-open bucket regardless of TTL, used once at startup to find sandboxes that
 /// outlived a crash of the previous process and must be force-cleaned unconditionally.
-pub async fn list_unreaped(pool: &SqlitePool) -> sqlx::Result<Vec<Bucket>> {
-    sqlx::query_as::<_, Bucket>("SELECT * FROM buckets WHERE reaped_at IS NULL").fetch_all(pool).await
+pub async fn list_unreaped(pool: &SqlitePool) -> sqlx::Result<Vec<JobSandbox>> {
+    sqlx::query_as::<_, JobSandbox>("SELECT * FROM job_sandboxes WHERE reaped_at IS NULL").fetch_all(pool).await
 }
 
-/// Still-open buckets belonging to a given run, the cancel handler's target, so a cancelled
+/// Still-open job_sandboxes belonging to a given run, the cancel handler's target, so a cancelled
 /// run's sandboxes are torn down immediately instead of waiting for the TTL reaper.
-pub async fn list_unreaped_for_run(pool: &SqlitePool, workflow_run_id: &str) -> sqlx::Result<Vec<Bucket>> {
-    sqlx::query_as::<_, Bucket>("SELECT * FROM buckets WHERE reaped_at IS NULL AND workflow_run_id = ?")
+pub async fn list_unreaped_for_run(pool: &SqlitePool, workflow_run_id: &str) -> sqlx::Result<Vec<JobSandbox>> {
+    sqlx::query_as::<_, JobSandbox>("SELECT * FROM job_sandboxes WHERE reaped_at IS NULL AND workflow_run_id = ?")
         .bind(workflow_run_id)
         .fetch_all(pool)
         .await

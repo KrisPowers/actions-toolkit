@@ -3,13 +3,13 @@
 //! Each `run:` step gets its own temporary, isolated execution environment (filesystem,
 //! network, and process tree) via OS-native primitives (Linux namespaces/cgroups/seccomp,
 //! Windows AppContainer/Job Objects), rather than a container runtime. The public surface here
-//! mirrors `runner::docker`'s free-function shape (`create_job_bucket`/`exec_step`/
-//! `remove_bucket`) so callers don't need to know which OS backend is active.
+//! mirrors `runner::docker`'s free-function shape (`create_job_sandbox`/`exec_step`/
+//! `remove_sandbox`) so callers don't need to know which OS backend is active.
 
 pub mod reaper;
 
 #[cfg(target_os = "linux")]
-pub mod bucket_init;
+pub mod sandbox_init;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
@@ -37,7 +37,7 @@ pub const DEFAULT_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 pub const DEFAULT_RO_MOUNTS: &[&str] =
     &["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ssl/certs", "/etc/alternatives", "/etc/resolv.conf"];
 
-pub struct BucketSpec<'a> {
+pub struct SandboxSpec<'a> {
     pub workspace_host_path: &'a Path,
     pub run_id: &'a str,
     pub job_run_id: &'a str,
@@ -57,7 +57,7 @@ pub struct BucketSpec<'a> {
 /// (for resource limits and guaranteed teardown) and the same host workspace directory (which
 /// is what actually carries state between steps, the same way it does for `docker.rs`'s
 /// bind-mounted `/workspace`).
-pub struct BucketHandle {
+pub struct SandboxHandle {
     pub id: String,
     pub workspace: PathBuf,
     pub(crate) root_skeleton: PathBuf,
@@ -82,11 +82,11 @@ pub struct BucketCapability {
     pub reason: Option<String>,
 }
 
-/// Everything `__bucket-init` needs to set up one step's sandbox and run its command, handed
+/// Everything `__sandbox-init` needs to set up one step's sandbox and run its command, handed
 /// off via a spec file rather than CLI args/env to avoid shell-escaping a shell command through
 /// another layer of argv.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BucketInitSpec {
+pub struct SandboxInitSpec {
     pub workspace: PathBuf,
     pub root_skeleton: PathBuf,
     pub ro_mounts: Vec<PathBuf>,
@@ -113,14 +113,14 @@ pub async fn probe_capability() -> BucketCapability {
     }
 }
 
-pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: BucketSpec<'_>) -> Result<BucketHandle> {
+pub async fn create_job_sandbox(pool: &SqlitePool, buckets_root: &Path, spec: SandboxSpec<'_>) -> Result<SandboxHandle> {
     #[cfg(target_os = "linux")]
     {
-        linux::create_job_bucket(pool, buckets_root, spec).await
+        linux::create_job_sandbox(pool, buckets_root, spec).await
     }
     #[cfg(target_os = "windows")]
     {
-        windows::create_job_bucket(pool, buckets_root, spec).await
+        windows::create_job_sandbox(pool, buckets_root, spec).await
     }
 }
 
@@ -128,7 +128,7 @@ pub async fn create_job_bucket(pool: &SqlitePool, buckets_root: &Path, spec: Buc
 /// streaming each output line to `on_line(stream, message)` as it arrives (same shape as
 /// `runner::docker::exec_step`, so callers can swap backends without changing their callback).
 pub async fn exec_step<F>(
-    handle: &BucketHandle,
+    handle: &SandboxHandle,
     shell_command: &str,
     shell: Option<&str>,
     working_dir: Option<&str>,
@@ -148,28 +148,28 @@ where
     }
 }
 
-pub async fn remove_bucket(pool: &SqlitePool, handle: &BucketHandle) -> Result<()> {
+pub async fn remove_sandbox(pool: &SqlitePool, handle: &SandboxHandle) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
-        linux::remove_bucket(pool, handle).await
+        linux::remove_sandbox(pool, handle).await
     }
     #[cfg(target_os = "windows")]
     {
-        windows::remove_bucket(pool, handle).await
+        windows::remove_sandbox(pool, handle).await
     }
 }
 
-/// Rebuilds a `BucketHandle` from a persisted DB row rather than a live `create_job_bucket`
+/// Rebuilds a `SandboxHandle` from a persisted DB row rather than a live `create_job_sandbox`
 /// call, used by the reaper (TTL sweep, startup crash reconciliation) where the process that
 /// created the bucket may be long gone. The scaffolding paths are deterministic from
 /// `buckets_root` + the bucket's own id, so no extra state needs to round-trip through the DB.
-pub fn handle_from_bucket_row(buckets_root: &Path, row: &atk_db::models::Bucket) -> BucketHandle {
+pub fn handle_from_sandbox_row(buckets_root: &Path, row: &atk_db::models::JobSandbox) -> SandboxHandle {
     #[cfg(target_os = "linux")]
     {
-        linux::handle_from_bucket_row(buckets_root, row)
+        linux::handle_from_sandbox_row(buckets_root, row)
     }
     #[cfg(target_os = "windows")]
     {
-        windows::handle_from_bucket_row(buckets_root, row)
+        windows::handle_from_sandbox_row(buckets_root, row)
     }
 }

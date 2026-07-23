@@ -35,13 +35,13 @@ pub enum Command {
     /// Internal: re-exec target used by the Bucket sandbox to perform namespace/mount setup
     /// from a freshly-forked, single-threaded child before exec'ing a step's command. Not
     /// meant to be invoked directly; hidden from `--help`.
-    #[command(name = "__bucket-init", hide = true)]
-    BucketInit(BucketInitArgs),
+    #[command(name = "__sandbox-init", hide = true)]
+    SandboxInit(SandboxInitArgs),
 }
 
 #[derive(Args, Debug, Clone)]
-pub struct BucketInitArgs {
-    /// Path to the JSON-serialized `bucket::BucketInitSpec` describing the sandbox to set up
+pub struct SandboxInitArgs {
+    /// Path to the JSON-serialized `bucket::SandboxInitSpec` describing the sandbox to set up
     /// and the command to run inside it.
     pub spec_path: PathBuf,
 }
