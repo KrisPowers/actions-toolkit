@@ -6,6 +6,7 @@ pub mod github_oauth;
 pub mod github_proxy;
 pub mod repos;
 pub mod runs;
+pub mod runstats;
 pub mod secrets;
 pub mod settings;
 pub mod static_files;
@@ -92,6 +93,11 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/rerun", post(runs::rerun))
         .route("/runs/{id}/logs", get(runs::logs))
         .route("/runs/{id}/logs/ws", get(crate::ws::run_logs_ws))
+        .route("/runs/{id}/topology", get(runstats::topology_for_run))
+        .route("/runs/{id}/stats", get(runstats::stats_for_run))
+        .route("/runs/{id}/stats/ws", get(crate::ws::run_stats_ws))
+        .route("/webhook-events/{id}/bucket", get(runstats::bucket_for_webhook_event))
+        .route("/buckets/{id}/topology", get(runstats::topology_for_bucket))
         .route("/runs/{id}/artifacts", get(artifacts::list_for_run))
         .route("/repos/{repo_id}/artifacts", get(artifacts::list_for_repo))
         .route("/artifacts/{id}/download", get(artifacts::download))

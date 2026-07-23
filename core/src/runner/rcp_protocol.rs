@@ -34,7 +34,20 @@ pub enum RcpRequest {
     ResourceCacheFail { entry_id: String },
     RecordJobShard { id: String, job_run_id: String, workflow_run_id: String, workspace_path: String, network_enabled: bool, ttl_expires_at: String },
     MarkShardReaped { shard_id: String },
-    ReportShellExit { shell_id: String, exit_code: i64 },
+    ReportShellExit { shell_id: String, exit_code: i64, cache_hits: i64, cache_misses: i64 },
+    ReportResourceSample {
+        subject_type: String,
+        subject_id: String,
+        workflow_run_id: Option<String>,
+        ts: String,
+        cpu_percent: Option<f64>,
+        memory_bytes: Option<i64>,
+        disk_read_bytes: Option<i64>,
+        disk_write_bytes: Option<i64>,
+        process_count: Option<i64>,
+        host_cpu_percent: Option<f64>,
+        host_memory_percent: Option<f64>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

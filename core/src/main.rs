@@ -28,6 +28,7 @@ use crate::auth::jwt::JwtCodec;
 use crate::config::{Cli, Command};
 use crate::db::queries::settings as settings_queries;
 use crate::runner::log_stream::LogHub;
+use crate::runner::stats_hub::StatsHub;
 
 /// How many ports past the requested one to try before giving up.
 const MAX_PORT_ATTEMPTS: u16 = 20;
@@ -155,6 +156,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 
     let log_hub = Arc::new(LogHub::new());
     tokio::spawn(LogHub::run_periodic_flush(log_hub.clone(), db.clone()));
+    let stats_hub = Arc::new(StatsHub::new());
 
     let port = settings.port as u16;
     let bind_addr = settings.bind_addr.clone();
@@ -168,6 +170,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         bucket_capability_ok: bucket_capability.ok,
         bucket_capability_reason: bucket_capability.reason,
         log_hub,
+        stats_hub,
         github_client: RwLock::new(None),
         pending_device_flow: RwLock::new(None),
         device_flow_result: RwLock::new(None),

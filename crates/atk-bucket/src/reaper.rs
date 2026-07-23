@@ -7,13 +7,20 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use atk_db::queries::{buckets as bucket_queries, shards as shard_queries, resource_cache as cache_queries, shells as shell_queries};
+use atk_db::queries::{
+    buckets as bucket_queries, resource_cache as cache_queries, resource_samples as sample_queries,
+    shards as shard_queries, shells as shell_queries,
+};
 use sqlx::SqlitePool;
 
 const SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 /// A resource-cache build lease with no heartbeat in this long is presumed abandoned (its builder
 /// shell died mid-build) and reset so a waiting shell can retry instead of polling forever.
 const STALE_BUILD_SECONDS: i64 = 120;
+/// Runtime-resource samples older than this are of no ongoing use (the run they describe has long
+/// since finished, been looked at or not) and would otherwise grow `resource_samples` unbounded at
+/// a fixed sampling cadence.
+const SAMPLE_RETENTION_DAYS: i64 = 14;
 
 /// Startup-only pass: force-clean every job sandbox, shell, and bucket row still open when the
 /// process starts, since anything still open at startup can only mean the previous process died
@@ -138,6 +145,13 @@ pub async fn run_periodic_sweep(pool: SqlitePool, buckets_root: Arc<Path>) {
             Ok(count) if count > 0 => tracing::warn!(count, "reset stale resource-cache build leases with no recent heartbeat"),
             Ok(_) => {}
             Err(e) => tracing::error!(error = %e, "failed to sweep stale resource-cache build leases"),
+        }
+
+        let sample_cutoff = (chrono::Utc::now() - chrono::Duration::days(SAMPLE_RETENTION_DAYS)).to_rfc3339();
+        match sample_queries::delete_older_than(&pool, &sample_cutoff).await {
+            Ok(count) if count > 0 => tracing::debug!(count, "deleted resource samples past the retention window"),
+            Ok(_) => {}
+            Err(e) => tracing::error!(error = %e, "failed to sweep old resource samples"),
         }
 
         let completed = match bucket_queries::list_completed_unreaped(&pool).await {

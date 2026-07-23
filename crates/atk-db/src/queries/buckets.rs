@@ -47,6 +47,16 @@ pub async fn find_open_for_webhook_event(pool: &SqlitePool, webhook_event_id: &s
     .await
 }
 
+/// The most recent bucket for a webhook delivery regardless of completion — the "View backend"
+/// link target from the Runs page, which needs to find a bucket long after it finished, not just
+/// while it's still open.
+pub async fn find_by_webhook_event(pool: &SqlitePool, webhook_event_id: &str) -> sqlx::Result<Option<Bucket>> {
+    sqlx::query_as::<_, Bucket>("SELECT * FROM buckets WHERE webhook_event_id = ? ORDER BY created_at DESC LIMIT 1")
+        .bind(webhook_event_id)
+        .fetch_optional(pool)
+        .await
+}
+
 pub async fn mark_completed(pool: &SqlitePool, id: &str) -> sqlx::Result<()> {
     sqlx::query("UPDATE buckets SET status = 'completed', completed_at = ? WHERE id = ?")
         .bind(now_iso())

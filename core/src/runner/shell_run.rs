@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::runner::executor::CheckoutContext;
 use crate::runner::run_client::{report_shell_exit, RcpRunClient, RunClient};
+use crate::runner::sampler;
 use crate::runner::scheduler;
 use crate::workflow::model::Workflow;
 
@@ -54,6 +55,8 @@ pub async fn run(spec_path: PathBuf) -> Result<i32> {
 
     let docker = crate::runner::docker::connect(None).ok();
 
+    let shell_sampler = sampler::spawn_shell_sampler(run_client.clone(), spec.shell_id.clone(), spec.workflow_run_id.clone());
+
     let result = scheduler::run_inner(
         &run_client,
         &docker,
@@ -71,17 +74,15 @@ pub async fn run(spec_path: PathBuf) -> Result<i32> {
     )
     .await;
 
-    let exit_code = match &result {
-        Ok(succeeded) => {
-            if *succeeded {
-                0
-            } else {
-                1
-            }
-        }
+    // Aborted right before reporting exit, not right after `run_inner` returns, so the sampler
+    // stays live through the same window `run_inner` is doing real work in.
+    shell_sampler.abort();
+
+    let (exit_code, cache_hits, cache_misses) = match &result {
+        Ok(outcome) => (if outcome.succeeded { 0 } else { 1 }, outcome.cache_hits, outcome.cache_misses),
         Err(e) => {
             tracing::error!(error = %e, workflow_run_id = %spec.workflow_run_id, "shell's job DAG run failed");
-            1
+            (1, 0, 0)
         }
     };
 
@@ -89,7 +90,7 @@ pub async fn run(spec_path: PathBuf) -> Result<i32> {
     // `outcome_persisted_at` after this call, and every status update the DAG run just performed
     // above already round-tripped and returned before we get here, so the outcome really is
     // durable by the time this arrives.
-    if let Err(e) = report_shell_exit(rcp_client.as_ref(), &spec.shell_id, exit_code).await {
+    if let Err(e) = report_shell_exit(rcp_client.as_ref(), &spec.shell_id, exit_code, cache_hits, cache_misses).await {
         tracing::warn!(error = %e, shell_id = %spec.shell_id, "failed to report this shell's exit to its bucket");
     }
 

@@ -56,6 +56,20 @@ pub async fn find(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<Shell>> {
     sqlx::query_as::<_, Shell>("SELECT * FROM shells WHERE id = ?").bind(id).fetch_optional(pool).await
 }
 
+/// The shell driving a given workflow run, if one has been spawned yet (`None` for a run still
+/// queued). Each `WorkflowRun` gets at most one `Shell` — a rerun creates a brand new run row
+/// (`dispatch::spawn_run`), never a second shell for the same run — so "the" shell is unambiguous.
+pub async fn find_by_workflow_run(pool: &SqlitePool, workflow_run_id: &str) -> sqlx::Result<Option<Shell>> {
+    sqlx::query_as::<_, Shell>("SELECT * FROM shells WHERE workflow_run_id = ?").bind(workflow_run_id).fetch_optional(pool).await
+}
+
+/// Every shell a bucket has ever spawned, regardless of status — the sibling list for the Bucket
+/// detail page's topology (unlike `list_unfinished_for_bucket`, which is reaping-focused and only
+/// wants the still-open ones).
+pub async fn list_for_bucket(pool: &SqlitePool, bucket_id: &str) -> sqlx::Result<Vec<Shell>> {
+    sqlx::query_as::<_, Shell>("SELECT * FROM shells WHERE bucket_id = ? ORDER BY started_at ASC").bind(bucket_id).fetch_all(pool).await
+}
+
 pub async fn set_pid(pool: &SqlitePool, id: &str, pid: i64) -> sqlx::Result<()> {
     sqlx::query("UPDATE shells SET pid = ? WHERE id = ?").bind(pid).bind(id).execute(pool).await?;
     Ok(())
@@ -80,6 +94,18 @@ pub async fn mark_exited(pool: &SqlitePool, id: &str, exit_code: i64) -> sqlx::R
 
 pub async fn mark_reaped(pool: &SqlitePool, id: &str) -> sqlx::Result<()> {
     sqlx::query("UPDATE shells SET reaped_at = ? WHERE id = ?").bind(now_iso()).bind(id).execute(pool).await?;
+    Ok(())
+}
+
+/// Records the resource-cache hit/miss counts a shell accumulated locally while running its job
+/// DAG (see `core::runner::executor::handle_cache_step`), reported once alongside its exit code.
+pub async fn record_cache_counters(pool: &SqlitePool, id: &str, cache_hits: i64, cache_misses: i64) -> sqlx::Result<()> {
+    sqlx::query("UPDATE shells SET cache_hits = ?, cache_misses = ? WHERE id = ?")
+        .bind(cache_hits)
+        .bind(cache_misses)
+        .bind(id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 

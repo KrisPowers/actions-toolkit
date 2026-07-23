@@ -59,6 +59,7 @@ pub struct ShardSpec<'a> {
 /// (for resource limits and guaranteed teardown) and the same host workspace directory (which
 /// is what actually carries state between steps, the same way it does for `docker.rs`'s
 /// bind-mounted `/workspace`).
+#[derive(Clone)]
 pub struct ShardHandle {
     pub id: String,
     pub workspace: PathBuf,
@@ -150,6 +151,32 @@ where
     #[cfg(target_os = "windows")]
     {
         windows::exec_step(handle, shell_command, shell, working_dir, env, on_line).await
+    }
+}
+
+/// Raw accounting counters for one shard, read fresh each call (no rate computed here — the
+/// caller, which controls the sampling interval, turns `cpu_usage_usec` deltas into a percentage).
+/// Every field is `None` when the host has no way to read it: on Windows, `ShardHandle` carries no
+/// persisted Job Object handle (one is created fresh per-step inside `windows::run_step_blocking`
+/// and dropped immediately after), so this always returns all-`None` there today. A caller getting
+/// an all-`None` result should fall back to attributing that shard's activity to its parent shell's
+/// own process-tree sample instead of showing a broken/zeroed card.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ShardAccounting {
+    pub memory_bytes: Option<u64>,
+    pub cpu_usage_usec: Option<u64>,
+    pub process_count: Option<u64>,
+}
+
+pub fn read_shard_accounting(handle: &ShardHandle) -> ShardAccounting {
+    #[cfg(target_os = "linux")]
+    {
+        linux::read_shard_accounting(handle)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = handle;
+        ShardAccounting::default()
     }
 }
 

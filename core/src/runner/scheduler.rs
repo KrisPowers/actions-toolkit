@@ -8,7 +8,7 @@ use tokio::sync::Semaphore;
 
 use crate::app::AppState;
 use crate::db::queries::runs as run_queries;
-use crate::runner::executor::{self, CheckoutContext};
+use crate::runner::executor::{self, CacheCounters, CheckoutContext};
 use crate::runner::run_client::RunClient;
 use crate::workflow::expr::{evaluate, ExprContext};
 use crate::workflow::model::Workflow;
@@ -112,6 +112,15 @@ async fn report_run_outcome(
     }
 }
 
+/// Outcome of driving a whole workflow run's job DAG: whether every job succeeded, plus the
+/// resource-cache hit/miss counts accumulated across every job in the run (see
+/// `executor::CacheCounters`), reported once at shell exit alongside the exit code.
+pub struct RunOutcome {
+    pub succeeded: bool,
+    pub cache_hits: i64,
+    pub cache_misses: i64,
+}
+
 /// Drives an entire workflow run to completion from inside its own shell subprocess: repeatedly
 /// finds jobs whose `needs` are all satisfied and dispatches them (bounded by
 /// `max_concurrent_jobs`), skips jobs downstream of a failure (unless they opt in via
@@ -134,8 +143,10 @@ pub async fn run_inner(
     trigger_event: &str,
     max_concurrent_jobs: usize,
     job_runs: Vec<(String, String)>, // (job_key, job_run_id), pre-resolved by the caller
-) -> Result<bool> {
+) -> Result<RunOutcome> {
     run_client.set_run_status(workflow_run_id, "running", false).await?;
+
+    let cache_counters = Arc::new(CacheCounters::default());
 
     let job_run_ids: HashMap<String, String> = job_runs.into_iter().collect();
 
@@ -202,6 +213,7 @@ pub async fn run_inner(
             });
             let job_key_owned = job_key.clone();
             in_flight.insert(job_key.clone());
+            let cache_counters = cache_counters.clone();
 
             let handle = tokio::spawn(async move {
                 let _permit = permit;
@@ -217,6 +229,7 @@ pub async fn run_inner(
                     &job_run_id,
                     &job,
                     checkout,
+                    &cache_counters,
                 )
                 .await
                 .unwrap_or(false);
@@ -249,5 +262,6 @@ pub async fn run_inner(
         crate::runner::workspace::cleanup(workspaces_dir, job_run_id);
     }
 
-    Ok(all_succeeded)
+    let (cache_hits, cache_misses) = cache_counters.snapshot();
+    Ok(RunOutcome { succeeded: all_succeeded, cache_hits, cache_misses })
 }

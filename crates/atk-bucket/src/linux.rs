@@ -11,7 +11,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
-use super::{BucketCapability, ShardHandle, ShardInitSpec, ShardSpec, ExecResult, DEFAULT_RO_MOUNTS};
+use super::{BucketCapability, ShardAccounting, ShardHandle, ShardInitSpec, ShardSpec, ExecResult, DEFAULT_RO_MOUNTS};
 
 const CGROUP_ROOT: &str = "/sys/fs/cgroup/actions-toolkit";
 /// Deliberately hyphen-free. systemd treats a hyphenated slice name as implicitly nested under a
@@ -70,6 +70,27 @@ pub(crate) fn handle_from_shard_row(buckets_root: &Path, row: &atk_db::models::S
         extra_ro_mounts: Vec::new(),
         cgroup_path: cgroup_path_for(&row.id),
     }
+}
+
+/// Reads this shard's cgroup v2 accounting files directly (`memory.current`, `cpu.stat`'s
+/// `usage_usec`, `pids.current`), the controllers `enable_controllers` already turns on for every
+/// bucket cgroup. Best-effort: any file that's missing, unreadable, or fails to parse (e.g. a
+/// shard whose cgroup was already torn down between the caller listing it and reading it) just
+/// yields `None` for that one field rather than failing the whole read.
+pub(crate) fn read_shard_accounting(handle: &ShardHandle) -> ShardAccounting {
+    let memory_bytes = read_u64_file(&handle.cgroup_path.join("memory.current"));
+    let process_count = read_u64_file(&handle.cgroup_path.join("pids.current"));
+    let cpu_usage_usec = std::fs::read_to_string(handle.cgroup_path.join("cpu.stat")).ok().and_then(|content| {
+        content.lines().find_map(|line| {
+            let mut parts = line.split_whitespace();
+            (parts.next()? == "usage_usec").then(|| parts.next()?.parse().ok()).flatten()
+        })
+    });
+    ShardAccounting { memory_bytes, cpu_usage_usec, process_count }
+}
+
+fn read_u64_file(path: &Path) -> Option<u64> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
 pub async fn create_job_shard(buckets_root: &Path, spec: ShardSpec<'_>) -> Result<ShardHandle> {
