@@ -161,6 +161,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         log_hub,
         github_client: RwLock::new(None),
         pending_device_flow: RwLock::new(None),
+        device_flow_result: RwLock::new(None),
         token_refresh_lock: tokio::sync::Mutex::new(()),
         cloudflare_tunnel: Arc::new(tunnel::CloudflareTunnel::new()),
         tailscale_tunnel: Arc::new(tailscale::TailscaleTunnel::new()),

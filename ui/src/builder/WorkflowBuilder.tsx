@@ -89,6 +89,16 @@ export default function WorkflowBuilder({ name, initialYaml, onSave, saving, sav
     [name],
   );
 
+  // Clears a stale parse error the moment the text it described changes, rather than leaving it
+  // displayed under content that's since become valid (or been fixed by a successful save):
+  // parseError is otherwise only ever set inside switchToVisual, so without this a one-time
+  // failure there (e.g. switching tabs while mid-edit) would sit under the editor indefinitely,
+  // even through further edits and successful saves that have nothing to do with it.
+  function handleYamlChange(next: string) {
+    setYamlText(next);
+    setParseError(null);
+  }
+
   function switchToVisual() {
     const { model: parsed, error } = parseYaml(yamlText, name);
     if (!parsed) {
@@ -175,6 +185,7 @@ export default function WorkflowBuilder({ name, initialYaml, onSave, saving, sav
         ? await onSave({ yaml_source: yamlText })
         : await onSave({ workflow_json: fromReactFlow(name, nodes, edges) });
     setYamlText(result.yaml_source);
+    setParseError(null);
     const { model: parsed } = parseYaml(result.yaml_source, name);
     if (parsed) {
       setModel(parsed);
@@ -208,7 +219,7 @@ export default function WorkflowBuilder({ name, initialYaml, onSave, saving, sav
 
       <div className="mt-3 min-h-0 flex-1">
         {mode === "code" ? (
-          <YamlCodeEditor value={yamlText} onChange={setYamlText} error={parseError} />
+          <YamlCodeEditor value={yamlText} onChange={handleYamlChange} error={parseError} />
         ) : (
           <div className="flex h-full gap-3">
             <div className="min-w-0 flex-1 rounded-lg border border-neutral-800">

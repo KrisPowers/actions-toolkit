@@ -86,7 +86,8 @@ pub async fn create(
     // id), so on failure the row is rolled back rather than left half-connected with no working
     // trigger path.
     let github_client = client::shared(&state).await?;
-    let payload_url = format!("{}/webhooks/github/{}", crate::api::request_origin(&headers), repo.id);
+    let settings = crate::db::queries::settings::get(&state.db).await?;
+    let payload_url = format!("{}/webhooks/github/{}", crate::api::webhook_base_url(&headers, &settings), repo.id);
     match hooks::create_webhook(&github_client, &repo.owner, &repo.name, &payload_url, &webhook_secret).await {
         Ok(hook_id) => repo_queries::set_github_hook_id(&state.db, &repo.id, hook_id as i64).await?,
         Err(e) => {
@@ -271,6 +272,7 @@ mod tests {
             log_hub: Arc::new(LogHub::new()),
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
+            device_flow_result: RwLock::new(None),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
             tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
@@ -326,6 +328,43 @@ mod tests {
         let repo = repo_queries::find_by_id(&state.db, &response.0.repo.id).await.unwrap().unwrap();
         assert_eq!(repo.github_hook_id, Some(555));
         assert!(response.0.repo.webhook_connected, "the API response must reflect the stored hook id, not just the DB row");
+    }
+
+    /// Rule-proving test: when an operator has pinned a `public_url` (e.g. a Cloudflare Tunnel
+    /// hostname), a newly-connected repo's webhook must point at that address, not the request's
+    /// Host header. The Host header is whatever LAN address the browser happened to hit this
+    /// instance on (or `localhost`), which GitHub can never reach, so a webhook created against it
+    /// would silently never deliver a single event.
+    #[tokio::test]
+    async fn create_points_the_webhook_at_the_configured_public_url_not_the_request_host() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/repos/octocat/hello-world/hooks"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({ "id": 999 })))
+            .mount(&mock_server)
+            .await;
+
+        let (state, user) = test_state(&mock_server).await;
+        crate::db::queries::settings::update(
+            &state.db,
+            crate::db::queries::settings::SettingsPatch {
+                public_url: Some(Some("https://example.trycloudflare.com".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let response = create(State(state.clone()), CurrentUser(user), test_headers(), Json(connect_request())).await.unwrap();
+
+        let requests = mock_server.received_requests().await.unwrap();
+        let create_body: serde_json::Value = requests
+            .iter()
+            .find(|r| r.method.as_str() == "POST" && r.url.path() == "/repos/octocat/hello-world/hooks")
+            .expect("a hook-create request")
+            .body_json()
+            .unwrap();
+        assert_eq!(create_body["config"]["url"], format!("https://example.trycloudflare.com/webhooks/github/{}", response.0.repo.id));
     }
 
     /// Rule-proving test: disconnecting a repo removes the corresponding webhook from GitHub, not

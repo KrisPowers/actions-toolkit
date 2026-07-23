@@ -5,4 +5,5 @@ pub mod hooks;
 pub mod issues;
 pub mod oauth;
 pub mod releases;
+pub mod status;
 pub mod webhook_verify;
