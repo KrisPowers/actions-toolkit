@@ -297,17 +297,6 @@ export interface RunStatsSummary {
   peak_memory_bytes: number | null;
 }
 
-export interface WebhookEvent {
-  id: string;
-  repo_id: string | null;
-  github_event: string;
-  delivery_id: string | null;
-  payload_json: string;
-  signature_valid: number;
-  matched_workflow_ids: string;
-  received_at: string;
-}
-
 // --- Workflow domain model (mirrors backend/src/workflow/model.rs) ---
 
 export interface WorkflowInput {

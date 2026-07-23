@@ -41,11 +41,3 @@ export function useRecreateWebhook() {
     onSuccess: (_data, id) => qc.invalidateQueries({ queryKey: ["repos", id] }),
   });
 }
-
-export function useRepoWebhookEvents(repoId: string | undefined) {
-  return useQuery({
-    queryKey: ["repos", repoId, "webhook-events"],
-    queryFn: () => reposApi.webhookEvents(repoId as string),
-    enabled: !!repoId,
-  });
-}

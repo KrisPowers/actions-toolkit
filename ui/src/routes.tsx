@@ -14,9 +14,8 @@ const RepoSecretsSettingsPage = lazy(() => import("./pages/settings/RepoSecretsS
 const RepoAccessSettingsPage = lazy(() => import("./pages/settings/RepoAccessSettingsPage"));
 const RepoDataSettingsPage = lazy(() => import("./pages/settings/RepoDataSettingsPage"));
 const RepoDangerSettingsPage = lazy(() => import("./pages/settings/RepoDangerSettingsPage"));
-const WorkflowListPage = lazy(() => import("./pages/WorkflowListPage"));
+const OverviewPage = lazy(() => import("./pages/OverviewPage"));
 const WorkflowEditorPage = lazy(() => import("./pages/WorkflowEditorPage"));
-const RunListPage = lazy(() => import("./pages/RunListPage"));
 const RunDetailLayout = lazy(() => import("./pages/RunDetailLayout"));
 const RunLogsPanel = lazy(() => import("./pages/runs/RunLogsPanel"));
 const RunArtifactsPanel = lazy(() => import("./pages/runs/RunArtifactsPanel"));
@@ -48,9 +47,10 @@ export default function AppRoutes() {
           <Route path="data" element={<RepoDataSettingsPage />} />
           <Route path="danger" element={<RepoDangerSettingsPage />} />
         </Route>
-        <Route path="/repos/:repoId/workflows" element={<WorkflowListPage />} />
+        <Route path="/repos/:repoId/overview" element={<OverviewPage />} />
+        <Route path="/repos/:repoId/workflows" element={<Navigate to="../overview" replace />} />
         <Route path="/repos/:repoId/workflows/:workflowId" element={<WorkflowEditorPage />} />
-        <Route path="/repos/:repoId/runs" element={<RunListPage />} />
+        <Route path="/repos/:repoId/runs" element={<Navigate to="../overview" replace />} />
         <Route path="/runs/:runId" element={<RunDetailLayout />}>
           <Route index element={<Navigate to="logs" replace />} />
           <Route path="logs" element={<RunLogsPanel />} />

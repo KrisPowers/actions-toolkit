@@ -10,14 +10,6 @@ export function useRuns(repoId: string | undefined, limit?: number) {
   });
 }
 
-export function useRunsForEvent(eventId: string | undefined) {
-  return useQuery({
-    queryKey: ["runs", "webhook-event", eventId],
-    queryFn: () => runsApi.listForWebhookEvent(eventId as string),
-    enabled: !!eventId,
-  });
-}
-
 export function useRun(id: string | undefined) {
   return useQuery({
     queryKey: ["runs", id],

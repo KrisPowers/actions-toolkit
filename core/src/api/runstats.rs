@@ -3,9 +3,9 @@
 //! for the live-tail half). Every handler here only reads rows other code already wrote; nothing
 //! in this module touches an RCP connection or a running shell/shard directly.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
 use crate::auth::middleware::CurrentUser;
@@ -40,11 +40,37 @@ pub struct RunTopology {
     pub shell: Option<ShellNode>,
 }
 
+async fn summarize_bucket(state: &AppState, bucket: Bucket) -> AppResult<BucketSummary> {
+    let assets_cached = cache_queries::count_ready_for_bucket(&state.db, &bucket.id).await?;
+    let shell_count = shell_queries::list_for_bucket(&state.db, &bucket.id).await?.len() as i64;
+    Ok(BucketSummary { bucket, assets_cached, shell_count })
+}
+
 async fn bucket_summary(state: &AppState, bucket_id: &str) -> AppResult<Option<BucketSummary>> {
     let Some(bucket) = bucket_queries::find(&state.db, bucket_id).await? else { return Ok(None) };
-    let assets_cached = cache_queries::count_ready_for_bucket(&state.db, bucket_id).await?;
-    let shell_count = shell_queries::list_for_bucket(&state.db, bucket_id).await?.len() as i64;
-    Ok(Some(BucketSummary { bucket, assets_cached, shell_count }))
+    Ok(Some(summarize_bucket(state, bucket).await?))
+}
+
+#[derive(Deserialize)]
+pub struct ListBucketsQuery {
+    workflow_id: Option<String>,
+    limit: Option<i64>,
+}
+
+/// A repo's triggering events (buckets), most recent first — the Overview page's right-hand
+/// list. Optionally filtered to buckets that ran a given workflow.
+pub async fn list_for_repo(
+    State(state): State<AppState>,
+    Path(repo_id): Path<String>,
+    Query(q): Query<ListBucketsQuery>,
+    _user: CurrentUser,
+) -> AppResult<Json<Vec<BucketSummary>>> {
+    let buckets = bucket_queries::list_for_repo(&state.db, &repo_id, q.workflow_id.as_deref(), q.limit.unwrap_or(50)).await?;
+    let mut summaries = Vec::with_capacity(buckets.len());
+    for bucket in buckets {
+        summaries.push(summarize_bucket(&state, bucket).await?);
+    }
+    Ok(Json(summaries))
 }
 
 pub async fn topology_for_run(
@@ -93,17 +119,6 @@ pub async fn stats_for_run(
     let peak_memory_bytes = samples.iter().filter_map(|s| s.memory_bytes).max();
 
     Ok(Json(RunStatsSummary { samples, cache_hits, cache_misses, assets_cached, peak_cpu_percent, peak_memory_bytes }))
-}
-
-/// The bucket behind one webhook delivery, if any — powers the Runs page's "View backend" link.
-/// `None` (not a 404) when the delivery matched no workflow and so never got a bucket at all.
-pub async fn bucket_for_webhook_event(
-    State(state): State<AppState>,
-    Path(event_id): Path<String>,
-    _user: CurrentUser,
-) -> AppResult<Json<Option<Bucket>>> {
-    let bucket = bucket_queries::find_by_webhook_event(&state.db, &event_id).await?;
-    Ok(Json(bucket))
 }
 
 #[derive(Serialize)]

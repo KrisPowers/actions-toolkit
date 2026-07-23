@@ -27,8 +27,8 @@ export default function WorkflowEditorPage() {
         <PageHeader
           title={workflow.name}
           subtitle={workflow.description ?? undefined}
-          backTo={`/repos/${repoId}/workflows`}
-          backLabel="Workflows"
+          backTo={`/repos/${repoId}/overview`}
+          backLabel="Overview"
           actions={
             <Button variant="default" onClick={() => dispatch.mutate(workflow.id)} disabled={dispatch.isPending}>
               <Play className="h-3.5 w-3.5" strokeWidth={2} />

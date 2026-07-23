@@ -34,8 +34,8 @@ export default function RunDetailLayout() {
               <StatusBadge status={tree.run.status} />
             </span>
           }
-          backTo={`/repos/${tree.run.repo_id}/runs`}
-          backLabel="Runs"
+          backTo={`/repos/${tree.run.repo_id}/overview`}
+          backLabel="Overview"
           actions={
             <>
               {runActive && (

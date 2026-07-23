@@ -38,7 +38,7 @@ export default function AnalyticsPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-neutral-200">Recent runs</h2>
           {repoId && (
-            <Link to={`/repos/${repoId}/runs`} className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+            <Link to={`/repos/${repoId}/overview`} className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
               View all
               <ArrowRight className="h-3 w-3" strokeWidth={2} />
             </Link>

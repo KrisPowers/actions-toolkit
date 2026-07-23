@@ -40,7 +40,7 @@ export default function RepoSwitcher() {
       {(repos ?? []).map((r) => (
         <Link
           key={r.id}
-          to={`/repos/${r.id}/workflows`}
+          to={`/repos/${r.id}/overview`}
           className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
         >
           <Avatar login={r.owner} size={16} className="shrink-0" />

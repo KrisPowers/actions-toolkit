@@ -19,19 +19,20 @@ export function useRunStatsSummary(runId: string | undefined, active: boolean) {
   });
 }
 
-export function useBucketForWebhookEvent(eventId: string | undefined) {
-  return useQuery({
-    queryKey: ["bucket-for-webhook-event", eventId],
-    queryFn: () => runstatsApi.bucketForWebhookEvent(eventId as string),
-    enabled: !!eventId,
-  });
-}
-
 export function useBucketTopology(bucketId: string | undefined) {
   return useQuery({
     queryKey: ["bucket-topology", bucketId],
     queryFn: () => runstatsApi.topologyForBucket(bucketId as string),
     enabled: !!bucketId,
+    refetchInterval: 5000,
+  });
+}
+
+export function useBucketsForRepo(repoId: string | undefined, workflowId?: string) {
+  return useQuery({
+    queryKey: ["buckets", "repo", repoId, workflowId],
+    queryFn: () => runstatsApi.listForRepo(repoId as string, workflowId),
+    enabled: !!repoId,
     refetchInterval: 5000,
   });
 }
