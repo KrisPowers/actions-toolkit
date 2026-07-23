@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" font-family="'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4c1d95"/>
+    </marker>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#65a30d"/>
+    </marker>
+    <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9a3412"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="900" fill="#ffffff"/>
+  <text x="600" y="27" text-anchor="middle" font-size="16" font-weight="700" fill="#1f2430">Inside a Bucket: Bucket &#8594; Shell &#8594; Shard</text>
+  <text x="600" y="45" text-anchor="middle" font-size="11" fill="#57606a">how actions-toolkit isolates jobs without Docker, on one machine or across several</text>
+
+  <!-- Bucket outer -->
+  <rect x="40" y="55" width="790" height="415" rx="16" fill="none" stroke="#7c3aed" stroke-width="2"/>
+  <text x="60" y="80" font-size="14" font-weight="700" fill="#4c1d95">BUCKET</text>
+  <text x="140" y="80" font-size="10.5" fill="#6d28d9">one per triggering webhook delivery &#8212; outlives any single shell</text>
+
+  <!-- owns chips -->
+  <rect x="65" y="100" width="230" height="46" rx="8" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.25"/>
+  <text x="180" y="119" text-anchor="middle" font-size="10.5" font-weight="600" fill="#4c1d95">SQLite pool</text>
+  <text x="180" y="134" text-anchor="middle" font-size="9.5" fill="#5b21b6">+ full DB access</text>
+
+  <rect x="305" y="100" width="250" height="46" rx="8" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.25"/>
+  <text x="430" y="119" text-anchor="middle" font-size="10.5" font-weight="600" fill="#4c1d95">Ephemeral session key</text>
+  <text x="430" y="134" text-anchor="middle" font-size="9" fill="#5b21b6">wraps the durable encryption key</text>
+
+  <rect x="565" y="100" width="245" height="46" rx="8" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.25"/>
+  <text x="687" y="119" text-anchor="middle" font-size="10.5" font-weight="600" fill="#4c1d95">Resource cache</text>
+  <text x="687" y="134" text-anchor="middle" font-size="9.5" fill="#5b21b6">shared build leases</text>
+
+  <!-- RCP server -->
+  <rect x="65" y="165" width="745" height="110" rx="12" fill="#eef2ff" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="85" y="188" font-size="12" font-weight="700" fill="#3730a3">RCP server &#8212; Run Control Protocol</text>
+  <text x="85" y="202" font-size="9.5" fill="#4338ca">the only way a shell reaches the database: request/response over a framed connection</text>
+
+  <rect x="90" y="210" width="340" height="55" rx="8" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.25"/>
+  <text x="260" y="232" text-anchor="middle" font-size="10.5" font-weight="600" fill="#312e81">Local listener</text>
+  <text x="260" y="248" text-anchor="middle" font-size="9.5" fill="#3730a3">named pipe / Unix socket &#8212; same-machine shells</text>
+
+  <rect x="450" y="210" width="340" height="55" rx="8" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.25"/>
+  <text x="620" y="232" text-anchor="middle" font-size="10.5" font-weight="600" fill="#312e81">TCP listener</text>
+  <text x="620" y="248" text-anchor="middle" font-size="9.5" fill="#3730a3">remote-agent shells (no TLS yet)</text>
+
+  <path d="M450,275 L450,298" stroke="#4c1d95" stroke-width="1.5" marker-end="url(#a1)" fill="none"/>
+
+  <!-- Shell box -->
+  <rect x="90" y="300" width="720" height="150" rx="12" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="110" y="323" font-size="12.5" font-weight="700" fill="#134e4a">Shell &#8212; one process per workflow run (__shell-run)</text>
+  <text x="110" y="340" font-size="10" fill="#115e59">drives the job DAG (scheduler); its only DB access is RCP calls back to this Bucket</text>
+
+  <rect x="120" y="358" width="330" height="72" rx="10" fill="#cffafe" stroke="#06b6d4" stroke-width="1.25"/>
+  <text x="285" y="386" text-anchor="middle" font-size="11" font-weight="600" fill="#164e63">Docker container</text>
+  <text x="285" y="403" text-anchor="middle" font-size="9.5" fill="#155e75">job declares container: &lt;image&gt;</text>
+
+  <rect x="470" y="358" width="310" height="72" rx="10" fill="#ffedd5" stroke="#f97316" stroke-width="1.25"/>
+  <text x="625" y="386" text-anchor="middle" font-size="11" font-weight="600" fill="#7c2d12">Shard sandbox</text>
+  <text x="625" y="401" text-anchor="middle" font-size="9.5" fill="#9a3412">no container: declared</text>
+  <text x="625" y="415" text-anchor="middle" font-size="9" fill="#9a3412">(per-OS backend, see below)</text>
+
+  <text x="450" y="443" text-anchor="middle" font-size="9.5" font-style="italic" fill="#0f766e">&#215;N &#8212; one Shell runs per concurrent workflow run this Bucket owns</text>
+
+  <!-- Remote agent -->
+  <rect x="880" y="165" width="280" height="305" rx="14" fill="#ecfccb" stroke="#65a30d" stroke-width="1.5"/>
+  <text x="900" y="190" font-size="12.5" font-weight="700" fill="#365314">Remote Agent (separate machine)</text>
+  <text x="900" y="213" font-size="10" font-weight="600" fill="#365314">actions-toolkit agent</text>
+  <text x="900" y="233" font-size="9.5" fill="#3f6212">registers + heartbeats with the control</text>
+  <text x="900" y="247" font-size="9.5" fill="#3f6212">plane every 15s</text>
+  <text x="900" y="267" font-size="9.5" fill="#3f6212">polls for shells scheduled onto it, then</text>
+  <text x="900" y="281" font-size="9.5" fill="#3f6212">runs __shell-run locally</text>
+  <text x="900" y="301" font-size="9.5" fill="#3f6212">dials the owning Bucket's TCP RCP</text>
+  <text x="900" y="315" font-size="9.5" fill="#3f6212">listener to report status/logs back</text>
+  <text x="900" y="337" font-size="9.5" fill="#3f6212">an agent-hosted shell creates Shards</text>
+  <text x="900" y="351" font-size="9.5" fill="#3f6212">on its own machine the same way</text>
+
+  <path d="M880,320 C820,290 820,250 788,235" stroke="#65a30d" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#a2)" fill="none"/>
+  <text x="845" y="270" text-anchor="middle" font-size="9.5" fill="#3f6212">RCP / TCP</text>
+
+  <!-- Shard detail cards -->
+  <path d="M625,430 C625,480 400,470 320,518" stroke="#9a3412" stroke-width="1.5" marker-end="url(#a3)" fill="none"/>
+  <path d="M625,430 C625,480 850,470 900,518" stroke="#9a3412" stroke-width="1.5" marker-end="url(#a3)" fill="none"/>
+  <text x="625" y="490" text-anchor="middle" font-size="9.5" font-style="italic" fill="#9a3412">one OS backend, chosen at compile time</text>
+
+  <rect x="60" y="520" width="530" height="305" rx="12" fill="#fff7ed" stroke="#f97316" stroke-width="1.5"/>
+  <text x="80" y="548" font-size="13" font-weight="700" fill="#7c2d12">Linux Shard backend</text>
+
+  <text font-size="10.3" fill="#7c2d12">
+    <tspan x="80" y="572">&#8226; unshare() into fresh user + mount + PID + UTS + IPC + net namespaces</tspan>
+    <tspan x="80" y="594">&#8226; pivot_root into a per-shard skeleton: read-write workspace plus curated</tspan>
+    <tspan x="95" y="609">read-only host dirs (/usr, /bin, /lib, ...) &#8212; anything else resolves to</tspan>
+    <tspan x="95" y="624">ENOENT, not just access-denied</tspan>
+    <tspan x="80" y="646">&#8226; fresh /proc, a seccomp allow-list, and all capabilities dropped before</tspan>
+    <tspan x="95" y="661">the step's command is exec'd</tspan>
+    <tspan x="80" y="683">&#8226; cgroup v2 limits (pids/memory/cpu) and guaranteed teardown: the new</tspan>
+    <tspan x="95" y="698">namespace's PID 1 dying (incl. via PR_SET_PDEATHSIG) kills every</tspan>
+    <tspan x="95" y="713">remaining process in it</tspan>
+    <tspan x="80" y="735">&#8226; re-execs into a hidden __shard-init subcommand first &#8212; unshare(2)</tspan>
+    <tspan x="95" y="750">refuses CLONE_NEWUSER from Tokio's multi-threaded process directly</tspan>
+    <tspan x="80" y="772">&#8226; one cgroup per job, shared by every step in it, for limits + teardown;</tspan>
+    <tspan x="95" y="787">each step still gets its own fresh set of namespaces</tspan>
+  </text>
+
+  <rect x="610" y="520" width="530" height="305" rx="12" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.5"/>
+  <text x="630" y="548" font-size="13" font-weight="700" fill="#0c4a6e">Windows Shard backend</text>
+
+  <text font-size="10.3" fill="#0c4a6e">
+    <tspan x="630" y="572">&#8226; an AppContainer token: no access to any file or registry key that</tspan>
+    <tspan x="645" y="587">isn't explicitly ACL'd to its SID</tspan>
+    <tspan x="630" y="609">&#8226; no network capability at all unless an internetClient-style</tspan>
+    <tspan x="645" y="624">capability SID is attached at process creation</tspan>
+    <tspan x="630" y="646">&#8226; workspace + read-only host dirs granted via per-SID ACLs instead</tspan>
+    <tspan x="645" y="661">of bind mounts</tspan>
+    <tspan x="630" y="683">&#8226; a Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: every</tspan>
+    <tspan x="645" y="698">process in the job dies when its handle closes or this process</tspan>
+    <tspan x="645" y="713">crashes</tspan>
+    <tspan x="630" y="735">&#8226; filesystem and network default-deny both come from one coherent,</tspan>
+    <tspan x="645" y="750">Microsoft-supported mechanism, no hand-rolled WFP policy needed</tspan>
+    <tspan x="630" y="772">&#8226; profile + Job Object are named deterministically from the shard's</tspan>
+    <tspan x="645" y="787">own id, so crash recovery can re-open them without extra state</tspan>
+  </text>
+
+  <!-- reaper note -->
+  <rect x="60" y="845" width="1080" height="42" rx="10" fill="#f6f8fa" stroke="#8b949e" stroke-width="1.25" stroke-dasharray="4 3"/>
+  <text x="600" y="870" text-anchor="middle" font-size="10.5" fill="#57606a">A periodic reaper (30s sweep + startup crash reconciliation) force-removes any Shard, Shell, or Bucket a crash left behind, and expires anything past its TTL (default 6h).</text>
+</svg>

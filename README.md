@@ -6,12 +6,13 @@ while keeping a workflow-file-driven, trigger-based pipeline you already know.
 
 - **Rust backend** (axum + SQLite) serves a REST/WebSocket API and executes workflow jobs on the
   host, mirroring GitHub Actions' execution model: as Docker containers for jobs that declare a
-  `container:` image, or through a built-in native sandbox ("Bucket") for jobs that don't.
+  `container:` image, or through a built-in native sandbox (a "Shard") for jobs that don't.
 - **React/TypeScript UI** (served by the same binary) gives you configuration, live logs, run
   history, and analytics, plus GitHub issue/PR/release management.
 - **Two ways to author workflows**: a full YAML code editor (Monaco), or a drag-and-drop visual
   builder (React Flow) for triggers, jobs, steps, and conditions. Both edit the same underlying
-  workflow definition.
+  workflow definition; saving from visual mode regenerates the YAML, so hand-written comments and
+  formatting don't survive a visual-mode save.
 
 ## How it works
 
@@ -25,9 +26,13 @@ while keeping a workflow-file-driven, trigger-based pipeline you already know.
    what it needs to be reachable at.
 4. Define workflows (`on:` triggers, `jobs:`, `steps:`) either as YAML or visually.
 5. When a matching event arrives (or you click "Run now"), actions-toolkit checks out your repo,
-   starts each job (a Docker container if it declares one, the Bucket sandbox otherwise), runs
-   each step, streams logs live to the UI, and captures any declared artifacts, all on your own
+   starts each job (a Docker container if it declares one, a Shard sandbox otherwise), runs each
+   step, streams logs live to the UI, and captures any declared artifacts, all on your own
    hardware.
+
+<p align="center">
+  <img src="docs/diagrams/overview.svg" alt="Diagram: a GitHub webhook flows through actions-toolkit's control plane, which opens a Bucket, which spawns a Shell, which runs each job as either a Docker container or a Shard sandbox, streaming logs and status to the UI the whole way." width="100%">
+</p>
 
 One GitHub connection covers every repo the App installation grants access to; there's no
 per-repo credential to manage, and the underlying token is never entered, displayed, or stored as
@@ -80,8 +85,8 @@ No prebuilt binary for your OS/architecture yet? Build from source, see below.
 - [Rust](https://rustup.rs/) (stable toolchain)
 - [Node.js](https://nodejs.org/) 20+ and npm
 - [Docker](https://www.docker.com/) running locally, only if a workflow's job declares a
-  `container:` image. Jobs without one run through the built-in "Bucket" sandbox (native Linux
-  namespaces/cgroups or a Windows AppContainer) instead, with no Docker involved at all.
+  `container:` image. Jobs without one run through the built-in Shard sandbox (native Linux
+  namespaces/cgroups/seccomp or a Windows AppContainer) instead, with no Docker involved at all.
 - A GitHub account that can install the shared actions-toolkit App (see below) on whichever repos
   you want to connect. No token to generate ahead of time.
 
@@ -95,6 +100,11 @@ same App via the "Connect GitHub" button in Settings, and each user gets their o
 exactly what they personally approve, an install of the App on the repos they choose. Override
 `GITHUB_APP_CLIENT_ID` (and register your own App) only if you're running a fork you want
 authenticating independently of the shared one.
+
+There's one connection per instance, not per repo: every connected repo authenticates through
+whichever single App connection this instance holds, so disconnecting it in Settings pauses
+workflow dispatch, webhook processing, and issue/PR/release actions for every connected repo until
+it's reconnected.
 
 ## Development
 
@@ -138,18 +148,22 @@ GitHub needs to reach this server to deliver push/PR/release events. Connecting 
 webhook automatically, pointed at this instance's own address, so this only matters if that
 address isn't reachable from the internet:
 
-- Use a tunnel such as `ngrok http 7890` or `cloudflared tunnel --url http://localhost:7890`
-  *before* connecting the repo, so the webhook actions-toolkit creates points at a reachable URL
-  from the start.
+- The Webhooks page has a "Start tunnel" button for a Cloudflare Quick Tunnel or a Tailscale
+  Funnel, actions-toolkit runs `cloudflared`/`tailscale funnel` for you and picks up the assigned
+  URL automatically, no terminal or copy-pasted URL required.
+- Or run your own tunnel (`ngrok http 7890`, etc.) *before* connecting the repo, so the webhook
+  actions-toolkit creates points at a reachable URL from the start.
 - Or run actions-toolkit on a host that's already reachable on your network/VPN.
+- For a host webhooks can't reach at all, a repo's Settings page has a manual "Sync now" action
+  that checks GitHub's releases API directly as a fallback for `release`-triggered workflows.
 
 There's no manual payload URL or secret to copy anywhere, connecting the repo is the whole step.
 
-## Layout
+## Architecture
 
 ```
 core/                  Binary crate: axum HTTP/WebSocket API, app state, auth handlers,
-                        Docker/Bucket job orchestration, GitHub client glue. Depends on
+                        Docker/Shard job orchestration, GitHub client glue. Depends on
                         every crate below.
 crates/atk-crypto/      Encryption-at-rest primitives (PATs, webhook secrets)
 crates/atk-auth/        JWT signing, password hashing
@@ -157,7 +171,9 @@ crates/atk-config/      CLI args and resolved on-disk config, no other internal 
 crates/atk-db/          SQLite pool, models, and the query layer (sqlx), plus migrations/
 crates/atk-workflow/    Workflow YAML parsing, expression eval, trigger matching, validation
 crates/atk-github/      GitHub REST API surface: checkout, releases, issues, webhooks, OAuth
-crates/atk-bucket/      Native per-step sandbox (Linux namespaces/cgroups, Windows AppContainer)
+crates/atk-bucket/      The Shard sandbox backend (Linux namespaces/cgroups/seccomp, Windows
+                        AppContainer), plus the reaper that cleans it up
+crates/atk-rcp/         Run Control Protocol framing/transport a Shell uses to talk to its Bucket
 ui/                     React + TypeScript UI (Vite, Tailwind): dashboard, repo/workflow
                         management, dual-mode workflow editor (Monaco + React Flow), live
                         logs, analytics
@@ -168,46 +184,61 @@ Formula/, scripts/         refreshes the formula's checksums after a release
 ```
 
 `core` depends on every crate under `crates/`, never the other way around; each `crates/atk-*`
-crate is a focused, independently-testable slice with no dependency on app state. A crate only
-exists if its code was already decoupled from `core::app::AppState` in practice: modules that
-still need the live app state (HTTP handlers, the Docker/Bucket dispatch loop, the GitHub client's
-token-refresh glue) stay in `core`, re-exported under their old module paths (`crate::db`,
-`crate::auth::jwt`, etc.) so callers don't need to know which piece moved where. See
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full dependency graph.
-
-The UI gets its own `ui/` directory since it's a separate build toolchain (npm/Vite) that produces
-static assets the backend embeds.
+crate is a focused, independently-testable slice with no dependency on app state. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full dependency graph and why the split
+lands where it does.
 
 Workflow YAML is a scoped-down, GitHub-Actions-flavored syntax: `on:` triggers (`push`,
 `pull_request`, `release`, `workflow_dispatch`), `jobs:` with a `container:` image and `needs:`
 dependencies, and `steps:` with `run:` (shell) or `uses: docker://image` (container action). Job
 containers stay alive for the duration of the job so multiple steps can `exec` into them
-sequentially, just like GitHub's own runners.
+sequentially, just like GitHub's own runners. `if:` conditions support `==`, `!=`, `&&`, `||`,
+`contains()`, `always()`/`success()`/`failure()`, and `needs.<job>.result`/`github.event_name`
+lookups, a deliberately scoped-down subset of the full GitHub Actions expression language.
 
-## Known limitations
+### Buckets: how a job runs without Docker
 
-- **One GitHub connection for the whole instance.** There's no per-repo or per-org credential;
-  every connected repo authenticates through the same App connection. Disconnecting it in Settings
-  stops workflow dispatch, webhook processing, and issue/PR/release actions for every connected
-  repo until it's reconnected.
-- The accessible-repos picker lists up to a few hundred repos (a handful of paginated requests);
-  very large orgs may not see their entire repo list there, but can still connect a repo by exact
-  owner/name via the manual fallback.
-- **Docker is only required for jobs that declare a `container:` image.** Jobs without one run
-  through the built-in "Bucket" sandbox (native Linux namespaces/cgroups, or a Windows
-  AppContainer) instead, with no Docker involved.
-- The visual builder and the YAML editor share one canonical model, but the backend regenerates
-  YAML on every visual-builder save, so hand-written comments and formatting are not preserved
-  once you save from visual mode.
-- The `if:` expression support is intentionally minimal (`==`, `!=`, `&&`, `||`, `contains()`,
-  `always()`/`success()`/`failure()`, and `needs.<job>.result`/`github.event_name` lookups), not
-  the full GitHub Actions expression language.
-- All jobs in a run currently share one checked-out workspace (keyed by run, not by job), so
-  files one job writes are visible to jobs that run after it even without declaring
-  `download_artifacts`. Declaring artifacts is still the explicit, portable way to pass files
-  between jobs. Tracked in issue #4.
-- There's no polling fallback for hosts that can't receive webhooks at all yet; a tunnel (ngrok/
-  cloudflared) is currently the only way to reach a non-public host. Tracked in issue #2.
+A job that doesn't declare a `container:` image still needs isolation, its own filesystem view,
+its own process tree, and a hard resource ceiling, without paying for a container runtime.
+actions-toolkit builds that natively out of three layered pieces:
+
+- **Bucket** — one per triggering webhook delivery (every workflow it matches shares it). Holds
+  the SQLite pool, the ephemeral encryption key, the resource-cache leases, and an RCP ("Run
+  Control Protocol") server. Nothing downstream ever opens the database directly; they all
+  round-trip through this.
+- **Shell** — one subprocess per workflow run, spawned by a Bucket (or scheduled onto a remote
+  Agent for a `runs_on` this machine can't satisfy). Drives the job DAG and talks to its Bucket
+  only over RCP, whether that's a local named pipe on the same machine or TCP to a Bucket on
+  another one.
+- **Shard** — one ephemeral OS sandbox per `run:` step, created and torn down by the Shell that
+  owns it. Linux namespaces/cgroups/seccomp on Linux, an AppContainer + Job Object on Windows,
+  same effect either way: the step can't see or touch anything outside its workspace and a
+  curated, read-only slice of the host toolchain.
+
+<p align="center">
+  <img src="docs/diagrams/bucket-architecture.svg" alt="Diagram: a Bucket owns the database pool, encryption key, resource cache, and RCP server; it spawns one Shell per workflow run, either locally or on a remote Agent over TCP; each Shell runs its jobs as Docker containers or Shard sandboxes; the Shard sandbox is backed by Linux namespaces/cgroups/seccomp or Windows AppContainer/Job Objects depending on the host OS; a periodic reaper cleans up anything a crash left behind." width="100%">
+</p>
+
+A few things worth calling out from that diagram:
+
+- **A Shell never touches SQLite.** Every status update, log line, secret lookup, and artifact
+  record is an RCP request/response round-trip back to its Bucket, which is what lets a Shell run
+  on a completely different machine (a remote Agent) without that machine ever holding a database
+  connection or the encryption key.
+- **Docker and Shard are interchangeable per job**, decided purely by whether that job's YAML
+  declares a `container:` image. A run can mix both across its jobs.
+- **A Shard's isolation is real, not just naming.** On Linux, the step's process tree lives inside
+  fresh user/mount/PID/UTS/IPC/net namespaces, `pivot_root`ed into a skeleton where anything not
+  explicitly bind-mounted resolves to `ENOENT`, running under a seccomp allow-list with every
+  capability dropped. On Windows, the equivalent is an AppContainer token (default-deny on
+  filesystem, registry, and network unless a SID is explicitly granted) plus a Job Object
+  (`KILL_ON_JOB_CLOSE` guarantees teardown even if the parent process crashes).
+- **Cleanup doesn't depend on anything exiting cleanly.** A periodic reaper sweeps every 30
+  seconds and reconciles again on startup, force-removing any Bucket, Shell, or Shard a crash left
+  running, and expiring anything past its TTL (six hours by default).
+- **Multi-machine is the same code path, not a special case.** A Shell scheduled onto a remote
+  Agent runs the exact same `__shell-run` entry point a local Shell does; the only difference is
+  which RCP listener it dials.
 
 ## Releasing
 
