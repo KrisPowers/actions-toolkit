@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod analytics;
 pub mod artifacts;
 pub mod github_account;
@@ -115,7 +116,16 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/repos/{repo_id}/analytics/summary", get(analytics::summary))
         .route("/repos/{repo_id}/analytics/duration-trend", get(analytics::duration_trend))
-        .route("/repos/{repo_id}/analytics/status-breakdown", get(analytics::status_breakdown));
+        .route("/repos/{repo_id}/analytics/status-breakdown", get(analytics::status_breakdown))
+        .route("/agents", get(agents::list))
+        .route("/agents/join-tokens", post(agents::create_join_token))
+        .route("/agents/join", post(agents::join))
+        .route("/agents/{id}/approve", post(agents::approve))
+        .route("/agents/{id}/revoke", post(agents::revoke))
+        .route("/agents/{id}/heartbeat", post(agents::heartbeat))
+        .route("/agents/{id}/assignments", get(agents::list_assignments))
+        .route("/agents/{id}/shells/{shell_id}/spec", get(agents::fetch_shell_spec))
+        .route("/agents/{id}/shells/{shell_id}/started", post(agents::shell_started));
 
     Router::new()
         .route("/health", get(|| async { "ok" }))

@@ -1,3 +1,4 @@
+mod agent;
 mod api;
 mod app;
 mod auth;
@@ -98,6 +99,10 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Command::ShellRun(args) => {
             let code = runner::shell_run::run(args.spec_path).await?;
             std::process::exit(code);
+        }
+        Command::Agent(args) => {
+            agent::run(args).await?;
+            return Ok(());
         }
     };
 

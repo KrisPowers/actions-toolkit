@@ -3,11 +3,11 @@ use uuid::Uuid;
 
 use crate::models::{now_iso, Agent};
 
-pub async fn create(pool: &SqlitePool, name: &str, os: &str, arch: &str, labels_json: &str, mtls_fingerprint: &str) -> sqlx::Result<Agent> {
+pub async fn create(pool: &SqlitePool, name: &str, os: &str, arch: &str, labels_json: &str, auth_token_hash: &str) -> sqlx::Result<Agent> {
     let id = Uuid::new_v4().to_string();
     let now = now_iso();
     sqlx::query(
-        "INSERT INTO agents (id, name, os, arch, labels_json, mtls_fingerprint, status, created_at, updated_at) \
+        "INSERT INTO agents (id, name, os, arch, labels_json, auth_token_hash, status, created_at, updated_at) \
          VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
     )
     .bind(&id)
@@ -15,7 +15,7 @@ pub async fn create(pool: &SqlitePool, name: &str, os: &str, arch: &str, labels_
     .bind(os)
     .bind(arch)
     .bind(labels_json)
-    .bind(mtls_fingerprint)
+    .bind(auth_token_hash)
     .bind(&now)
     .bind(&now)
     .execute(pool)

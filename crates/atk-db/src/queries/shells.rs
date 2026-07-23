@@ -1,24 +1,55 @@
 use sqlx::SqlitePool;
-use uuid::Uuid;
 
 use crate::models::{now_iso, Shell};
 
-pub async fn create(pool: &SqlitePool, bucket_id: &str, workflow_run_id: &str, target_os: &str) -> sqlx::Result<Shell> {
-    let id = Uuid::new_v4().to_string();
+/// `id` is caller-supplied (not generated here) so a caller can embed it in a `ShellRunSpec`
+/// serialized into `spec_json` before this row exists — the spec needs to carry its own shell id,
+/// and generating the id here would make that a chicken-and-egg problem for the agent-assigned
+/// path. `initial_status` is `"running"` for a shell the control plane spawns itself right away
+/// (the local, no-agent-needed path), or `"assigned"` for one scheduled onto a remote agent that
+/// hasn't picked it up yet (see `mark_started`, which transitions `assigned` -> `running` once
+/// the agent actually spawns the process).
+#[allow(clippy::too_many_arguments)]
+pub async fn create(
+    pool: &SqlitePool,
+    id: &str,
+    bucket_id: &str,
+    workflow_run_id: &str,
+    target_os: &str,
+    agent_id: Option<&str>,
+    initial_status: &str,
+    spec_json: Option<&str>,
+) -> sqlx::Result<Shell> {
     let now = now_iso();
     sqlx::query(
-        "INSERT INTO shells (id, bucket_id, workflow_run_id, target_os, status, started_at) \
-         VALUES (?, ?, ?, ?, 'running', ?)",
+        "INSERT INTO shells (id, bucket_id, workflow_run_id, target_os, agent_id, status, spec_json, started_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
-    .bind(&id)
+    .bind(id)
     .bind(bucket_id)
     .bind(workflow_run_id)
     .bind(target_os)
+    .bind(agent_id)
+    .bind(initial_status)
+    .bind(spec_json)
     .bind(&now)
     .execute(pool)
     .await?;
 
-    find(pool, &id).await?.ok_or(sqlx::Error::RowNotFound)
+    find(pool, id).await?.ok_or(sqlx::Error::RowNotFound)
+}
+
+/// Transitions an agent-assigned shell to `running` once the agent has actually spawned the
+/// process and reports its PID (meaningful only on the agent's own host, but recorded here for
+/// visibility/diagnostics either way).
+pub async fn mark_started(pool: &SqlitePool, id: &str, pid: i64) -> sqlx::Result<()> {
+    sqlx::query("UPDATE shells SET status = 'running', pid = ? WHERE id = ?").bind(pid).bind(id).execute(pool).await?;
+    Ok(())
+}
+
+/// Shells assigned to a given agent that it hasn't started yet, the agent's poll target.
+pub async fn list_assigned_for_agent(pool: &SqlitePool, agent_id: &str) -> sqlx::Result<Vec<Shell>> {
+    sqlx::query_as::<_, Shell>("SELECT * FROM shells WHERE agent_id = ? AND status = 'assigned'").bind(agent_id).fetch_all(pool).await
 }
 
 pub async fn find(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<Shell>> {
@@ -27,11 +58,6 @@ pub async fn find(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<Shell>> {
 
 pub async fn set_pid(pool: &SqlitePool, id: &str, pid: i64) -> sqlx::Result<()> {
     sqlx::query("UPDATE shells SET pid = ? WHERE id = ?").bind(pid).bind(id).execute(pool).await?;
-    Ok(())
-}
-
-pub async fn set_agent(pool: &SqlitePool, id: &str, agent_id: &str) -> sqlx::Result<()> {
-    sqlx::query("UPDATE shells SET agent_id = ? WHERE id = ?").bind(agent_id).bind(id).execute(pool).await?;
     Ok(())
 }
 
