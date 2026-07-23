@@ -50,10 +50,26 @@ pub async fn spawn_run(
         git_ref: ref_name.map(str::to_string).unwrap_or_else(|| format!("refs/heads/{}", repo.default_branch)),
     });
 
+    // Best-effort: a commit-triggered run reports its status back to that commit on GitHub (the
+    // same place a real GitHub Actions run would show a check), so pushing to a connected repo
+    // shows up there too, not just in this instance's own UI. Skipped for runs with no specific
+    // commit (e.g. a manual "Run now" against no particular ref) since there'd be nothing to post
+    // it against; failures here are logged, not fatal, since the run itself already succeeded or
+    // failed independent of whether GitHub could be told about it.
+    if let Some(sha) = commit_sha {
+        let target_url = crate::runner::github_status::run_target_url(state, &run.id).await;
+        if let Err(e) = crate::runner::github_status::report_pending(state, &repo.owner, &repo.name, sha, target_url).await {
+            tracing::warn!(error = format!("{e:#}"), repo = %repo.id, sha, "failed to post the pending GitHub commit status");
+        }
+    }
+
     let state_arc = Arc::new(state.clone());
     let run_id = run.id.clone();
     let event = trigger_event.to_string();
-    tokio::spawn(crate::runner::scheduler::run(state_arc, run_id, model, checkout, event));
+    let commit_sha = commit_sha.map(str::to_string);
+    let owner = repo.owner.clone();
+    let name = repo.name.clone();
+    tokio::spawn(crate::runner::scheduler::run(state_arc, run_id, model, checkout, event, owner, name, commit_sha));
 
     Ok(run)
 }

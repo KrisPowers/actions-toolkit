@@ -15,26 +15,53 @@ use crate::workflow::model::Workflow;
 /// satisfied and dispatches them (bounded by `max_concurrent_jobs`), skips jobs downstream of
 /// a failure (unless they opt in via `if: always()`), and marks the run terminal once every
 /// job has reached a terminal state.
+///
+/// `repo_owner`/`repo_name`/`commit_sha` exist only to report the run's outcome back to GitHub
+/// as a commit status (see `github_status::report_success`/`report_failure`) once it finishes;
+/// `commit_sha` is `None` for runs with no specific commit (e.g. manual dispatch against no
+/// particular ref), in which case that reporting is skipped entirely.
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     state: Arc<AppState>,
     workflow_run_id: String,
     workflow: Workflow,
     checkout: Option<CheckoutContext>,
     trigger_event: String,
+    repo_owner: String,
+    repo_name: String,
+    commit_sha: Option<String>,
 ) {
-    if let Err(e) = run_inner(&state, &workflow_run_id, &workflow, checkout, &trigger_event).await {
-        tracing::error!(error = %e, workflow_run_id, "workflow run failed");
-        let _ = run_queries::set_run_status(&state.db, &workflow_run_id, "failed", true).await;
+    let result = run_inner(&state, &workflow_run_id, &workflow, checkout, &trigger_event).await;
+    let succeeded = match &result {
+        Ok(succeeded) => *succeeded,
+        Err(e) => {
+            tracing::error!(error = %e, workflow_run_id, "workflow run failed");
+            let _ = run_queries::set_run_status(&state.db, &workflow_run_id, "failed", true).await;
+            false
+        }
+    };
+
+    if let Some(sha) = commit_sha {
+        let target_url = crate::runner::github_status::run_target_url(&state, &workflow_run_id).await;
+        let report = if succeeded {
+            crate::runner::github_status::report_success(&state, &repo_owner, &repo_name, &sha, target_url).await
+        } else {
+            crate::runner::github_status::report_failure(&state, &repo_owner, &repo_name, &sha, target_url).await
+        };
+        if let Err(e) = report {
+            tracing::warn!(error = format!("{e:#}"), workflow_run_id, sha, "failed to post the final GitHub commit status");
+        }
     }
 }
 
+/// Returns whether every job in the run succeeded.
 async fn run_inner(
     state: &Arc<AppState>,
     workflow_run_id: &str,
     workflow: &Workflow,
     checkout: Option<CheckoutContext>,
     trigger_event: &str,
-) -> Result<()> {
+) -> Result<bool> {
     if !state.bucket_capability_ok {
         run_queries::set_run_status(&state.db, workflow_run_id, "failed", true).await?;
         anyhow::bail!("Bucket sandbox is not available on this host; cannot run jobs without a container:");
@@ -163,5 +190,5 @@ async fn run_inner(
         crate::runner::workspace::cleanup(&state.config.workspaces_dir(), job_run_id);
     }
 
-    Ok(())
+    Ok(all_succeeded)
 }
