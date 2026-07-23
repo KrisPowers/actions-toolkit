@@ -47,14 +47,34 @@ pub async fn find_open_for_webhook_event(pool: &SqlitePool, webhook_event_id: &s
     .await
 }
 
-/// The most recent bucket for a webhook delivery regardless of completion — the "View backend"
-/// link target from the Runs page, which needs to find a bucket long after it finished, not just
-/// while it's still open.
-pub async fn find_by_webhook_event(pool: &SqlitePool, webhook_event_id: &str) -> sqlx::Result<Option<Bucket>> {
-    sqlx::query_as::<_, Bucket>("SELECT * FROM buckets WHERE webhook_event_id = ? ORDER BY created_at DESC LIMIT 1")
-        .bind(webhook_event_id)
-        .fetch_optional(pool)
-        .await
+/// Buckets for a repo, most recent first — the Overview page's "triggering events" list, one row
+/// per push/PR/release/manual dispatch/etc. regardless of whether it came through a webhook.
+/// When `workflow_id` is given, only buckets with at least one shell driving a run of that
+/// workflow are returned (selecting a workflow in the Overview catalog filters this list).
+pub async fn list_for_repo(pool: &SqlitePool, repo_id: &str, workflow_id: Option<&str>, limit: i64) -> sqlx::Result<Vec<Bucket>> {
+    match workflow_id {
+        Some(workflow_id) => {
+            sqlx::query_as::<_, Bucket>(
+                "SELECT DISTINCT b.* FROM buckets b \
+                 JOIN shells s ON s.bucket_id = b.id \
+                 JOIN workflow_runs wr ON wr.id = s.workflow_run_id \
+                 WHERE b.repo_id = ? AND wr.workflow_id = ? \
+                 ORDER BY b.created_at DESC LIMIT ?",
+            )
+            .bind(repo_id)
+            .bind(workflow_id)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+        }
+        None => {
+            sqlx::query_as::<_, Bucket>("SELECT * FROM buckets WHERE repo_id = ? ORDER BY created_at DESC LIMIT ?")
+                .bind(repo_id)
+                .bind(limit)
+                .fetch_all(pool)
+                .await
+        }
+    }
 }
 
 pub async fn mark_completed(pool: &SqlitePool, id: &str) -> sqlx::Result<()> {

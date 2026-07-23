@@ -96,7 +96,7 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/topology", get(runstats::topology_for_run))
         .route("/runs/{id}/stats", get(runstats::stats_for_run))
         .route("/runs/{id}/stats/ws", get(crate::ws::run_stats_ws))
-        .route("/webhook-events/{id}/bucket", get(runstats::bucket_for_webhook_event))
+        .route("/repos/{repo_id}/buckets", get(runstats::list_for_repo))
         .route("/buckets/{id}/topology", get(runstats::topology_for_bucket))
         .route("/runs/{id}/artifacts", get(artifacts::list_for_run))
         .route("/repos/{repo_id}/artifacts", get(artifacts::list_for_repo))
