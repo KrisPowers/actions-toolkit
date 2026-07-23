@@ -65,8 +65,8 @@ async fn bind_with_fallback(bind_addr: &str, preferred_port: u16) -> anyhow::Res
 }
 
 /// Plain, synchronous entry point (deliberately *not* `#[tokio::main]`): the hidden
-/// `__sandbox-init` subcommand must run before any tokio runtime exists. Tokio's multi-thread
-/// runtime spawns its worker threads as soon as it's built, and `sandbox_init::run` needs to
+/// `__shard-init` subcommand must run before any tokio runtime exists. Tokio's multi-thread
+/// runtime spawns its worker threads as soon as it's built, and `shard_init::run` needs to
 /// `fork()` from a genuinely single-threaded process. If that dispatch happened from inside an
 /// already-running tokio runtime, the fork would be unsound. Every other subcommand builds its
 /// own runtime after this check, unaffected.
@@ -74,8 +74,8 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     #[cfg(target_os = "linux")]
-    if let Command::SandboxInit(args) = cli.command {
-        let code = bucket::sandbox_init::run(args)?;
+    if let Command::ShardInit(args) = cli.command {
+        let code = bucket::shard_init::run(args)?;
         std::process::exit(code);
     }
 
@@ -95,7 +95,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Start(args) => args,
         // Handled directly in `main()` before the tokio runtime is built (Linux); unreachable
         // in practice, but the match must stay exhaustive over `Command`.
-        Command::SandboxInit(_) => anyhow::bail!("__sandbox-init must be dispatched before the async runtime starts"),
+        Command::ShardInit(_) => anyhow::bail!("__shard-init must be dispatched before the async runtime starts"),
         Command::ShellRun(args) => {
             let code = runner::shell_run::run(args.spec_path).await?;
             std::process::exit(code);

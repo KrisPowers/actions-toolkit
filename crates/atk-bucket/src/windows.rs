@@ -14,7 +14,7 @@
 //!
 //! Everything the backend needs (the AppContainer profile, the Job Object) is named
 //! deterministically from the bucket's own id, so nothing OS-specific needs to round-trip
-//! through `SandboxHandle` or the database: `exec_step`/`remove_sandbox`/crash reconciliation all
+//! through `ShardHandle` or the database: `exec_step`/`remove_shard`/crash reconciliation all
 //! just re-derive or re-open by name.
 
 use std::io::{BufRead, BufReader};
@@ -46,7 +46,7 @@ use windows::Win32::System::Threading::{
     STARTUPINFOW,
 };
 
-use super::{BucketCapability, SandboxHandle, SandboxSpec, ExecResult};
+use super::{BucketCapability, ShardHandle, ShardSpec, ExecResult};
 
 fn appcontainer_profile_name(id: &str) -> String {
     format!("atk-bucket-{id}")
@@ -90,7 +90,7 @@ fn probe_capability_blocking() -> BucketCapability {
     BucketCapability { ok: true, reason: None }
 }
 
-pub async fn create_job_sandbox(buckets_root: &Path, spec: SandboxSpec<'_>) -> Result<SandboxHandle> {
+pub async fn create_job_shard(buckets_root: &Path, spec: ShardSpec<'_>) -> Result<ShardHandle> {
     let id = Uuid::new_v4().to_string();
     let root_skeleton = buckets_root.join(&id);
     std::fs::create_dir_all(&root_skeleton).context("failed to create bucket scratch directory")?;
@@ -127,11 +127,11 @@ pub async fn create_job_sandbox(buckets_root: &Path, spec: SandboxSpec<'_>) -> R
     .await
     .context("bucket setup task panicked")??;
 
-    Ok(SandboxHandle { id, workspace, root_skeleton, network_enabled: spec.network_enabled, extra_ro_mounts })
+    Ok(ShardHandle { id, workspace, root_skeleton, network_enabled: spec.network_enabled, extra_ro_mounts })
 }
 
 pub async fn exec_step<F>(
-    handle: &SandboxHandle,
+    handle: &ShardHandle,
     shell_command: &str,
     shell: Option<&str>,
     working_dir: Option<&str>,
@@ -170,7 +170,7 @@ where
     wait_task.await.context("step execution task panicked")?
 }
 
-pub async fn remove_sandbox(handle: &SandboxHandle) -> Result<()> {
+pub async fn remove_shard(handle: &ShardHandle) -> Result<()> {
     let id = handle.id.clone();
     let root_skeleton = handle.root_skeleton.clone();
     tokio::task::spawn_blocking(move || -> Result<()> {
@@ -191,8 +191,8 @@ pub async fn remove_sandbox(handle: &SandboxHandle) -> Result<()> {
     .context("bucket teardown task panicked")?
 }
 
-pub(crate) fn handle_from_sandbox_row(buckets_root: &Path, row: &atk_db::models::JobSandbox) -> SandboxHandle {
-    SandboxHandle {
+pub(crate) fn handle_from_shard_row(buckets_root: &Path, row: &atk_db::models::Shard) -> ShardHandle {
+    ShardHandle {
         id: row.id.clone(),
         workspace: std::path::PathBuf::from(&row.workspace_path),
         root_skeleton: buckets_root.join(&row.id),
@@ -749,13 +749,13 @@ mod tests {
         let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
         seed_fk_chain(&pool, "repo-1", "workflow-1", "run-1", "job-1").await;
 
-        let spec = SandboxSpec {
+        let spec = ShardSpec {
             workspace_host_path: &workspace,
             network_enabled: false,
             ttl: std::time::Duration::from_secs(3600),
             extra_ro_mounts: &[],
         };
-        let handle = create_job_sandbox(&buckets_root, spec).await.expect("create_job_sandbox should succeed");
+        let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
 
         let mut stdout_lines = Vec::new();
         let command = "echo WORKSPACE_WRITE_TEST & echo hello> step_output.txt & type step_output.txt & \
@@ -798,7 +798,7 @@ mod tests {
         assert!(!output.contains("NETWORK_SUCCEEDED"), "expected no network capability to be granted by default: {output}");
         assert_eq!(result.exit_code, 0);
 
-        remove_sandbox(&handle).await.expect("remove_sandbox should succeed");
+        remove_shard(&handle).await.expect("remove_shard should succeed");
         assert!(!handle.root_skeleton.exists(), "expected the bucket scratch directory to be removed after teardown");
 
         let _ = std::fs::remove_dir_all(&base);
@@ -827,13 +827,13 @@ mod tests {
         let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
         seed_fk_chain(&pool, "repo-2", "workflow-2", "run-2", "job-2").await;
 
-        let spec = SandboxSpec {
+        let spec = ShardSpec {
             workspace_host_path: &workspace,
             network_enabled: false,
             ttl: std::time::Duration::from_secs(3600),
             extra_ro_mounts: &[],
         };
-        let handle = create_job_sandbox(&buckets_root, spec).await.expect("create_job_sandbox should succeed");
+        let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
 
         let mut stdout_lines = Vec::new();
         // `1..3 | ForEach-Object` only parses as PowerShell; cmd.exe would fail to run this at
@@ -857,7 +857,7 @@ mod tests {
         assert!(output.contains("count-1") && output.contains("count-3"), "expected PowerShell syntax to have run: {output}");
         assert_eq!(result.exit_code, 0);
 
-        remove_sandbox(&handle).await.expect("remove_sandbox should succeed");
+        remove_shard(&handle).await.expect("remove_shard should succeed");
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -885,13 +885,13 @@ mod tests {
         let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
         seed_fk_chain(&pool, "repo-eap", "workflow-eap", "run-eap", "job-eap").await;
 
-        let spec = SandboxSpec {
+        let spec = ShardSpec {
             workspace_host_path: &workspace,
             network_enabled: false,
             ttl: std::time::Duration::from_secs(3600),
             extra_ro_mounts: &[],
         };
-        let handle = create_job_sandbox(&buckets_root, spec).await.expect("create_job_sandbox should succeed");
+        let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
 
         // A non-terminating cmdlet error against a path the AppContainer genuinely has no access
         // to: real failure, not a contrived exit call, exercising the same failure class found in
@@ -911,7 +911,7 @@ mod tests {
             "the write should never have succeeded in the first place"
         );
 
-        remove_sandbox(&handle).await.expect("remove_sandbox should succeed");
+        remove_shard(&handle).await.expect("remove_shard should succeed");
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -937,13 +937,13 @@ mod tests {
         let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
         seed_fk_chain(&pool, "repo-eap-ok", "workflow-eap-ok", "run-eap-ok", "job-eap-ok").await;
 
-        let spec = SandboxSpec {
+        let spec = ShardSpec {
             workspace_host_path: &workspace,
             network_enabled: false,
             ttl: std::time::Duration::from_secs(3600),
             extra_ro_mounts: &[],
         };
-        let handle = create_job_sandbox(&buckets_root, spec).await.expect("create_job_sandbox should succeed");
+        let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
 
         // Deliberately no relative-path file I/O here: that path currently runs into a separate,
         // already-tracked bug (#16) with PowerShell's own cwd initialization against this host's
@@ -964,7 +964,7 @@ mod tests {
         assert_eq!(result.exit_code, 0, "a genuinely successful step must still report success");
         assert!(out_path.exists());
 
-        remove_sandbox(&handle).await.expect("remove_sandbox should succeed");
+        remove_shard(&handle).await.expect("remove_shard should succeed");
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -994,14 +994,14 @@ mod tests {
         for i in 0..3 {
             let workspace = base.join(format!("workspace-{i}"));
             std::fs::create_dir_all(&workspace).unwrap();
-            let spec = SandboxSpec {
+            let spec = ShardSpec {
                 workspace_host_path: &workspace,
                 network_enabled: false,
                 ttl: std::time::Duration::from_secs(3600),
                 extra_ro_mounts: &[],
             };
-            let handle = create_job_sandbox(&buckets_root, spec).await.expect("create_job_sandbox should succeed");
-            remove_sandbox(&handle).await.expect("remove_sandbox should succeed");
+            let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
+            remove_shard(&handle).await.expect("remove_shard should succeed");
         }
 
         let output = std::process::Command::new("icacls").arg(&base).output().expect("icacls should run");
@@ -1089,13 +1089,13 @@ mod tests {
         let pool = atk_db::connect(&db_path).await.expect("db connect should succeed");
         seed_fk_chain(&pool, "repo-3", "workflow-3", "run-3", "job-3").await;
 
-        let spec = SandboxSpec {
+        let spec = ShardSpec {
             workspace_host_path: &workspace,
             network_enabled: true,
             ttl: std::time::Duration::from_secs(3600),
             extra_ro_mounts: &[],
         };
-        let handle = create_job_sandbox(&buckets_root, spec).await.expect("create_job_sandbox should succeed");
+        let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
 
         let mut stdout_lines = Vec::new();
         // A real TCP/HTTPS request via curl.exe (built into Windows 10 1803+/Windows 11), not
@@ -1125,7 +1125,7 @@ mod tests {
             assert_eq!(result.exit_code, 0);
         }
 
-        remove_sandbox(&handle).await.expect("remove_sandbox should succeed");
+        remove_shard(&handle).await.expect("remove_shard should succeed");
         let _ = std::fs::remove_dir_all(&base);
     }
 

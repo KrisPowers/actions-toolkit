@@ -6,7 +6,7 @@ use crate::app::AppState;
 use crate::auth::middleware::CurrentUser;
 use crate::db::models::{RunLog, RunTree, WorkflowRun};
 use crate::db::queries::{
-    job_sandboxes as sandbox_queries, repos as repo_queries, runs as run_queries, workflows as workflow_queries,
+    shards as shard_queries, repos as repo_queries, runs as run_queries, workflows as workflow_queries,
 };
 use crate::error::{AppError, AppResult};
 
@@ -82,15 +82,15 @@ pub async fn cancel(
         }
     }
 
-    let sandboxes = sandbox_queries::list_unreaped_for_run(&state.db, &id).await?;
+    let shards = shard_queries::list_unreaped_for_run(&state.db, &id).await?;
     let buckets_root = state.config.buckets_dir();
-    for row in sandboxes {
-        let handle = crate::bucket::handle_from_sandbox_row(&buckets_root, &row);
-        if let Err(e) = crate::bucket::remove_sandbox(&handle).await {
-            tracing::warn!(error = %e, sandbox_id = %row.id, "failed to remove job sandbox on cancel");
+    for row in shards {
+        let handle = crate::bucket::handle_from_shard_row(&buckets_root, &row);
+        if let Err(e) = crate::bucket::remove_shard(&handle).await {
+            tracing::warn!(error = %e, shard_id = %row.id, "failed to remove job sandbox on cancel");
         }
-        if let Err(e) = sandbox_queries::mark_reaped(&state.db, &row.id).await {
-            tracing::warn!(error = %e, sandbox_id = %row.id, "failed to mark job sandbox reaped on cancel");
+        if let Err(e) = shard_queries::mark_reaped(&state.db, &row.id).await {
+            tracing::warn!(error = %e, shard_id = %row.id, "failed to mark job sandbox reaped on cancel");
         }
     }
 

@@ -159,12 +159,12 @@ async fn handle(request: &RcpRequest, run_client: &dyn RunClient, db: &SqlitePoo
             run_client.resource_cache_fail(entry_id).await?;
             RcpResponse::Ok
         }
-        RcpRequest::RecordJobSandbox { id, job_run_id, workflow_run_id, workspace_path, network_enabled, ttl_expires_at } => {
-            run_client.record_job_sandbox(id, job_run_id, workflow_run_id, workspace_path, *network_enabled, ttl_expires_at).await?;
+        RcpRequest::RecordJobShard { id, job_run_id, workflow_run_id, workspace_path, network_enabled, ttl_expires_at } => {
+            run_client.record_job_shard(id, job_run_id, workflow_run_id, workspace_path, *network_enabled, ttl_expires_at).await?;
             RcpResponse::Ok
         }
-        RcpRequest::MarkSandboxReaped { sandbox_id } => {
-            run_client.mark_sandbox_reaped(sandbox_id).await?;
+        RcpRequest::MarkShardReaped { shard_id } => {
+            run_client.mark_shard_reaped(shard_id).await?;
             RcpResponse::Ok
         }
         // Shell-lifecycle, not job-data, so it goes straight to the DB rather than through

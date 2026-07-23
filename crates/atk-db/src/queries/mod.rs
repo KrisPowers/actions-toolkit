@@ -2,7 +2,7 @@ pub mod agent_join_tokens;
 pub mod agents;
 pub mod artifacts;
 pub mod buckets;
-pub mod job_sandboxes;
+pub mod shards;
 pub mod github_token;
 pub mod repos;
 pub mod resource_cache;

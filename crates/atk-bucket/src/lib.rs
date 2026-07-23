@@ -1,15 +1,17 @@
-//! Bucket: a native, per-step sandbox used to run workflow steps without Docker.
+//! Shard: the native, per-job OS isolation a shell creates and tears down for each job in its
+//! run, without Docker. A shard is a child of the shell that owns it, the same way a shell is a
+//! child of its bucket.
 //!
 //! Each `run:` step gets its own temporary, isolated execution environment (filesystem,
 //! network, and process tree) via OS-native primitives (Linux namespaces/cgroups/seccomp,
 //! Windows AppContainer/Job Objects), rather than a container runtime. The public surface here
-//! mirrors `runner::docker`'s free-function shape (`create_job_sandbox`/`exec_step`/
-//! `remove_sandbox`) so callers don't need to know which OS backend is active.
+//! mirrors `runner::docker`'s free-function shape (`create_job_shard`/`exec_step`/
+//! `remove_shard`) so callers don't need to know which OS backend is active.
 
 pub mod reaper;
 
 #[cfg(target_os = "linux")]
-pub mod sandbox_init;
+pub mod shard_init;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
@@ -36,11 +38,11 @@ pub const DEFAULT_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 pub const DEFAULT_RO_MOUNTS: &[&str] =
     &["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ssl/certs", "/etc/alternatives", "/etc/resolv.conf"];
 
-pub struct SandboxSpec<'a> {
+pub struct ShardSpec<'a> {
     pub workspace_host_path: &'a Path,
     pub network_enabled: bool,
     /// Not consumed by this crate (it does no database bookkeeping of its own, see
-    /// `create_job_sandbox`'s doc comment) — kept here so a caller building a `SandboxSpec`
+    /// `create_job_shard`'s doc comment) — kept here so a caller building a `ShardSpec`
     /// already has it at hand to also record alongside whatever row it writes for this sandbox.
     pub ttl: Duration,
     /// Additive, operator-configured host paths (`settings.bucket_host_mounts_json`) exposed
@@ -57,7 +59,7 @@ pub struct SandboxSpec<'a> {
 /// (for resource limits and guaranteed teardown) and the same host workspace directory (which
 /// is what actually carries state between steps, the same way it does for `docker.rs`'s
 /// bind-mounted `/workspace`).
-pub struct SandboxHandle {
+pub struct ShardHandle {
     pub id: String,
     pub workspace: PathBuf,
     pub(crate) root_skeleton: PathBuf,
@@ -82,11 +84,11 @@ pub struct BucketCapability {
     pub reason: Option<String>,
 }
 
-/// Everything `__sandbox-init` needs to set up one step's sandbox and run its command, handed
+/// Everything `__shard-init` needs to set up one step's sandbox and run its command, handed
 /// off via a spec file rather than CLI args/env to avoid shell-escaping a shell command through
 /// another layer of argv.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SandboxInitSpec {
+pub struct ShardInitSpec {
     pub workspace: PathBuf,
     pub root_skeleton: PathBuf,
     pub ro_mounts: Vec<PathBuf>,
@@ -97,7 +99,7 @@ pub struct SandboxInitSpec {
     pub env: Vec<String>,
 }
 
-/// Functional probe of whether this host can actually run buckets (not just an OS-version
+/// Functional probe of whether this host can actually run shards (not just an OS-version
 /// check): exercises the real create/exec/remove path end-to-end against a throwaway
 /// command, so it also catches host-specific restrictions like the AppArmor
 /// `unprivileged_userns_restriction` feature on newer Ubuntu, or a non-delegated cgroup v2
@@ -116,14 +118,14 @@ pub async fn probe_capability() -> BucketCapability {
 /// Purely OS-level: sets up the sandbox scaffolding and returns a handle to it. Does not touch
 /// any database — the caller (a shell, via its `RunClient`) is responsible for recording whatever
 /// bookkeeping row it needs, since this crate has no way to reach one from inside a shell process.
-pub async fn create_job_sandbox(buckets_root: &Path, spec: SandboxSpec<'_>) -> Result<SandboxHandle> {
+pub async fn create_job_shard(buckets_root: &Path, spec: ShardSpec<'_>) -> Result<ShardHandle> {
     #[cfg(target_os = "linux")]
     {
-        linux::create_job_sandbox(buckets_root, spec).await
+        linux::create_job_shard(buckets_root, spec).await
     }
     #[cfg(target_os = "windows")]
     {
-        windows::create_job_sandbox(buckets_root, spec).await
+        windows::create_job_shard(buckets_root, spec).await
     }
 }
 
@@ -131,7 +133,7 @@ pub async fn create_job_sandbox(buckets_root: &Path, spec: SandboxSpec<'_>) -> R
 /// streaming each output line to `on_line(stream, message)` as it arrives (same shape as
 /// `runner::docker::exec_step`, so callers can swap backends without changing their callback).
 pub async fn exec_step<F>(
-    handle: &SandboxHandle,
+    handle: &ShardHandle,
     shell_command: &str,
     shell: Option<&str>,
     working_dir: Option<&str>,
@@ -151,28 +153,28 @@ where
     }
 }
 
-pub async fn remove_sandbox(handle: &SandboxHandle) -> Result<()> {
+pub async fn remove_shard(handle: &ShardHandle) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
-        linux::remove_sandbox(handle).await
+        linux::remove_shard(handle).await
     }
     #[cfg(target_os = "windows")]
     {
-        windows::remove_sandbox(handle).await
+        windows::remove_shard(handle).await
     }
 }
 
-/// Rebuilds a `SandboxHandle` from a persisted DB row rather than a live `create_job_sandbox`
-/// call, used by the reaper (TTL sweep, startup crash reconciliation) where the process that
-/// created the bucket may be long gone. The scaffolding paths are deterministic from
-/// `buckets_root` + the bucket's own id, so no extra state needs to round-trip through the DB.
-pub fn handle_from_sandbox_row(buckets_root: &Path, row: &atk_db::models::JobSandbox) -> SandboxHandle {
+/// Rebuilds a `ShardHandle` from a persisted DB row rather than a live `create_job_shard`
+/// call, used by the reaper (TTL sweep, startup crash reconciliation) where the shell that
+/// created the shard may be long gone. The scaffolding paths are deterministic from
+/// `buckets_root` + the shard's own id, so no extra state needs to round-trip through the DB.
+pub fn handle_from_shard_row(buckets_root: &Path, row: &atk_db::models::Shard) -> ShardHandle {
     #[cfg(target_os = "linux")]
     {
-        linux::handle_from_sandbox_row(buckets_root, row)
+        linux::handle_from_shard_row(buckets_root, row)
     }
     #[cfg(target_os = "windows")]
     {
-        windows::handle_from_sandbox_row(buckets_root, row)
+        windows::handle_from_shard_row(buckets_root, row)
     }
 }
