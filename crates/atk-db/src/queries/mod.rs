@@ -6,6 +6,7 @@ pub mod shards;
 pub mod github_token;
 pub mod repos;
 pub mod resource_cache;
+pub mod resource_samples;
 pub mod runs;
 pub mod secrets;
 pub mod settings;

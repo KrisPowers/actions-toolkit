@@ -325,6 +325,11 @@ pub struct Shell {
     /// `api::agents::fetch_shell_spec`'s ownership check).
     #[serde(skip_serializing)]
     pub spec_json: Option<String>,
+    /// Resource-cache lookups this shell's job DAG resolved as a hit (entry already `ready`) vs. a
+    /// miss (this shell became the builder). Both `0` until `ReportShellExit` reports the final
+    /// counts a shell accumulated locally while running (see `core::runner::executor`).
+    pub cache_hits: i64,
+    pub cache_misses: i64,
 }
 
 /// One bucket-scoped shared resource (e.g. a `node_modules` produced by `npm ci`) that sibling
@@ -364,6 +369,26 @@ pub struct Agent {
     pub version: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// One periodic runtime-resource sample, reported by a shell for itself (`subject_type = "shell"`)
+/// or for a shard it's driving (`subject_type = "shard"`). Bucket-level figures are computed by
+/// rolling up a bucket's shells' rows at query time, not stored as their own subject (see
+/// `crates/atk-db/src/queries/resource_samples.rs`).
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct ResourceSample {
+    pub id: i64,
+    pub subject_type: String,
+    pub subject_id: String,
+    pub workflow_run_id: Option<String>,
+    pub ts: String,
+    pub cpu_percent: Option<f64>,
+    pub memory_bytes: Option<i64>,
+    pub disk_read_bytes: Option<i64>,
+    pub disk_write_bytes: Option<i64>,
+    pub process_count: Option<i64>,
+    pub host_cpu_percent: Option<f64>,
+    pub host_memory_percent: Option<f64>,
 }
 
 pub fn now_iso() -> String {

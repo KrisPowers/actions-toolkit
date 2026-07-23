@@ -83,6 +83,18 @@ pub async fn mark_reaped(pool: &SqlitePool, id: &str) -> sqlx::Result<()> {
     Ok(())
 }
 
+/// Records the resource-cache hit/miss counts a shell accumulated locally while running its job
+/// DAG (see `core::runner::executor::handle_cache_step`), reported once alongside its exit code.
+pub async fn record_cache_counters(pool: &SqlitePool, id: &str, cache_hits: i64, cache_misses: i64) -> sqlx::Result<()> {
+    sqlx::query("UPDATE shells SET cache_hits = ?, cache_misses = ? WHERE id = ?")
+        .bind(cache_hits)
+        .bind(cache_misses)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Shells still open (no `finished_at`) belonging to a bucket, used to decide whether a bucket is
 /// safe to tear down yet (only once this list is empty).
 pub async fn list_unfinished_for_bucket(pool: &SqlitePool, bucket_id: &str) -> sqlx::Result<Vec<Shell>> {
