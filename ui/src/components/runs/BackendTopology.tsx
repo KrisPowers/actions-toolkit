@@ -2,6 +2,7 @@ import { Box, Boxes, Server } from "lucide-react";
 import { Link } from "react-router-dom";
 import StatusBadge from "../common/StatusBadge";
 import { cardClass } from "../common/Card";
+import TreeList from "../common/TreeList";
 import { formatDuration } from "../../lib/duration";
 import type { BucketSummary, ResourceSample, Shard, Shell } from "../../api/types";
 
@@ -111,11 +112,11 @@ function ShellCard({ node, samples }: { node: { shell: Shell; shards: Shard[] };
         </div>
       </NodeRow>
       {shards.length > 0 && (
-        <div className="ml-6 flex flex-col gap-2 border-l border-neutral-800 pl-4">
+        <TreeList className="ml-6">
           {shards.map((shard) => (
             <ShardCard key={shard.id} shard={shard} samples={samples} shellId={shell.id} />
           ))}
-        </div>
+        </TreeList>
       )}
     </div>
   );
@@ -161,12 +162,15 @@ export default function BackendTopology({
           </Link>
         </div>
       </NodeRow>
-      <div className="ml-6 flex flex-col gap-3 border-l border-neutral-800 pl-4">
-        {shells.map((node) => (
-          <ShellCard key={node.shell.id} node={node} samples={samples} />
-        ))}
-        {shells.length === 0 && <p className="text-xs text-neutral-600">No shells recorded yet.</p>}
-      </div>
+      {shells.length > 0 ? (
+        <TreeList className="ml-6">
+          {shells.map((node) => (
+            <ShellCard key={node.shell.id} node={node} samples={samples} />
+          ))}
+        </TreeList>
+      ) : (
+        <p className="ml-6 text-xs text-neutral-600">No shells recorded yet.</p>
+      )}
     </div>
   );
 }
