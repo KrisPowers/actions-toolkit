@@ -1,5 +1,5 @@
 pub mod artifacts;
-pub mod buckets;
+pub mod job_sandboxes;
 pub mod github_token;
 pub mod repos;
 pub mod runs;

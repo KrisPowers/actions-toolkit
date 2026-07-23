@@ -263,11 +263,11 @@ pub struct Settings {
     pub updated_at: String,
 }
 
-/// One native sandbox instance ("Bucket") used to run a job's steps without Docker. Rows are
+/// One native sandbox instance ("JobSandbox") used to run a job's steps without Docker. Rows are
 /// created before the sandbox is spawned and marked `reaped_at` once it's torn down, so a row
 /// still open at startup identifies a sandbox that outlived a crash of the previous process.
 #[derive(Debug, Clone, FromRow, Serialize)]
-pub struct Bucket {
+pub struct JobSandbox {
     pub id: String,
     pub job_run_id: String,
     pub workflow_run_id: String,
