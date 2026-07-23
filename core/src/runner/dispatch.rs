@@ -63,8 +63,17 @@ pub async fn spawn_run(
     // commit (e.g. a manual "Run now" against no particular ref) since there'd be nothing to post
     // it against; failures here are logged, not fatal, since the run itself already succeeded or
     // failed independent of whether GitHub could be told about it.
+    // Best-effort GitHub Check Run: this is what actually renders the check mark/X/yellow-spinner
+    // GitHub shows next to a commit and in a PR's checks list, real GitHub Actions' own UI for
+    // exactly this. Kept alongside the plainer commit status above (older, simpler, still what
+    // some external tooling and branch-protection setups key off), not a replacement for it.
+    let mut check_run_id = None;
     if let Some(sha) = commit_sha {
         let target_url = crate::runner::github_status::run_target_url(state, &run.id).await;
+        match crate::runner::github_status::start_check(state, &repo.owner, &repo.name, sha, target_url.clone()).await {
+            Ok(id) => check_run_id = Some(id),
+            Err(e) => tracing::warn!(error = format!("{e:#}"), repo = %repo.id, sha, "failed to start the GitHub check run"),
+        }
         if let Err(e) = crate::runner::github_status::report_pending(state, &repo.owner, &repo.name, sha, target_url).await {
             tracing::warn!(error = format!("{e:#}"), repo = %repo.id, sha, "failed to post the pending GitHub commit status");
         }
@@ -111,6 +120,13 @@ pub async fn spawn_run(
             let spec_json = serde_json::to_string(&spec).context("failed to serialize shell run spec")?;
             let shell = shell_queries::create(&state.db, &shell_id, &bucket.id, &run.id, &target_os, Some(&agent.id), "assigned", Some(&spec_json)).await?;
             tracing::info!(shell_id = %shell.id, agent_id = %agent.id, agent_name = %agent.name, "scheduled shell onto a remote agent");
+
+            let state_arc = Arc::new(state.clone());
+            let run_id = run.id.clone();
+            let commit_sha = commit_sha.map(str::to_string);
+            let owner = repo.owner.clone();
+            let name = repo.name.clone();
+            tokio::spawn(crate::runner::scheduler::supervise_remote_shell(state_arc, run_id, owner, name, commit_sha, check_run_id));
         }
         None => {
             let shell = shell_queries::create(&state.db, &shell_id, &bucket.id, &run.id, &target_os, None, "running", None).await?;
@@ -135,7 +151,7 @@ pub async fn spawn_run(
             let commit_sha = commit_sha.map(str::to_string);
             let owner = repo.owner.clone();
             let name = repo.name.clone();
-            tokio::spawn(crate::runner::scheduler::supervise_shell(state_arc, child, run_id, owner, name, commit_sha));
+            tokio::spawn(crate::runner::scheduler::supervise_shell(state_arc, child, run_id, owner, name, commit_sha, check_run_id));
         }
     }
 
