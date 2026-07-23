@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -7,8 +8,24 @@ use bollard::Docker;
 use crate::bucket;
 use crate::db::models::now_iso;
 use crate::runner::run_client::RunClient;
-use crate::runner::{artifact_capture, docker as docker_ops, workspace};
+use crate::runner::{artifact_capture, docker as docker_ops, sampler, workspace};
 use crate::workflow::model::Job;
+
+/// Resource-cache hit/miss counts a shell accumulates locally across every job in its DAG
+/// (`run_inner` owns one `Arc<CacheCounters>` per shell run, cloned into each job's `run_job`
+/// call), read back once at shell exit and reported alongside the exit code (see
+/// `run_client::report_shell_exit`) — the only durable record of these counts.
+#[derive(Default)]
+pub struct CacheCounters {
+    hits: AtomicI64,
+    misses: AtomicI64,
+}
+
+impl CacheCounters {
+    pub fn snapshot(&self) -> (i64, i64) {
+        (self.hits.load(Ordering::Relaxed), self.misses.load(Ordering::Relaxed))
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CheckoutContext {
@@ -46,6 +63,7 @@ pub async fn run_job(
     job_run_id: &str,
     job: &Job,
     checkout: Option<CheckoutContext>,
+    cache_counters: &Arc<CacheCounters>,
 ) -> Result<bool> {
     run_client.set_job_status(job_run_id, "running", None, false).await?;
 
@@ -193,6 +211,15 @@ pub async fn run_job(
         }
     };
 
+    // Only the native Shard backend has anything of ours to sample directly (a job container's
+    // resource usage isn't attributed here at all yet — Docker stats is a separate follow-up, see
+    // the observability plan's scoping note); aborted right before the shard itself is torn down
+    // below, so the sampler never outlives what it's sampling.
+    let shard_sampler = match &backend {
+        RunBackend::Shard { handle } => Some(sampler::spawn_shard_sampler(run_client.clone(), handle.clone(), workflow_run_id.to_string())),
+        RunBackend::Docker { .. } => None,
+    };
+
     let mut job_succeeded = true;
     // (entry_id, cache_key, workspace-relative path) for every cache step that came back a miss
     // and won this shell the build lease. Saved into the bucket-scoped cache once, after the job
@@ -225,7 +252,7 @@ pub async fn run_job(
         );
 
         let exit_code = if step.kind() == "cache" {
-            handle_cache_step(run_client, bucket_id, shell_id, buckets_dir, &workspace_dir, step, &mut pending_cache_saves).await
+            handle_cache_step(run_client, bucket_id, shell_id, buckets_dir, &workspace_dir, step, &mut pending_cache_saves, cache_counters).await
         } else if let Some(command) = &step.run {
             let run_client_for_lines = run_client.clone();
             let step_run_id_for_lines = step_run_id.clone();
@@ -322,6 +349,10 @@ pub async fn run_job(
         if let Err(e) = capture_result {
             emit_system_line(run_client, job_run_id, &format!("artifact capture failed: {e}")).await;
         }
+    }
+
+    if let Some(sampler) = &shard_sampler {
+        sampler.abort();
     }
 
     match &backend {
@@ -425,6 +456,7 @@ async fn handle_cache_step(
     workspace_dir: &Path,
     step: &crate::workflow::model::Step,
     pending_cache_saves: &mut Vec<(String, String, String)>,
+    cache_counters: &CacheCounters,
 ) -> i64 {
     let Some(with) = &step.with else {
         tracing::warn!("cache step is missing a `with:` block, skipping");
@@ -445,6 +477,7 @@ async fn handle_cache_step(
 
     match run_client.resource_cache_lookup(&cache_key).await {
         Ok(state) if state.status == "ready" => {
+            cache_counters.hits.fetch_add(1, Ordering::Relaxed);
             if let Some(path_on_disk) = &state.path_on_disk {
                 if let Err(e) = copy_recursive(Path::new(path_on_disk), &workspace_dir.join(relative_path)) {
                     tracing::warn!(error = %e, cache_key, "failed to restore a ready resource-cache entry");
@@ -452,8 +485,11 @@ async fn handle_cache_step(
             }
             return 0;
         }
-        Ok(_) => {}
+        Ok(_) => {
+            cache_counters.misses.fetch_add(1, Ordering::Relaxed);
+        }
         Err(e) => {
+            cache_counters.misses.fetch_add(1, Ordering::Relaxed);
             tracing::warn!(error = %e, cache_key, "resource cache lookup failed, treating as a miss");
         }
     }
@@ -599,12 +635,14 @@ mod tests {
     use crate::crypto::EncryptionKey;
     use crate::runner::log_stream::LogHub;
     use crate::runner::run_client::LocalRunClient;
+    use crate::runner::stats_hub::StatsHub;
     use crate::workflow::model::{ArtifactSpec, Job, Step};
 
     async fn test_run_client(db: sqlx::SqlitePool, repo_id: &str) -> Arc<dyn RunClient> {
         let enc = EncryptionKey::generate_ephemeral(); // stands in for the durable key in tests
         let log_hub = Arc::new(LogHub::new());
-        let client = LocalRunClient::new(db, log_hub, "test-bucket".to_string(), repo_id, &enc)
+        let stats_hub = Arc::new(StatsHub::new());
+        let client = LocalRunClient::new(db, log_hub, stats_hub, "test-bucket".to_string(), repo_id, &enc)
             .await
             .expect("LocalRunClient::new should succeed");
         Arc::new(client)
@@ -679,6 +717,7 @@ mod tests {
             "job-1",
             &job,
             None,
+            &Arc::new(CacheCounters::default()),
         )
         .await
         .expect("run_job should not error");
@@ -792,6 +831,7 @@ mod tests {
             "job-a",
             &job_a,
             None,
+            &Arc::new(CacheCounters::default()),
         )
         .await
         .expect("job-a should not error");
@@ -808,6 +848,7 @@ mod tests {
             "job-b",
             &job_b,
             None,
+            &Arc::new(CacheCounters::default()),
         )
         .await
         .expect("job-b should not error");

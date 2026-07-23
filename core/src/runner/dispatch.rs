@@ -236,6 +236,7 @@ async fn ensure_bucket(state: &AppState, trigger_kind: &str, webhook_event_id: O
     let tcp_addr = crate::runner::bucket_server::spawn(
         state.db.clone(),
         state.log_hub.clone(),
+        state.stats_hub.clone(),
         bucket.id.clone(),
         repo_id.to_string(),
         auth_token_hash,

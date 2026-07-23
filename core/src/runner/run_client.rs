@@ -17,11 +17,12 @@ use tokio::sync::Mutex;
 use atk_crypto::EncryptionKey;
 use atk_db::queries::{
     artifacts as artifact_queries, shards as shard_queries, resource_cache as cache_queries,
-    runs as run_queries, secrets as secret_queries,
+    resource_samples as sample_queries, runs as run_queries, secrets as secret_queries,
 };
 
 use crate::runner::log_stream::{LogHub, LogLine};
 use crate::runner::rcp_protocol::{Hello, RcpRequest, RcpResponse, ResourceCacheState};
+use crate::runner::stats_hub::StatsHub;
 
 #[async_trait]
 pub trait RunClient: Send + Sync {
@@ -58,6 +59,24 @@ pub trait RunClient: Send + Sync {
     /// `ShardHandle` back.
     async fn record_job_shard(&self, id: &str, job_run_id: &str, workflow_run_id: &str, workspace_path: &str, network_enabled: bool, ttl_expires_at: &str) -> Result<()>;
     async fn mark_shard_reaped(&self, shard_id: &str) -> Result<()>;
+    /// Reports one periodic runtime-resource sample for a shell or a shard it's driving. Fire-
+    /// and-forget from the caller's perspective (the sampler loops keep going regardless of a
+    /// single failed report), see `runner::sampler`.
+    #[allow(clippy::too_many_arguments)]
+    async fn report_resource_sample(
+        &self,
+        subject_type: &str,
+        subject_id: &str,
+        workflow_run_id: Option<&str>,
+        ts: &str,
+        cpu_percent: Option<f64>,
+        memory_bytes: Option<i64>,
+        disk_read_bytes: Option<i64>,
+        disk_write_bytes: Option<i64>,
+        process_count: Option<i64>,
+        host_cpu_percent: Option<f64>,
+        host_memory_percent: Option<f64>,
+    ) -> Result<()>;
 }
 
 /// Secrets re-encrypted under the bucket's own ephemeral, never-persisted key immediately at
@@ -73,6 +92,7 @@ struct EphemeralSecrets {
 pub struct LocalRunClient {
     db: SqlitePool,
     log_hub: Arc<LogHub>,
+    stats_hub: Arc<StatsHub>,
     bucket_id: String,
     secrets: EphemeralSecrets,
 }
@@ -81,7 +101,14 @@ impl LocalRunClient {
     /// Decrypts every repo-scoped secret once under the durable at-rest key and immediately
     /// re-wraps it under a fresh ephemeral key, so this is the only point in a bucket's lifetime
     /// the durable key ever touches plaintext for these values.
-    pub async fn new(db: SqlitePool, log_hub: Arc<LogHub>, bucket_id: String, repo_id: &str, durable_enc: &EncryptionKey) -> Result<Self> {
+    pub async fn new(
+        db: SqlitePool,
+        log_hub: Arc<LogHub>,
+        stats_hub: Arc<StatsHub>,
+        bucket_id: String,
+        repo_id: &str,
+        durable_enc: &EncryptionKey,
+    ) -> Result<Self> {
         let ephemeral = EncryptionKey::generate_ephemeral();
         let mut wrapped = HashMap::new();
         for secret in secret_queries::list_for_repo(&db, repo_id).await.context("failed to list secrets for bucket")? {
@@ -91,7 +118,7 @@ impl LocalRunClient {
             let rewrapped = ephemeral.encrypt_str(&plaintext).context("failed to re-encrypt secret under the ephemeral key")?;
             wrapped.insert(secret.name, rewrapped);
         }
-        Ok(Self { db, log_hub, bucket_id, secrets: EphemeralSecrets { key: ephemeral, wrapped } })
+        Ok(Self { db, log_hub, stats_hub, bucket_id, secrets: EphemeralSecrets { key: ephemeral, wrapped } })
     }
 }
 
@@ -187,6 +214,41 @@ impl RunClient for LocalRunClient {
 
     async fn mark_shard_reaped(&self, shard_id: &str) -> Result<()> {
         shard_queries::mark_reaped(&self.db, shard_id).await.map_err(Into::into)
+    }
+
+    async fn report_resource_sample(
+        &self,
+        subject_type: &str,
+        subject_id: &str,
+        workflow_run_id: Option<&str>,
+        ts: &str,
+        cpu_percent: Option<f64>,
+        memory_bytes: Option<i64>,
+        disk_read_bytes: Option<i64>,
+        disk_write_bytes: Option<i64>,
+        process_count: Option<i64>,
+        host_cpu_percent: Option<f64>,
+        host_memory_percent: Option<f64>,
+    ) -> Result<()> {
+        let sample = sample_queries::insert(
+            &self.db,
+            subject_type,
+            subject_id,
+            workflow_run_id,
+            ts,
+            cpu_percent,
+            memory_bytes,
+            disk_read_bytes,
+            disk_write_bytes,
+            process_count,
+            host_cpu_percent,
+            host_memory_percent,
+        )
+        .await?;
+        if let Some(run_id) = workflow_run_id {
+            self.stats_hub.publish(run_id, sample);
+        }
+        Ok(())
     }
 }
 
@@ -412,16 +474,54 @@ where
             other => anyhow::bail!("unexpected response to MarkShardReaped: {other:?}"),
         }
     }
+
+    async fn report_resource_sample(
+        &self,
+        subject_type: &str,
+        subject_id: &str,
+        workflow_run_id: Option<&str>,
+        ts: &str,
+        cpu_percent: Option<f64>,
+        memory_bytes: Option<i64>,
+        disk_read_bytes: Option<i64>,
+        disk_write_bytes: Option<i64>,
+        process_count: Option<i64>,
+        host_cpu_percent: Option<f64>,
+        host_memory_percent: Option<f64>,
+    ) -> Result<()> {
+        match self
+            .call(RcpRequest::ReportResourceSample {
+                subject_type: subject_type.to_string(),
+                subject_id: subject_id.to_string(),
+                workflow_run_id: workflow_run_id.map(str::to_string),
+                ts: ts.to_string(),
+                cpu_percent,
+                memory_bytes,
+                disk_read_bytes,
+                disk_write_bytes,
+                process_count,
+                host_cpu_percent,
+                host_memory_percent,
+            })
+            .await?
+        {
+            RcpResponse::Ok => Ok(()),
+            RcpResponse::Error(message) => anyhow::bail!(message),
+            other => anyhow::bail!("unexpected response to ReportResourceSample: {other:?}"),
+        }
+    }
 }
 
 /// The one place a shell reports it's completely done: awaited after every job in its DAG has
 /// reached a terminal, already-persisted status (see the `RunClient` calls above), so the bucket
-/// only ever sees `outcome_persisted_at` set after the outcome genuinely is.
-pub async fn report_shell_exit<S>(client: &RcpRunClient<S>, shell_id: &str, exit_code: i64) -> Result<()>
+/// only ever sees `outcome_persisted_at` set after the outcome genuinely is. Also carries the
+/// resource-cache hit/miss counts this shell accumulated locally across its whole job DAG (see
+/// `runner::executor::handle_cache_step`), the one point they're durably recorded.
+pub async fn report_shell_exit<S>(client: &RcpRunClient<S>, shell_id: &str, exit_code: i64, cache_hits: i64, cache_misses: i64) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {
-    match client.call(RcpRequest::ReportShellExit { shell_id: shell_id.to_string(), exit_code }).await? {
+    match client.call(RcpRequest::ReportShellExit { shell_id: shell_id.to_string(), exit_code, cache_hits, cache_misses }).await? {
         RcpResponse::Ok => Ok(()),
         RcpResponse::Error(message) => anyhow::bail!(message),
         other => anyhow::bail!("unexpected response to ReportShellExit: {other:?}"),

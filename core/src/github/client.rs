@@ -177,6 +177,7 @@ mod tests {
             bucket_capability_ok: true,
             bucket_capability_reason: None,
             log_hub: Arc::new(LogHub::new()),
+            stats_hub: Arc::new(crate::runner::stats_hub::StatsHub::new()),
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
             device_flow_result: RwLock::new(None),

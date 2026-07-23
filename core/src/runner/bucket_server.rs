@@ -13,6 +13,7 @@ use atk_db::queries::{buckets as bucket_queries, shells as shell_queries};
 use crate::runner::log_stream::LogHub;
 use crate::runner::rcp_protocol::{ArtifactInfo, Hello, RcpRequest, RcpResponse};
 use crate::runner::run_client::{LocalRunClient, RunClient};
+use crate::runner::stats_hub::StatsHub;
 
 /// Binds this bucket's RCP listeners (a local named-pipe/Unix-socket endpoint for same-machine
 /// shells, plus a TCP listener for shells scheduled onto a remote agent — see the security note
@@ -24,6 +25,7 @@ use crate::runner::run_client::{LocalRunClient, RunClient};
 pub async fn spawn(
     db: SqlitePool,
     log_hub: Arc<LogHub>,
+    stats_hub: Arc<StatsHub>,
     bucket_id: String,
     repo_id: String,
     auth_token_hash: String,
@@ -31,7 +33,7 @@ pub async fn spawn(
     durable_enc: atk_crypto::EncryptionKey,
 ) -> Result<std::net::SocketAddr> {
     let run_client = Arc::new(
-        LocalRunClient::new(db.clone(), log_hub, bucket_id.clone(), &repo_id, &durable_enc)
+        LocalRunClient::new(db.clone(), log_hub, stats_hub, bucket_id.clone(), &repo_id, &durable_enc)
             .await
             .context("failed to build this bucket's local run client")?,
     );
@@ -171,7 +173,8 @@ async fn handle(request: &RcpRequest, run_client: &dyn RunClient, db: &SqlitePoo
         // `RunClient`: Janga's cleanup path (see `reaper.rs`) waits specifically on
         // `outcome_persisted_at`, which `mark_exited` only sets once every job/step status update
         // above has already round-tripped and returned `Ok` to the shell that awaited them.
-        RcpRequest::ReportShellExit { shell_id, exit_code } => {
+        RcpRequest::ReportShellExit { shell_id, exit_code, cache_hits, cache_misses } => {
+            shell_queries::record_cache_counters(db, shell_id, *cache_hits, *cache_misses).await?;
             shell_queries::mark_exited(db, shell_id, *exit_code).await?;
             // Once every shell this bucket ever spawned has reported its outcome, the bucket
             // itself is done: Janga's sweep (see `reaper.rs`) picks up `completed_at IS NOT NULL
@@ -180,6 +183,36 @@ async fn handle(request: &RcpRequest, run_client: &dyn RunClient, db: &SqlitePoo
             if shell_queries::list_unfinished_for_bucket(db, bucket_id).await?.is_empty() {
                 bucket_queries::mark_completed(db, bucket_id).await?;
             }
+            RcpResponse::Ok
+        }
+        RcpRequest::ReportResourceSample {
+            subject_type,
+            subject_id,
+            workflow_run_id,
+            ts,
+            cpu_percent,
+            memory_bytes,
+            disk_read_bytes,
+            disk_write_bytes,
+            process_count,
+            host_cpu_percent,
+            host_memory_percent,
+        } => {
+            run_client
+                .report_resource_sample(
+                    subject_type,
+                    subject_id,
+                    workflow_run_id.as_deref(),
+                    ts,
+                    *cpu_percent,
+                    *memory_bytes,
+                    *disk_read_bytes,
+                    *disk_write_bytes,
+                    *process_count,
+                    *host_cpu_percent,
+                    *host_memory_percent,
+                )
+                .await?;
             RcpResponse::Ok
         }
     })

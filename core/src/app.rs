@@ -11,6 +11,7 @@ use crate::config::AppConfig;
 use crate::crypto::EncryptionKey;
 use crate::github::oauth::{DeviceFlowResult, PendingDeviceFlow};
 use crate::runner::log_stream::LogHub;
+use crate::runner::stats_hub::StatsHub;
 
 #[derive(Clone)]
 pub struct AppState(pub Arc<AppStateInner>);
@@ -34,6 +35,10 @@ pub struct AppStateInner {
     /// it's available or (rare) when the probe failed without a specific reason.
     pub bucket_capability_reason: Option<String>,
     pub log_hub: Arc<LogHub>,
+    /// Fan-out for live runtime-resource sample tails (CPU/memory/disk/process count), the same
+    /// role `log_hub` plays for step output — see `runner::stats_hub` and the `/runs/:id/stats/ws`
+    /// route.
+    pub stats_hub: Arc<StatsHub>,
     /// Cached client for the single account-wide GitHub token set up in the setup wizard.
     /// `None` until a token has been configured, or after `github::client::invalidate` runs
     /// following a rotation/removal.

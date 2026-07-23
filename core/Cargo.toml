@@ -61,6 +61,7 @@ bytes = "1"
 tokio-util = { version = "0.7", features = ["io"] }
 tar = "0.4"
 zip = "2"
+sysinfo = "0.33"
 
 atk-auth = { path = "../crates/atk-auth" }
 atk-bucket = { path = "../crates/atk-bucket" }

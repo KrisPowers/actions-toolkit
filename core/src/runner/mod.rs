@@ -8,6 +8,8 @@ pub mod log_stream;
 pub mod poll_sync;
 pub mod rcp_protocol;
 pub mod run_client;
+pub mod sampler;
 pub mod scheduler;
 pub mod shell_run;
+pub mod stats_hub;
 pub mod workspace;
