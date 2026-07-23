@@ -7,13 +7,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use nix::sched::CloneFlags;
-use sqlx::SqlitePool;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
 use super::{BucketCapability, SandboxHandle, SandboxInitSpec, SandboxSpec, ExecResult, DEFAULT_RO_MOUNTS};
-use atk_db::queries::job_sandboxes as sandbox_queries;
 
 const CGROUP_ROOT: &str = "/sys/fs/cgroup/actions-toolkit";
 /// Deliberately hyphen-free. systemd treats a hyphenated slice name as implicitly nested under a
@@ -74,27 +72,12 @@ pub(crate) fn handle_from_sandbox_row(buckets_root: &Path, row: &atk_db::models:
     }
 }
 
-pub async fn create_job_sandbox(pool: &SqlitePool, buckets_root: &Path, spec: SandboxSpec<'_>) -> Result<SandboxHandle> {
+pub async fn create_job_sandbox(buckets_root: &Path, spec: SandboxSpec<'_>) -> Result<SandboxHandle> {
     let id = Uuid::new_v4().to_string();
     let root_skeleton = root_skeleton_path(buckets_root, &id);
     std::fs::create_dir_all(&root_skeleton).context("failed to create bucket root skeleton")?;
 
     let cgroup_path = create_delegated_cgroup(&id).await.context("failed to create bucket cgroup")?;
-
-    let ttl_expires_at =
-        (chrono::Utc::now() + chrono::Duration::seconds(spec.ttl.as_secs() as i64)).to_rfc3339();
-
-    sandbox_queries::create(
-        pool,
-        &id,
-        spec.job_run_id,
-        spec.run_id,
-        &spec.workspace_host_path.to_string_lossy(),
-        spec.network_enabled,
-        &ttl_expires_at,
-    )
-    .await
-    .context("failed to record bucket in database")?;
 
     let extra_ro_mounts: Vec<PathBuf> = spec.extra_ro_mounts.iter().map(PathBuf::from).filter(|p| p.exists()).collect();
 
@@ -132,9 +115,7 @@ where
     .await
 }
 
-pub async fn remove_sandbox(pool: &SqlitePool, handle: &SandboxHandle) -> Result<()> {
-    let _ = pool; // DB status transition is the caller's job (see bucket::reaper); kept for
-                  // signature symmetry with the Windows backend.
+pub async fn remove_sandbox(handle: &SandboxHandle) -> Result<()> {
     destroy_cgroup(&handle.cgroup_path).await.context("failed to destroy bucket cgroup")?;
     if handle.root_skeleton.exists() {
         std::fs::remove_dir_all(&handle.root_skeleton).context("failed to remove bucket root skeleton")?;

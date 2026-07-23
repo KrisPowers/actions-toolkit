@@ -22,7 +22,6 @@ use std::time::Duration;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 
 /// Default lifetime for a bucket if nothing else expires it first (mirrors GitHub Actions'
 /// own default job timeout), used as the backstop the TTL reaper sweeps against.
@@ -39,9 +38,10 @@ pub const DEFAULT_RO_MOUNTS: &[&str] =
 
 pub struct SandboxSpec<'a> {
     pub workspace_host_path: &'a Path,
-    pub run_id: &'a str,
-    pub job_run_id: &'a str,
     pub network_enabled: bool,
+    /// Not consumed by this crate (it does no database bookkeeping of its own, see
+    /// `create_job_sandbox`'s doc comment) — kept here so a caller building a `SandboxSpec`
+    /// already has it at hand to also record alongside whatever row it writes for this sandbox.
     pub ttl: Duration,
     /// Additive, operator-configured host paths (`settings.bucket_host_mounts_json`) exposed
     /// read-only on top of `DEFAULT_RO_MOUNTS`, for toolchains installed under a user's home
@@ -113,14 +113,17 @@ pub async fn probe_capability() -> BucketCapability {
     }
 }
 
-pub async fn create_job_sandbox(pool: &SqlitePool, buckets_root: &Path, spec: SandboxSpec<'_>) -> Result<SandboxHandle> {
+/// Purely OS-level: sets up the sandbox scaffolding and returns a handle to it. Does not touch
+/// any database — the caller (a shell, via its `RunClient`) is responsible for recording whatever
+/// bookkeeping row it needs, since this crate has no way to reach one from inside a shell process.
+pub async fn create_job_sandbox(buckets_root: &Path, spec: SandboxSpec<'_>) -> Result<SandboxHandle> {
     #[cfg(target_os = "linux")]
     {
-        linux::create_job_sandbox(pool, buckets_root, spec).await
+        linux::create_job_sandbox(buckets_root, spec).await
     }
     #[cfg(target_os = "windows")]
     {
-        windows::create_job_sandbox(pool, buckets_root, spec).await
+        windows::create_job_sandbox(buckets_root, spec).await
     }
 }
 
@@ -148,14 +151,14 @@ where
     }
 }
 
-pub async fn remove_sandbox(pool: &SqlitePool, handle: &SandboxHandle) -> Result<()> {
+pub async fn remove_sandbox(handle: &SandboxHandle) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
-        linux::remove_sandbox(pool, handle).await
+        linux::remove_sandbox(handle).await
     }
     #[cfg(target_os = "windows")]
     {
-        windows::remove_sandbox(pool, handle).await
+        windows::remove_sandbox(handle).await
     }
 }
 

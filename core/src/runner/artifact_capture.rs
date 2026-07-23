@@ -1,17 +1,17 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::Result;
 use bollard::Docker;
-use sqlx::SqlitePool;
 
-use crate::db::queries::artifacts as artifact_queries;
+use crate::runner::run_client::RunClient;
 use crate::workflow::model::ArtifactSpec;
 
 /// For each declared `artifacts:` entry on a job, copy the path out of the job's container
 /// into `data/artifacts/<run_id>/<name>/` and record an `artifacts` row.
 pub async fn capture(
     docker: &Docker,
-    pool: &SqlitePool,
+    run_client: &Arc<dyn RunClient>,
     container_id: &str,
     artifacts_root: &Path,
     workflow_run_id: &str,
@@ -28,27 +28,18 @@ pub async fn capture(
         }
 
         let size_bytes = dir_size(&dest_dir).unwrap_or(0);
-        artifact_queries::create(
-            pool,
-            workflow_run_id,
-            Some(job_run_id),
-            &spec.name,
-            &dest_dir.to_string_lossy(),
-            size_bytes as i64,
-            None,
-        )
-        .await?;
+        run_client.record_artifact(workflow_run_id, Some(job_run_id), &spec.name, &dest_dir.to_string_lossy(), size_bytes as i64).await?;
     }
     Ok(())
 }
 
-/// Same as `capture`, but for jobs running via the Bucket sandbox rather than Docker: the
+/// Same as `capture`, but for jobs running via the Sandbox backend rather than Docker: the
 /// workspace is already a real host directory (no container to `download_path` out of), so this
 /// is a plain recursive copy instead of a tar-stream download. `spec.path` is authored the same
 /// way either backend expects it (e.g. `/workspace/dist`, matching the Docker container's own
 /// `/workspace` mount point), so it's resolved relative to `workspace_dir` here the same way.
 pub async fn capture_from_workspace(
-    pool: &SqlitePool,
+    run_client: &Arc<dyn RunClient>,
     workspace_dir: &Path,
     artifacts_root: &Path,
     workflow_run_id: &str,
@@ -64,16 +55,7 @@ pub async fn capture_from_workspace(
         }
 
         let size_bytes = dir_size(&dest_dir).unwrap_or(0);
-        artifact_queries::create(
-            pool,
-            workflow_run_id,
-            Some(job_run_id),
-            &spec.name,
-            &dest_dir.to_string_lossy(),
-            size_bytes as i64,
-            None,
-        )
-        .await?;
+        run_client.record_artifact(workflow_run_id, Some(job_run_id), &spec.name, &dest_dir.to_string_lossy(), size_bytes as i64).await?;
     }
     Ok(())
 }

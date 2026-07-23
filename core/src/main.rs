@@ -95,6 +95,10 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         // Handled directly in `main()` before the tokio runtime is built (Linux); unreachable
         // in practice, but the match must stay exhaustive over `Command`.
         Command::SandboxInit(_) => anyhow::bail!("__sandbox-init must be dispatched before the async runtime starts"),
+        Command::ShellRun(args) => {
+            let code = runner::shell_run::run(args.spec_path).await?;
+            std::process::exit(code);
+        }
     };
 
     let data_dir = config::resolve_data_dir(args.data_dir.clone());

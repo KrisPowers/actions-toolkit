@@ -40,6 +40,15 @@ impl EncryptionKey {
         Ok(Self(*Key::<Aes256Gcm>::from_slice(&bytes)))
     }
 
+    /// A fresh, in-memory-only key with no disk I/O: used for a bucket's ephemeral session key,
+    /// which must never be persisted or exposed to a user, unlike the durable at-rest key above.
+    /// Callers are responsible for dropping it once the bucket it belongs to is torn down.
+    pub fn generate_ephemeral() -> Self {
+        let mut bytes = [0u8; 32];
+        OsRng.fill_bytes(&mut bytes);
+        Self(*Key::<Aes256Gcm>::from_slice(&bytes))
+    }
+
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
         let cipher = Aes256Gcm::new(&self.0);
         let mut nonce_bytes = [0u8; 12];
