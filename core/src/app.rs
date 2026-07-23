@@ -10,6 +10,7 @@ use crate::auth::jwt::JwtCodec;
 use crate::config::AppConfig;
 use crate::crypto::EncryptionKey;
 use crate::github::oauth::{DeviceFlowResult, PendingDeviceFlow};
+use crate::runner::activity_hub::ActivityHub;
 use crate::runner::log_stream::LogHub;
 use crate::runner::stats_hub::StatsHub;
 
@@ -39,6 +40,9 @@ pub struct AppStateInner {
     /// role `log_hub` plays for step output — see `runner::stats_hub` and the `/runs/:id/stats/ws`
     /// route.
     pub stats_hub: Arc<StatsHub>,
+    /// Fan-out for "a new workflow run was just created for this repo" — see `runner::activity_hub`
+    /// and the `/repos/:id/activity/ws` route, the Overview page's live run list.
+    pub activity_hub: Arc<ActivityHub>,
     /// Cached client for the single account-wide GitHub token set up in the setup wizard.
     /// `None` until a token has been configured, or after `github::client::invalidate` runs
     /// following a rotation/removal.

@@ -163,7 +163,7 @@ export default function BackendTopology({
         </div>
       </NodeRow>
       {shells.length > 0 ? (
-        <TreeList className="ml-6">
+        <TreeList className="ml-6" lastItemExtends={shells[shells.length - 1].shards.length > 0}>
           {shells.map((node) => (
             <ShellCard key={node.shell.id} node={node} samples={samples} />
           ))}

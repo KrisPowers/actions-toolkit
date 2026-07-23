@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { runsApi } from "../api/runs";
+import type { WorkflowRun } from "../api/types";
 
 export function useRuns(repoId: string | undefined, limit?: number) {
   return useQuery({
@@ -8,6 +10,32 @@ export function useRuns(repoId: string | undefined, limit?: number) {
     enabled: !!repoId,
     refetchInterval: 5000,
   });
+}
+
+/**
+ * Live push for new runs: prepends a run to every cached `useRuns` list for this repo the moment
+ * it's created, instead of waiting on the next 5s poll. Mirrors `useLiveLogs`/`useLiveStats`.
+ */
+export function useLiveRunActivity(repoId: string | undefined) {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!repoId) return;
+    const ws = new WebSocket(runsApi.activityWsUrl(repoId));
+    ws.onmessage = (event) => {
+      try {
+        const run = JSON.parse(event.data) as WorkflowRun;
+        qc.setQueriesData<WorkflowRun[]>({ queryKey: ["runs", "repo", repoId] }, (old) => {
+          if (!old) return old;
+          if (old.some((r) => r.id === run.id)) return old;
+          return [run, ...old];
+        });
+      } catch {
+        // ignore malformed frames
+      }
+    };
+    return () => ws.close();
+  }, [repoId, qc]);
 }
 
 export function useRun(id: string | undefined) {

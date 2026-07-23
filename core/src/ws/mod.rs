@@ -106,3 +106,36 @@ async fn handle_stats_socket(state: AppState, run_id: String, mut socket: WebSoc
         }
     }
 }
+
+/// Live "a new run just started" push for a repo's Overview page, the `ActivityHub` equivalent of
+/// `run_logs_ws`/`run_stats_ws`. One channel per `repo_id`; each message is the newly created
+/// `WorkflowRun` itself so the frontend can show it immediately without a follow-up fetch.
+pub async fn run_activity_ws(State(state): State<AppState>, Path(repo_id): Path<String>, _user: CurrentUser, ws: WebSocketUpgrade) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_activity_socket(state, repo_id, socket))
+}
+
+async fn handle_activity_socket(state: AppState, repo_id: String, mut socket: WebSocket) {
+    let mut rx = state.activity_hub.subscribe(&repo_id);
+    loop {
+        tokio::select! {
+            result = rx.recv() => {
+                match result {
+                    Ok(run) => {
+                        let payload = serde_json::to_string(&run).unwrap_or_default();
+                        if socket.send(Message::Text(payload.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => continue,
+                }
+            }
+            incoming = socket.recv() => {
+                match incoming {
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Err(_)) => break,
+                    _ => continue,
+                }
+            }
+        }
+    }
+}

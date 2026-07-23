@@ -1,3 +1,4 @@
+pub mod activity_hub;
 pub mod artifact_capture;
 pub mod bucket_server;
 pub mod dispatch;
