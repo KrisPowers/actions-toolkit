@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useDeleteWorkflow, useDispatchWorkflow, useWorkflows } from "../hooks/useWorkflows";
 import { useRepo } from "../hooks/useRepos";
-import { useBucketsForRepo } from "../hooks/useRunstats";
+import { useRuns } from "../hooks/useRuns";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import AddWorkflowModal from "../components/workflows/AddWorkflowModal";
 import GithubWorkflowsSection from "../components/workflows/GithubWorkflowsSection";
@@ -29,7 +29,7 @@ import StatusBadge from "../components/common/StatusBadge";
 import { cardClass, listCardClass } from "../components/common/Card";
 import EmptyState from "../components/common/EmptyState";
 import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
-import type { BucketSummary, WorkflowRow } from "../api/types";
+import type { WorkflowRow, WorkflowRun } from "../api/types";
 
 const TRIGGER_ICONS: Record<string, LucideIcon> = {
   push: GitCommitHorizontal,
@@ -105,21 +105,21 @@ function WorkflowCatalogRow({
   );
 }
 
-function BucketRow({ summary }: { summary: BucketSummary }) {
-  const { bucket, shell_count } = summary;
-  const Icon = triggerIcon(bucket.trigger_kind);
+function RunRow({ run }: { run: WorkflowRun }) {
+  const Icon = triggerIcon(run.trigger_event);
   return (
-    <Link to={`/buckets/${bucket.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-neutral-800/50">
+    <Link to={`/runs/${run.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-neutral-800/50">
       <div className="flex min-w-0 items-center gap-2.5">
         <Icon className="h-4 w-4 shrink-0 text-neutral-500" strokeWidth={2} />
         <div className="min-w-0">
-          <div className="truncate text-sm capitalize text-neutral-200">{triggerLabel(bucket.trigger_kind)}</div>
-          <div className="mt-0.5 text-xs text-neutral-500">
-            {new Date(bucket.created_at).toLocaleString()} · {shell_count} workflow{shell_count === 1 ? "" : "s"}
+          <div className="truncate text-sm capitalize text-neutral-200">
+            {triggerLabel(run.trigger_event)}
+            {run.ref_name ? <span className="normal-case text-neutral-500"> · {run.ref_name}</span> : null}
           </div>
+          <div className="mt-0.5 text-xs text-neutral-500">{new Date(run.created_at).toLocaleString()}</div>
         </div>
       </div>
-      <StatusBadge status={bucket.status} />
+      <StatusBadge status={run.status} />
     </Link>
   );
 }
@@ -129,7 +129,8 @@ export default function OverviewPage() {
   const { data: repo } = useRepo(repoId);
   const { data: workflows } = useWorkflows(repoId);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
-  const { data: buckets, isLoading: bucketsLoading } = useBucketsForRepo(repoId, selectedWorkflowId ?? undefined);
+  const { data: allRuns, isLoading: runsLoading } = useRuns(repoId, 100);
+  const runs = selectedWorkflowId ? (allRuns ?? []).filter((r) => r.workflow_id === selectedWorkflowId) : allRuns;
 
   const deleteWorkflow = useDeleteWorkflow(repoId as string);
   const dispatch = useDispatchWorkflow();
@@ -200,11 +201,11 @@ export default function OverviewPage() {
             )}
           </div>
           <div className={listCardClass()}>
-            {bucketsLoading && <p className="px-4 py-3 text-sm text-neutral-500">Loading…</p>}
-            {(buckets ?? []).map((summary) => (
-              <BucketRow key={summary.bucket.id} summary={summary} />
+            {runsLoading && <p className="px-4 py-3 text-sm text-neutral-500">Loading…</p>}
+            {(runs ?? []).map((run) => (
+              <RunRow key={run.id} run={run} />
             ))}
-            {(buckets ?? []).length === 0 && !bucketsLoading && <EmptyState icon={Boxes} message="No triggering events yet." />}
+            {(runs ?? []).length === 0 && !runsLoading && <EmptyState icon={Boxes} message="No runs yet." />}
           </div>
         </section>
       </div>
