@@ -16,7 +16,7 @@ use tokio::sync::Mutex;
 
 use atk_crypto::EncryptionKey;
 use atk_db::queries::{
-    artifacts as artifact_queries, job_sandboxes as sandbox_queries, resource_cache as cache_queries,
+    artifacts as artifact_queries, shards as shard_queries, resource_cache as cache_queries,
     runs as run_queries, secrets as secret_queries,
 };
 
@@ -53,11 +53,11 @@ pub trait RunClient: Send + Sync {
     async fn resource_cache_heartbeat(&self, entry_id: &str) -> Result<()>;
     async fn resource_cache_complete(&self, entry_id: &str, path_on_disk: &str, size_bytes: i64) -> Result<()>;
     async fn resource_cache_fail(&self, entry_id: &str) -> Result<()>;
-    /// Records a job sandbox's bookkeeping row. `atk_bucket::create_job_sandbox` itself does no
+    /// Records a job sandbox's bookkeeping row. `atk_bucket::create_job_shard` itself does no
     /// database access at all (a shell has none), so this is the caller's job once it has a live
-    /// `SandboxHandle` back.
-    async fn record_job_sandbox(&self, id: &str, job_run_id: &str, workflow_run_id: &str, workspace_path: &str, network_enabled: bool, ttl_expires_at: &str) -> Result<()>;
-    async fn mark_sandbox_reaped(&self, sandbox_id: &str) -> Result<()>;
+    /// `ShardHandle` back.
+    async fn record_job_shard(&self, id: &str, job_run_id: &str, workflow_run_id: &str, workspace_path: &str, network_enabled: bool, ttl_expires_at: &str) -> Result<()>;
+    async fn mark_shard_reaped(&self, shard_id: &str) -> Result<()>;
 }
 
 /// Secrets re-encrypted under the bucket's own ephemeral, never-persisted key immediately at
@@ -180,13 +180,13 @@ impl RunClient for LocalRunClient {
         cache_queries::fail_build(&self.db, entry_id).await.map_err(Into::into)
     }
 
-    async fn record_job_sandbox(&self, id: &str, job_run_id: &str, workflow_run_id: &str, workspace_path: &str, network_enabled: bool, ttl_expires_at: &str) -> Result<()> {
-        sandbox_queries::create(&self.db, id, job_run_id, workflow_run_id, workspace_path, network_enabled, ttl_expires_at).await?;
+    async fn record_job_shard(&self, id: &str, job_run_id: &str, workflow_run_id: &str, workspace_path: &str, network_enabled: bool, ttl_expires_at: &str) -> Result<()> {
+        shard_queries::create(&self.db, id, job_run_id, workflow_run_id, workspace_path, network_enabled, ttl_expires_at).await?;
         Ok(())
     }
 
-    async fn mark_sandbox_reaped(&self, sandbox_id: &str) -> Result<()> {
-        sandbox_queries::mark_reaped(&self.db, sandbox_id).await.map_err(Into::into)
+    async fn mark_shard_reaped(&self, shard_id: &str) -> Result<()> {
+        shard_queries::mark_reaped(&self.db, shard_id).await.map_err(Into::into)
     }
 }
 
@@ -387,9 +387,9 @@ where
         }
     }
 
-    async fn record_job_sandbox(&self, id: &str, job_run_id: &str, workflow_run_id: &str, workspace_path: &str, network_enabled: bool, ttl_expires_at: &str) -> Result<()> {
+    async fn record_job_shard(&self, id: &str, job_run_id: &str, workflow_run_id: &str, workspace_path: &str, network_enabled: bool, ttl_expires_at: &str) -> Result<()> {
         match self
-            .call(RcpRequest::RecordJobSandbox {
+            .call(RcpRequest::RecordJobShard {
                 id: id.to_string(),
                 job_run_id: job_run_id.to_string(),
                 workflow_run_id: workflow_run_id.to_string(),
@@ -401,15 +401,15 @@ where
         {
             RcpResponse::Ok => Ok(()),
             RcpResponse::Error(message) => anyhow::bail!(message),
-            other => anyhow::bail!("unexpected response to RecordJobSandbox: {other:?}"),
+            other => anyhow::bail!("unexpected response to RecordJobShard: {other:?}"),
         }
     }
 
-    async fn mark_sandbox_reaped(&self, sandbox_id: &str) -> Result<()> {
-        match self.call(RcpRequest::MarkSandboxReaped { sandbox_id: sandbox_id.to_string() }).await? {
+    async fn mark_shard_reaped(&self, shard_id: &str) -> Result<()> {
+        match self.call(RcpRequest::MarkShardReaped { shard_id: shard_id.to_string() }).await? {
             RcpResponse::Ok => Ok(()),
             RcpResponse::Error(message) => anyhow::bail!(message),
-            other => anyhow::bail!("unexpected response to MarkSandboxReaped: {other:?}"),
+            other => anyhow::bail!("unexpected response to MarkShardReaped: {other:?}"),
         }
     }
 }

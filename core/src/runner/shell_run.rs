@@ -1,7 +1,7 @@
 //! The `__shell-run` entry point: what actually executes inside a shell subprocess. Reads a spec
 //! file the control plane wrote, connects back to its owning bucket over RCP, and drives the
 //! workflow run's job DAG (`scheduler::run_inner`) using that connection as its only database
-//! access — this process never opens the SQLite file itself. Unlike `__sandbox-init`, this does
+//! access — this process never opens the SQLite file itself. Unlike `__shard-init`, this does
 //! not need to run before the tokio runtime is built: spawning this subprocess is a plain
 //! `posix_spawn`/`CreateProcess` call, not a `fork()`, so it's safe to trigger from inside an
 //! already-running multi-threaded runtime.
@@ -42,7 +42,7 @@ pub async fn run(spec_path: PathBuf) -> Result<i32> {
     let capability = atk_bucket::probe_capability().await;
     if !capability.ok {
         anyhow::bail!(
-            "this host cannot run job sandboxes ({}); a shell has nowhere to run jobs without one",
+            "this host cannot run job shards ({}); a shell has nowhere to run jobs without one",
             capability.reason.as_deref().unwrap_or("unknown reason")
         );
     }

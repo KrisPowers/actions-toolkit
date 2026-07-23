@@ -1,4 +1,4 @@
-//! Janga: TTL-based auto-cleanup and startup crash reconciliation, widened from job sandboxes
+//! Janga: TTL-based auto-cleanup and startup crash reconciliation, widened from job shards
 //! alone to also cover shells (the OS subprocesses that drive a workflow run's job DAG) and
 //! bucket-scoped resource-cache build leases. Still one coherent sweep, not three separate
 //! services: `reconcile_on_startup` handles what a crashed prior process left open,
@@ -7,7 +7,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use atk_db::queries::{buckets as bucket_queries, job_sandboxes as sandbox_queries, resource_cache as cache_queries, shells as shell_queries};
+use atk_db::queries::{buckets as bucket_queries, shards as shard_queries, resource_cache as cache_queries, shells as shell_queries};
 use sqlx::SqlitePool;
 
 const SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
@@ -25,22 +25,22 @@ pub async fn reconcile_on_startup(pool: &SqlitePool, buckets_root: &Path) {
 }
 
 async fn reconcile_sandboxes(pool: &SqlitePool, buckets_root: &Path) {
-    let rows = match sandbox_queries::list_unreaped(pool).await {
+    let rows = match shard_queries::list_unreaped(pool).await {
         Ok(rows) => rows,
         Err(e) => {
-            tracing::error!(error = %e, "failed to list unreaped job sandboxes at startup");
+            tracing::error!(error = %e, "failed to list unreaped job shards at startup");
             return;
         }
     };
 
     for row in rows {
-        tracing::warn!(sandbox_id = %row.id, "cleaning up job sandbox left over from a previous process");
-        let handle = super::handle_from_sandbox_row(buckets_root, &row);
-        if let Err(e) = super::remove_sandbox(&handle).await {
-            tracing::warn!(error = %e, sandbox_id = %row.id, "failed to force-clean a leftover job sandbox");
+        tracing::warn!(shard_id = %row.id, "cleaning up job sandbox left over from a previous process");
+        let handle = super::handle_from_shard_row(buckets_root, &row);
+        if let Err(e) = super::remove_shard(&handle).await {
+            tracing::warn!(error = %e, shard_id = %row.id, "failed to force-clean a leftover job sandbox");
         }
-        if let Err(e) = sandbox_queries::mark_reaped(pool, &row.id).await {
-            tracing::warn!(error = %e, sandbox_id = %row.id, "failed to mark a leftover job sandbox reaped");
+        if let Err(e) = shard_queries::mark_reaped(pool, &row.id).await {
+            tracing::warn!(error = %e, shard_id = %row.id, "failed to mark a leftover job sandbox reaped");
         }
     }
 }
@@ -116,21 +116,21 @@ pub async fn run_periodic_sweep(pool: SqlitePool, buckets_root: Arc<Path>) {
     loop {
         interval.tick().await;
 
-        let rows = match sandbox_queries::list_expired(&pool).await {
+        let rows = match shard_queries::list_expired(&pool).await {
             Ok(rows) => rows,
             Err(e) => {
-                tracing::error!(error = %e, "failed to list expired job sandboxes");
+                tracing::error!(error = %e, "failed to list expired job shards");
                 Vec::new()
             }
         };
         for row in rows {
-            tracing::warn!(sandbox_id = %row.id, "job sandbox exceeded its TTL, force-cleaning");
-            let handle = super::handle_from_sandbox_row(&buckets_root, &row);
-            if let Err(e) = super::remove_sandbox(&handle).await {
-                tracing::warn!(error = %e, sandbox_id = %row.id, "failed to force-clean an expired job sandbox");
+            tracing::warn!(shard_id = %row.id, "job sandbox exceeded its TTL, force-cleaning");
+            let handle = super::handle_from_shard_row(&buckets_root, &row);
+            if let Err(e) = super::remove_shard(&handle).await {
+                tracing::warn!(error = %e, shard_id = %row.id, "failed to force-clean an expired job sandbox");
             }
-            if let Err(e) = sandbox_queries::mark_reaped(&pool, &row.id).await {
-                tracing::warn!(error = %e, sandbox_id = %row.id, "failed to mark an expired job sandbox reaped");
+            if let Err(e) = shard_queries::mark_reaped(&pool, &row.id).await {
+                tracing::warn!(error = %e, shard_id = %row.id, "failed to mark an expired job sandbox reaped");
             }
         }
 

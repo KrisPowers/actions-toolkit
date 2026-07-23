@@ -35,8 +35,8 @@ pub enum Command {
     /// Internal: re-exec target used by the Bucket sandbox to perform namespace/mount setup
     /// from a freshly-forked, single-threaded child before exec'ing a step's command. Not
     /// meant to be invoked directly; hidden from `--help`.
-    #[command(name = "__sandbox-init", hide = true)]
-    SandboxInit(SandboxInitArgs),
+    #[command(name = "__shard-init", hide = true)]
+    ShardInit(ShardInitArgs),
 
     /// Internal: what a bucket actually spawns per triggered workflow run. Drives that run's job
     /// DAG and talks back to its owning bucket over RCP; never touches the database directly. Not
@@ -81,8 +81,8 @@ pub struct AgentArgs {
 }
 
 #[derive(Args, Debug, Clone)]
-pub struct SandboxInitArgs {
-    /// Path to the JSON-serialized `bucket::SandboxInitSpec` describing the sandbox to set up
+pub struct ShardInitArgs {
+    /// Path to the JSON-serialized `bucket::ShardInitSpec` describing the sandbox to set up
     /// and the command to run inside it.
     pub spec_path: PathBuf,
 }

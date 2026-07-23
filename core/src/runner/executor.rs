@@ -20,12 +20,12 @@ pub struct CheckoutContext {
 }
 
 /// Which backend is actually running this job's `run:` steps: Docker exec when the job declares
-/// a `container:`, or the native Sandbox otherwise. Decided once up front so the step loop
+/// a `container:`, or the native Shard otherwise. Decided once up front so the step loop
 /// and artifact capture don't need to re-derive it. `uses: docker://` steps are unaffected by
 /// this, they always get their own one-off container regardless of which backend the job uses.
 enum RunBackend {
     Docker { docker: Docker, container_id: String },
-    Sandbox { handle: bucket::SandboxHandle },
+    Shard { handle: bucket::ShardHandle },
 }
 
 /// Execute a single job: checkout (if configured), start its container or sandbox, run each step
@@ -167,22 +167,22 @@ pub async fn run_job(
             // extra mounts is the same conservative default a settings lookup failure already
             // fell back to before, and per-bucket TTL/mount overrides are a follow-up once that
             // configuration has an RCP-reachable home.
-            let spec = bucket::SandboxSpec {
+            let spec = bucket::ShardSpec {
                 workspace_host_path: &workspace_dir,
                 network_enabled: job.network,
                 ttl: bucket::DEFAULT_TTL,
                 extra_ro_mounts: &[],
             };
-            match bucket::create_job_sandbox(buckets_dir, spec).await {
+            match bucket::create_job_shard(buckets_dir, spec).await {
                 Ok(handle) => {
                     let ttl_expires_at = (chrono::Utc::now() + chrono::Duration::seconds(bucket::DEFAULT_TTL.as_secs() as i64)).to_rfc3339();
                     if let Err(e) = run_client
-                        .record_job_sandbox(&handle.id, job_run_id, workflow_run_id, &handle.workspace.to_string_lossy(), job.network, &ttl_expires_at)
+                        .record_job_shard(&handle.id, job_run_id, workflow_run_id, &handle.workspace.to_string_lossy(), job.network, &ttl_expires_at)
                         .await
                     {
-                        tracing::warn!(error = %e, sandbox_id = %handle.id, "failed to record job sandbox bookkeeping row");
+                        tracing::warn!(error = %e, shard_id = %handle.id, "failed to record job sandbox bookkeeping row");
                     }
-                    RunBackend::Sandbox { handle }
+                    RunBackend::Shard { handle }
                 }
                 Err(e) => {
                     emit_system_line(run_client, job_run_id, &format!("failed to create sandbox: {e}")).await;
@@ -244,7 +244,7 @@ pub async fn run_job(
                         .await
                         .map(|r| r.exit_code)
                 }
-                RunBackend::Sandbox { handle } => {
+                RunBackend::Shard { handle } => {
                     bucket::exec_step(handle, command, step.shell.as_deref(), None, &step_env, on_line).await.map(|r| r.exit_code)
                 }
             };
@@ -314,7 +314,7 @@ pub async fn run_job(
             RunBackend::Docker { docker, container_id } => {
                 artifact_capture::capture(docker, run_client, container_id, artifacts_dir, workflow_run_id, job_run_id, &job.artifacts).await
             }
-            RunBackend::Sandbox { .. } => {
+            RunBackend::Shard { .. } => {
                 artifact_capture::capture_from_workspace(run_client, &workspace_dir, artifacts_dir, workflow_run_id, job_run_id, &job.artifacts)
                     .await
             }
@@ -330,12 +330,12 @@ pub async fn run_job(
                 tracing::warn!(error = %e, container_id, "failed to remove job container");
             }
         }
-        RunBackend::Sandbox { handle } => {
-            if let Err(e) = bucket::remove_sandbox(handle).await {
-                tracing::warn!(error = %e, sandbox_id = %handle.id, "failed to remove job sandbox");
+        RunBackend::Shard { handle } => {
+            if let Err(e) = bucket::remove_shard(handle).await {
+                tracing::warn!(error = %e, shard_id = %handle.id, "failed to remove job sandbox");
             }
-            if let Err(e) = run_client.mark_sandbox_reaped(&handle.id).await {
-                tracing::warn!(error = %e, sandbox_id = %handle.id, "failed to mark job sandbox reaped");
+            if let Err(e) = run_client.mark_shard_reaped(&handle.id).await {
+                tracing::warn!(error = %e, shard_id = %handle.id, "failed to mark job sandbox reaped");
             }
         }
     }
@@ -347,7 +347,7 @@ pub async fn run_job(
 }
 
 /// Runs a `uses: docker://image` step's one-off container action. Always goes through Docker
-/// regardless of whether the job itself is Docker- or Sandbox-backed, since a container action is
+/// regardless of whether the job itself is Docker- or Shard-backed, since a container action is
 /// its own self-contained container, not tied to the job's `run:` step backend.
 #[allow(clippy::too_many_arguments)]
 async fn exec_docker_action_step(
@@ -610,9 +610,9 @@ mod tests {
         Arc::new(client)
     }
 
-    /// End-to-end: a job with no `container:` should run its `run:` step via the Sandbox backend
+    /// End-to-end: a job with no `container:` should run its `run:` step via the Shard backend
     /// (not Docker, which is `None` here on purpose) and produce a declared artifact, exercising
-    /// the actual `RunBackend::Sandbox` path through a real `LocalRunClient`, the same code path
+    /// the actual `RunBackend::Shard` path through a real `LocalRunClient`, the same code path
     /// a shell's `RcpRunClient` calls drive on the other side of the wire in real use.
     #[tokio::test]
     async fn job_without_container_runs_via_bucket_and_captures_artifacts() {
@@ -656,7 +656,7 @@ mod tests {
                 if_condition: None,
                 continue_on_error: false,
                 // `cmd` rather than the pwsh/powershell default on Windows: this test exercises
-                // executor.rs's RunBackend::Sandbox wiring (shell resolution itself is covered
+                // executor.rs's RunBackend::Shard wiring (shell resolution itself is covered
                 // separately in bucket::windows::tests), and cmd.exe's simpler inherited-cwd
                 // handling sidesteps a known, separate AppContainer/PowerShell working-directory
                 // gap for deeply nested workspace paths (tracked as a follow-up).

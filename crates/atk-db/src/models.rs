@@ -263,11 +263,13 @@ pub struct Settings {
     pub updated_at: String,
 }
 
-/// One native sandbox instance ("JobSandbox") used to run a job's steps without Docker. Rows are
-/// created before the sandbox is spawned and marked `reaped_at` once it's torn down, so a row
-/// still open at startup identifies a sandbox that outlived a crash of the previous process.
+/// A shard: the native OS isolation (namespaces/cgroups on Linux, AppContainer/Job Objects on
+/// Windows) a shell creates and tears down for one job's steps, without Docker. A child of the
+/// shell that owns it, the same way the shell itself is a child of its bucket. Rows are created
+/// before the shard is spawned and marked `reaped_at` once it's torn down, so a row still open at
+/// startup identifies a shard that outlived a crash of the previous process.
 #[derive(Debug, Clone, FromRow, Serialize)]
-pub struct JobSandbox {
+pub struct Shard {
     pub id: String,
     pub job_run_id: String,
     pub workflow_run_id: String,

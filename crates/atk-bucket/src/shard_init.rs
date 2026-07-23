@@ -1,7 +1,7 @@
-//! The `__sandbox-init` re-exec stage (Linux only). The host process is multi-threaded tokio,
+//! The `__shard-init` re-exec stage (Linux only). The host process is multi-threaded tokio,
 //! and the kernel refuses `unshare(CLONE_NEWUSER)` from a multi-threaded process, so namespace
 //! setup can't happen there directly. Instead the host spawns this same binary again under the
-//! hidden `__sandbox-init` subcommand with a `pre_exec` hook that unshares namespaces in the
+//! hidden `__shard-init` subcommand with a `pre_exec` hook that unshares namespaces in the
 //! freshly-forked, single-threaded child (see `linux::spawn_bucket_init` for that half). By the
 //! time `run()` below executes, this process is already inside its own user/mount/uts/ipc/
 //! cgroup/net namespaces, mapped to uid 0 within them, but still in the *host's* PID namespace
@@ -27,12 +27,12 @@ use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{chdir, fork, ForkResult, Pid};
 
-use super::SandboxInitSpec;
-use atk_config::SandboxInitArgs;
+use super::ShardInitSpec;
+use atk_config::ShardInitArgs;
 
-pub fn run(args: SandboxInitArgs) -> Result<i32> {
+pub fn run(args: ShardInitArgs) -> Result<i32> {
     let spec_bytes = std::fs::read(&args.spec_path).context("failed to read bucket init spec")?;
-    let spec: SandboxInitSpec = serde_json::from_slice(&spec_bytes).context("failed to parse bucket init spec")?;
+    let spec: ShardInitSpec = serde_json::from_slice(&spec_bytes).context("failed to parse bucket init spec")?;
 
     join_cgroup(&spec.cgroup_path).context("failed to join cgroup")?;
     // Only safe to unshare the cgroup namespace *after* joining the target cgroup by its
@@ -78,7 +78,7 @@ fn join_cgroup(cgroup_path: &Path) -> Result<()> {
 /// `spec.root_skeleton`, then `pivot_root`s into it. Everything not explicitly bind-mounted here
 /// is unreachable afterward, not just access-denied: `pivot_root` + detaching the old root make
 /// unmounted paths resolve to `ENOENT`.
-fn build_sandbox_root(spec: &SandboxInitSpec) -> Result<()> {
+fn build_sandbox_root(spec: &ShardInitSpec) -> Result<()> {
     let new_root = &spec.root_skeleton;
 
     // A bind-mount of the root skeleton onto itself makes it a mount point in its own right,
@@ -131,7 +131,7 @@ fn build_sandbox_root(spec: &SandboxInitSpec) -> Result<()> {
 /// Runs as PID 1 of the new PID namespace: mount a fresh `/proc` (only safe now that this
 /// process is actually inside the new namespace), lock the process down (seccomp, capabilities,
 /// no-new-privs, parent-death signal), then exec the step's command. Only returns on error.
-fn run_pid1(spec: &SandboxInitSpec) -> Result<()> {
+fn run_pid1(spec: &ShardInitSpec) -> Result<()> {
     mount(Some("proc"), "/proc", Some("proc"), MsFlags::empty(), None::<&str>).context("failed to mount /proc")?;
 
     super::seccomp_policy::install().context("failed to install seccomp filter")?;

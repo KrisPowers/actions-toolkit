@@ -32,8 +32,8 @@ pub enum RcpRequest {
     ResourceCacheHeartbeat { entry_id: String },
     ResourceCacheComplete { entry_id: String, path_on_disk: String, size_bytes: i64 },
     ResourceCacheFail { entry_id: String },
-    RecordJobSandbox { id: String, job_run_id: String, workflow_run_id: String, workspace_path: String, network_enabled: bool, ttl_expires_at: String },
-    MarkSandboxReaped { sandbox_id: String },
+    RecordJobShard { id: String, job_run_id: String, workflow_run_id: String, workspace_path: String, network_enabled: bool, ttl_expires_at: String },
+    MarkShardReaped { shard_id: String },
     ReportShellExit { shell_id: String, exit_code: i64 },
 }
 

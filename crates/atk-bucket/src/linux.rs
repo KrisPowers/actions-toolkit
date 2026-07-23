@@ -1,6 +1,6 @@
-//! Host-side half of the Linux Bucket backend: cgroup lifecycle, spawning the `__sandbox-init`
+//! Host-side half of the Linux Bucket backend: cgroup lifecycle, spawning the `__shard-init`
 //! re-exec target with the namespace-unshare `pre_exec` hook, and streaming its output. The
-//! actual namespace/mount/seccomp setup happens in `sandbox_init.rs`, which this module's
+//! actual namespace/mount/seccomp setup happens in `shard_init.rs`, which this module's
 //! spawned child immediately re-execs into.
 
 use std::path::{Path, PathBuf};
@@ -11,7 +11,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
-use super::{BucketCapability, SandboxHandle, SandboxInitSpec, SandboxSpec, ExecResult, DEFAULT_RO_MOUNTS};
+use super::{BucketCapability, ShardHandle, ShardInitSpec, ShardSpec, ExecResult, DEFAULT_RO_MOUNTS};
 
 const CGROUP_ROOT: &str = "/sys/fs/cgroup/actions-toolkit";
 /// Deliberately hyphen-free. systemd treats a hyphenated slice name as implicitly nested under a
@@ -59,8 +59,8 @@ fn cgroup_path_for(id: &str) -> PathBuf {
     }
 }
 
-pub(crate) fn handle_from_sandbox_row(buckets_root: &Path, row: &atk_db::models::JobSandbox) -> SandboxHandle {
-    SandboxHandle {
+pub(crate) fn handle_from_shard_row(buckets_root: &Path, row: &atk_db::models::Shard) -> ShardHandle {
+    ShardHandle {
         id: row.id.clone(),
         workspace: PathBuf::from(&row.workspace_path),
         root_skeleton: root_skeleton_path(buckets_root, &row.id),
@@ -72,7 +72,7 @@ pub(crate) fn handle_from_sandbox_row(buckets_root: &Path, row: &atk_db::models:
     }
 }
 
-pub async fn create_job_sandbox(buckets_root: &Path, spec: SandboxSpec<'_>) -> Result<SandboxHandle> {
+pub async fn create_job_shard(buckets_root: &Path, spec: ShardSpec<'_>) -> Result<ShardHandle> {
     let id = Uuid::new_v4().to_string();
     let root_skeleton = root_skeleton_path(buckets_root, &id);
     std::fs::create_dir_all(&root_skeleton).context("failed to create bucket root skeleton")?;
@@ -81,7 +81,7 @@ pub async fn create_job_sandbox(buckets_root: &Path, spec: SandboxSpec<'_>) -> R
 
     let extra_ro_mounts: Vec<PathBuf> = spec.extra_ro_mounts.iter().map(PathBuf::from).filter(|p| p.exists()).collect();
 
-    Ok(SandboxHandle {
+    Ok(ShardHandle {
         id,
         workspace: spec.workspace_host_path.to_path_buf(),
         root_skeleton,
@@ -92,7 +92,7 @@ pub async fn create_job_sandbox(buckets_root: &Path, spec: SandboxSpec<'_>) -> R
 }
 
 pub async fn exec_step<F>(
-    handle: &SandboxHandle,
+    handle: &ShardHandle,
     shell_command: &str,
     shell: Option<&str>,
     working_dir: Option<&str>,
@@ -115,7 +115,7 @@ where
     .await
 }
 
-pub async fn remove_sandbox(handle: &SandboxHandle) -> Result<()> {
+pub async fn remove_shard(handle: &ShardHandle) -> Result<()> {
     destroy_cgroup(&handle.cgroup_path).await.context("failed to destroy bucket cgroup")?;
     if handle.root_skeleton.exists() {
         std::fs::remove_dir_all(&handle.root_skeleton).context("failed to remove bucket root skeleton")?;
@@ -180,7 +180,7 @@ fn resolve_ro_mounts(extra_ro_mounts: &[PathBuf]) -> Vec<PathBuf> {
     DEFAULT_RO_MOUNTS.iter().map(PathBuf::from).chain(extra_ro_mounts.iter().cloned()).filter(|p| p.exists()).collect()
 }
 
-/// Spawns `__sandbox-init` with the namespace-unshare `pre_exec` hook, streams its stdout/stderr
+/// Spawns `__shard-init` with the namespace-unshare `pre_exec` hook, streams its stdout/stderr
 /// line-by-line to `on_line`, and returns its exit code. This is the actual per-step sandbox
 /// execution shared by `exec_step` and the capability probe.
 async fn run_in_sandbox<F>(
@@ -198,7 +198,7 @@ where
     let StepInvocation { shell_command, shell, working_dir, env } = invocation;
     let ro_mounts = resolve_ro_mounts(extra_ro_mounts);
 
-    let spec = SandboxInitSpec {
+    let spec = ShardInitSpec {
         workspace: workspace.to_path_buf(),
         root_skeleton: root_skeleton.to_path_buf(),
         ro_mounts,
@@ -220,7 +220,7 @@ where
 
     let mut command = Command::new(&current_exe);
     command
-        .arg("__sandbox-init")
+        .arg("__shard-init")
         .arg(&spec_path)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -234,10 +234,10 @@ where
         command.pre_exec(unshare_into_new_namespaces);
     }
 
-    let mut child = command.spawn().context("failed to spawn __sandbox-init")?;
+    let mut child = command.spawn().context("failed to spawn __shard-init")?;
 
     if network_enabled {
-        let pid = child.id().context("spawned __sandbox-init has no PID (already exited?)")?;
+        let pid = child.id().context("spawned __shard-init has no PID (already exited?)")?;
         if let Err(e) = setup_pasta_networking(pid).await {
             let _ = child.start_kill(); // don't leave the already-spawned sandbox process running unsupervised
             return Err(e.context("network: true was requested but pasta networking setup failed"));
@@ -274,7 +274,7 @@ where
     let _ = stdout_task.await;
     let _ = stderr_task.await;
 
-    let status = child.wait().await.context("failed waiting for __sandbox-init")?;
+    let status = child.wait().await.context("failed waiting for __shard-init")?;
     let _ = std::fs::remove_file(&spec_path);
 
     Ok(ExecResult { exit_code: status.code().unwrap_or(-1) as i64 })
@@ -292,7 +292,7 @@ where
 /// has to be entered *after* the process has already been moved into its target cgroup, not
 /// before, joining a cgroup via its absolute host path while already inside a fresh cgroup
 /// namespace fails with EIO, since that path is no longer a descendant of the namespace's own
-/// root. `sandbox_init::join_cgroup` does the join first; `unshare(CLONE_NEWCGROUP)` happens
+/// root. `shard_init::join_cgroup` does the join first; `unshare(CLONE_NEWCGROUP)` happens
 /// separately right after, giving the sandboxed process a namespaced view rooted at its own
 /// cgroup from that point on.
 fn unshare_into_new_namespaces() -> std::io::Result<()> {
@@ -372,8 +372,8 @@ async fn create_delegated_cgroup(id: &str) -> Result<PathBuf> {
 
 /// Spawns a long-lived anchor process inside a transient systemd `--user --scope`, keeping the
 /// delegated cgroup populated (and therefore alive) for the bucket's whole lifetime; an empty
-/// scope cgroup is torn down by systemd immediately, so each step's `__sandbox-init` process joins
-/// this cgroup (via the existing `join_cgroup` call in `sandbox_init.rs`, unchanged) alongside the
+/// scope cgroup is torn down by systemd immediately, so each step's `__shard-init` process joins
+/// this cgroup (via the existing `join_cgroup` call in `shard_init.rs`, unchanged) alongside the
 /// anchor rather than instead of it. `cgroup.kill` in `destroy_cgroup` reaps the anchor along with
 /// everything else in the cgroup; `--collect` tells systemd to garbage-collect the transient unit
 /// once its cgroup is empty, so no explicit `systemctl stop` is needed.
@@ -447,7 +447,7 @@ async fn destroy_cgroup(path: &Path) -> Result<()> {
     std::fs::remove_dir(path).context("failed to remove bucket cgroup directory after cgroup.kill")
 }
 
-/// Wires up opt-in network access for one step's already-spawned `__sandbox-init` process (which,
+/// Wires up opt-in network access for one step's already-spawned `__shard-init` process (which,
 /// by the time this runs, has already `unshare(CLONE_NEWNET)`d into a fresh, otherwise-empty net
 /// namespace via the `pre_exec` hook) via `pasta`: an unprivileged, per-namespace userspace network
 /// stack, rather than hand-rolled veth+NAT+iptables, which would mutate host-global network state
@@ -478,7 +478,7 @@ mod tests {
     use super::*;
 
     // These exercise the pure path/serialization logic only. The actual spawn-and-isolate path
-    // (`run_in_sandbox`) re-execs `std::env::current_exe()` as `__sandbox-init`, which under
+    // (`run_in_sandbox`) re-execs `std::env::current_exe()` as `__shard-init`, which under
     // `cargo test` resolves to the test harness binary rather than the real `actions-toolkit`
     // binary (Cargo doesn't set `CARGO_BIN_EXE_*` for a crate's own unit tests, only for
     // separate integration-test/example targets, and this crate has no library target to give
@@ -497,7 +497,7 @@ mod tests {
 
     #[test]
     fn bucket_init_spec_round_trips_through_json() {
-        let spec = SandboxInitSpec {
+        let spec = ShardInitSpec {
             workspace: PathBuf::from("/data/workspaces/run-1"),
             root_skeleton: PathBuf::from("/data/buckets/bucket-1/root"),
             ro_mounts: vec![PathBuf::from("/usr"), PathBuf::from("/bin")],
@@ -509,7 +509,7 @@ mod tests {
         };
 
         let bytes = serde_json::to_vec(&spec).expect("spec should serialize");
-        let round_tripped: SandboxInitSpec = serde_json::from_slice(&bytes).expect("spec should deserialize");
+        let round_tripped: ShardInitSpec = serde_json::from_slice(&bytes).expect("spec should deserialize");
 
         assert_eq!(round_tripped.workspace, spec.workspace);
         assert_eq!(round_tripped.ro_mounts, spec.ro_mounts);

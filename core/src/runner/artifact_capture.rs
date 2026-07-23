@@ -33,7 +33,7 @@ pub async fn capture(
     Ok(())
 }
 
-/// Same as `capture`, but for jobs running via the Sandbox backend rather than Docker: the
+/// Same as `capture`, but for jobs running via the Shard backend rather than Docker: the
 /// workspace is already a real host directory (no container to `download_path` out of), so this
 /// is a plain recursive copy instead of a tar-stream download. `spec.path` is authored the same
 /// way either backend expects it (e.g. `/workspace/dist`, matching the Docker container's own
