@@ -280,6 +280,84 @@ pub struct JobSandbox {
     pub reaped_at: Option<String>,
 }
 
+/// The container for one triggering event (e.g. one push), which may fan out to N matched
+/// workflow runs, each executing as its own `Shell` subprocess inside this bucket. Sibling shells
+/// can reuse resources cached under `bucket_resource_cache` instead of regenerating them, and
+/// share a single ephemeral, never-persisted decryption key held only by the bucket's own
+/// in-process RCP server, never by a shell.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Bucket {
+    pub id: String,
+    pub trigger_kind: String,
+    pub webhook_event_id: Option<String>,
+    pub repo_id: String,
+    pub status: String,
+    #[serde(skip_serializing)]
+    pub auth_token_hash: String,
+    pub rcp_endpoint: String,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+    pub reaped_at: Option<String>,
+}
+
+/// One real OS subprocess driving a single triggered workflow run's job DAG, talking back to its
+/// parent bucket over RCP instead of touching the database directly. `agent_id` is `None` for a
+/// shell spawned locally by the control plane, `Some` once it was scheduled onto a remote agent.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Shell {
+    pub id: String,
+    pub bucket_id: String,
+    pub workflow_run_id: String,
+    pub agent_id: Option<String>,
+    pub target_os: String,
+    pub pid: Option<i64>,
+    pub status: String,
+    pub exit_code: Option<i64>,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+    pub outcome_persisted_at: Option<String>,
+    pub reaped_at: Option<String>,
+}
+
+/// One bucket-scoped shared resource (e.g. a `node_modules` produced by `npm ci`) that sibling
+/// shells in the same bucket can reuse instead of regenerating. `status = "building"` is a lease
+/// held by `builder_shell_id`; `builder_heartbeat_at` lets the reaper detect and reset a lease
+/// whose builder died mid-build.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct BucketResourceCacheEntry {
+    pub id: String,
+    pub bucket_id: String,
+    pub cache_key: String,
+    pub status: String,
+    pub path_on_disk: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub builder_shell_id: Option<String>,
+    pub builder_heartbeat_at: Option<String>,
+    pub created_at: String,
+    pub ready_at: Option<String>,
+    pub failed_at: Option<String>,
+}
+
+/// A worker machine registered for multi-machine shell execution, approved by an operator via the
+/// Agents UI. `labels_json` is a JSON array of strings (`["os=linux"]` etc.) matched against a
+/// job's `runs_on`.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct Agent {
+    pub id: String,
+    pub name: String,
+    pub os: String,
+    pub arch: String,
+    pub labels_json: String,
+    pub capacity: i64,
+    #[serde(skip_serializing)]
+    pub mtls_fingerprint: String,
+    pub status: String,
+    pub last_heartbeat_at: Option<String>,
+    pub version: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
 }
