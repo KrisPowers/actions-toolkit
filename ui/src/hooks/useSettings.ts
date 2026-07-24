@@ -85,3 +85,7 @@ export function useStopDashboardTunnel() {
     onSuccess: (data) => qc.setQueryData(["settings", "dashboard-tunnel"], data),
   });
 }
+
+export function useDashboardTunnelRequests() {
+  return useQuery({ queryKey: ["settings", "dashboard-tunnel", "requests"], queryFn: settingsApi.dashboardTunnelRequests });
+}
