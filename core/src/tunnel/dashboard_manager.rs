@@ -119,6 +119,16 @@ impl DashboardTunnelManager {
             tracing::error!(error = %e, "failed to flush dashboard tunnel request audit batch");
         }
     }
+
+    /// Background task: flush the audit buffer on a fixed interval so a quiet period still gets
+    /// its trailing entries persisted promptly instead of sitting in memory indefinitely.
+    pub async fn run_periodic_flush(manager: std::sync::Arc<Self>, pool: sqlx::SqlitePool) {
+        let mut interval = tokio::time::interval(AUDIT_FLUSH_INTERVAL);
+        loop {
+            interval.tick().await;
+            manager.flush(&pool).await;
+        }
+    }
 }
 
 impl Default for DashboardTunnelManager {
