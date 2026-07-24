@@ -32,11 +32,11 @@ export default function TreeList({
         return (
           <div key={i} className="relative pl-5">
             {roundsHere ? (
-              <span aria-hidden className={cn("absolute left-0 top-0 h-4 w-3 rounded-bl-md border-b border-l", LINE_BORDER)} />
+              <span aria-hidden className={cn("absolute left-0 top-0 h-6 w-3 rounded-bl-md border-b border-l", LINE_BORDER)} />
             ) : (
               <>
                 <span aria-hidden className={cn("absolute left-0 top-0 h-full w-px", LINE_BG)} />
-                <span aria-hidden className={cn("absolute left-0 top-4 h-px w-3", LINE_BG)} />
+                <span aria-hidden className={cn("absolute left-0 top-6 h-px w-3", LINE_BG)} />
               </>
             )}
             {child}
