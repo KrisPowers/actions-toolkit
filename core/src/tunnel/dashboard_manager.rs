@@ -84,6 +84,31 @@ impl DashboardTunnelManager {
         dashboard_tunnel_queries::update(&state.db, &current.provider, false, current.local_port, current.last_url.as_deref()).await?;
         Ok(())
     }
+
+    /// Buffers one request for the periodic flush (see `run_periodic_flush`), rather than issuing
+    /// a write per request, so a request flood can't turn into a write storm on top of the
+    /// traffic itself. Flushes immediately, using `pool`, once the buffer crosses
+    /// `AUDIT_FLUSH_BATCH_SIZE` rather than waiting for the next periodic tick.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn record_request(
+        &self,
+        pool: &sqlx::SqlitePool,
+        ip_address: Option<String>,
+        user_id: Option<String>,
+        method: String,
+        path: String,
+        status_code: u16,
+        rate_limited: bool,
+    ) {
+        let should_flush_now = {
+            let mut buf = self.audit_buffer.lock().await;
+            buf.push(NewRequest { user_id, ip_address, method, path, status_code: status_code as i64, rate_limited });
+            buf.len() >= AUDIT_FLUSH_BATCH_SIZE
+        };
+        if should_flush_now {
+            self.flush(pool).await;
+        }
+    }
 }
 
 impl Default for DashboardTunnelManager {
