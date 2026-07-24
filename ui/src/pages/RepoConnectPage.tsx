@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, ChevronDown, ChevronUp, ExternalLink, LayoutGrid, Lock, Search } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, ExternalLink, LayoutGrid, Lock, RefreshCw, Search } from "lucide-react";
 import { useCreateRepo, useRepos } from "../hooks/useRepos";
-import { useAccessibleRepos, useGithubTokenStatus } from "../hooks/useGithubAccount";
+import { useAccessibleRepos, useGithubTokenStatus, useRefreshInstallations } from "../hooks/useGithubAccount";
 import GithubConnectButton from "../components/settings/GithubConnectButton";
 import GithubMark from "../components/common/GithubMark";
 import Avatar from "../components/common/Avatar";
