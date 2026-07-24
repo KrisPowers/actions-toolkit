@@ -19,3 +19,12 @@ pub struct StartDashboardTunnelRequest {
 pub async fn status(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<TunnelState>> {
     Ok(Json(state.dashboard_tunnel.status().await))
 }
+
+pub async fn start(
+    State(state): State<AppState>,
+    _user: ApprovedUser,
+    Json(req): Json<StartDashboardTunnelRequest>,
+) -> AppResult<Json<TunnelState>> {
+    state.dashboard_tunnel.start(&state, req.provider).await.map_err(AppError::Internal)?;
+    Ok(Json(state.dashboard_tunnel.status().await))
+}
