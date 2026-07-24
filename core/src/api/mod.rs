@@ -155,14 +155,7 @@ pub fn dashboard_routes() -> Router<AppState> {
         .route("/agents/{id}/shells/{shell_id}/started", post(agents::shell_started));
 
     Router::new()
-        .route("/health", get(|| async { "ok" }))
         .nest("/api", api_routes)
-        .route("/webhooks/github/{repo_id}", post(webhooks::receive))
         .fallback(static_files::spa_fallback)
         .route("/", get(static_files::spa_root))
-        .layer(TraceLayer::new_for_http())
-        // Permissive CORS: this server is meant to be reached only from the local network by
-        // the operator's own frontend build; tighten this if ever exposed beyond that.
-        .layer(CorsLayer::permissive())
-        .with_state(state)
 }
