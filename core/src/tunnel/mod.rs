@@ -68,3 +68,12 @@ impl Default for TunnelProcess {
         Self::new()
     }
 }
+
+/// Starts (or restarts) the given provider's tunnel process pointed at `port`, using
+/// `process` to track its state. A no-op if that process is already starting or running.
+pub async fn start(process: std::sync::Arc<TunnelProcess>, provider: TunnelProvider, port: u16) {
+    match provider {
+        TunnelProvider::Cloudflare => cloudflare::start(process, port).await,
+        TunnelProvider::Tailscale => tailscale::start(process, port).await,
+    }
+}
