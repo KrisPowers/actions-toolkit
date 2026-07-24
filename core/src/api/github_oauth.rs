@@ -166,6 +166,11 @@ async fn persist_connection(state: &AppState, exchanged: oauth::ExchangedToken) 
     // org), not just the first one, so repos from more than one org are visible to the
     // connect-repo picker (see `api::github_account::accessible_repos`).
     let installations = discovery::list_installations(&github_client, GITHUB_APP_SLUG).await.map_err(AppError::Internal)?;
+    let rows: Vec<_> = installations
+        .iter()
+        .map(|i| (i.id, i.account_login.clone(), i.account_type.clone(), Some(GITHUB_APP_SLUG.to_string())))
+        .collect();
+    crate::db::queries::github_installations::upsert_all(&state.db, &rows).await?;
     let installation_id = installations.first().map(|i| i.id);
 
     let (token_encrypted, token_nonce) = state.enc.encrypt_str(&exchanged.access_token).map_err(AppError::Internal)?;
