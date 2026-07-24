@@ -176,6 +176,15 @@ export default function RepoConnectPage() {
             Not seeing a repo? Manage which repos the App can access on GitHub
             <ExternalLink className="h-3 w-3" strokeWidth={2} />
           </a>
+          <a
+            href="https://github.com/apps/actionstoolkit/installations/new"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+          >
+            Install on another organization
+            <ExternalLink className="h-3 w-3" strokeWidth={2} />
+          </a>
         </div>
       )}
 
