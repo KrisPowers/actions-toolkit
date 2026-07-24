@@ -17,16 +17,16 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useDeleteWorkflow, useDispatchWorkflow, useWorkflows } from "../hooks/useWorkflows";
+import { useDeleteWorkflow, useDispatchWorkflow, useGithubWorkflows, useWorkflows } from "../hooks/useWorkflows";
 import { useRepo } from "../hooks/useRepos";
 import { useLiveRunActivity, useRuns } from "../hooks/useRuns";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import AddWorkflowModal from "../components/workflows/AddWorkflowModal";
-import GithubWorkflowsSection from "../components/workflows/GithubWorkflowsSection";
+import GithubWorkflowRows from "../components/workflows/GithubWorkflowRows";
 import Button, { buttonClass } from "../components/common/Button";
 import PageHeader from "../components/common/PageHeader";
 import StatusBadge from "../components/common/StatusBadge";
-import { cardClass, listCardClass } from "../components/common/Card";
+import { listCardClass } from "../components/common/Card";
 import EmptyState from "../components/common/EmptyState";
 import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
 import type { WorkflowRow, WorkflowRun } from "../api/types";
@@ -128,6 +128,7 @@ export default function OverviewPage() {
   const { repoId } = useParams();
   const { data: repo } = useRepo(repoId);
   const { data: workflows } = useWorkflows(repoId);
+  const { data: githubFiles, isLoading: githubLoading } = useGithubWorkflows(repoId);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const { data: allRuns, isLoading: runsLoading } = useRuns(repoId, 100);
   useLiveRunActivity(repoId);
@@ -162,18 +163,18 @@ export default function OverviewPage() {
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-[280px_1fr]">
         <section className="min-w-0">
           <h2 className="mb-2 text-sm font-semibold text-neutral-200">Workflows</h2>
-          <div className={cardClass("overflow-hidden")}>
+          <div className="divide-y divide-neutral-800">
             <button
               type="button"
               onClick={() => setSelectedWorkflowId(null)}
-              className={`w-full border-b border-neutral-800 px-4 py-2.5 text-left text-sm ${
+              className={`w-full px-4 py-2.5 text-left text-sm ${
                 selectedWorkflowId === null ? "bg-accent/10 font-medium text-neutral-100" : "text-neutral-400 hover:text-neutral-200"
               }`}
             >
               All workflows
             </button>
-            {(workflows ?? []).map((w, i) => (
-              <div key={w.id} className={`group ${i < (workflows?.length ?? 0) - 1 ? "border-b border-neutral-800" : ""}`}>
+            {(workflows ?? []).map((w) => (
+              <div key={w.id} className="group">
                 <WorkflowCatalogRow
                   workflow={w}
                   selected={selectedWorkflowId === w.id}
@@ -183,7 +184,10 @@ export default function OverviewPage() {
                 />
               </div>
             ))}
-            {(workflows ?? []).length === 0 && <EmptyState icon={Workflow} message="No workflows yet." />}
+            {repoId && <GithubWorkflowRows repoId={repoId} files={githubFiles} isLoading={githubLoading} />}
+            {(workflows ?? []).length === 0 && !githubLoading && (githubFiles ?? []).length === 0 && (
+              <EmptyState icon={Workflow} message="No workflows yet." />
+            )}
           </div>
         </section>
 
@@ -210,8 +214,6 @@ export default function OverviewPage() {
           </div>
         </section>
       </div>
-
-      {repoId && <GithubWorkflowsSection repoId={repoId} />}
 
       <ConfirmDialog
         open={!!pendingDelete}
