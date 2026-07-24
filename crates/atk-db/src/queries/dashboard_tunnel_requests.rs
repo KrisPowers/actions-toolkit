@@ -40,3 +40,11 @@ pub async fn record_batch(pool: &SqlitePool, entries: &[NewRequest]) -> sqlx::Re
     tx.commit().await?;
     Ok(())
 }
+
+pub async fn list_recent(pool: &SqlitePool, limit: i64, offset: i64) -> sqlx::Result<Vec<DashboardTunnelRequest>> {
+    sqlx::query_as::<_, DashboardTunnelRequest>("SELECT * FROM dashboard_tunnel_requests ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+}
