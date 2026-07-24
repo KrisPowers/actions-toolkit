@@ -1,4 +1,5 @@
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import Button from "../common/Button";
 import type { TunnelState } from "../../api/types";
 
 /**
@@ -37,5 +38,21 @@ export default function TunnelControl({
     );
   }
 
-  return null;
+  return (
+    <div className="mt-3">
+      <Button variant="primary" size="sm" onClick={onStart} disabled={starting || status?.status === "starting" || installed === undefined}>
+        {status?.status === "starting" && <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />}
+        {status?.status === "starting" ? "Starting…" : "Start tunnel"}
+      </Button>
+      {status?.status === "starting" && (
+        <p className="mt-2 text-xs text-neutral-500">Waiting to report a tunnel URL, usually a few seconds…</p>
+      )}
+      {status?.status === "failed" && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-[var(--color-status-error)]">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+          {status.message}
+        </p>
+      )}
+    </div>
+  );
 }
