@@ -1,18 +1,15 @@
 import { useState } from "react";
 import type { ComponentType } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Cloud, Globe, Loader2, Network, Router, RotateCw, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Cloud, Globe, Network, Router, RotateCw, X } from "lucide-react";
 import { useRepo, useSyncRepo } from "../hooks/useRepos";
 import {
-  useCloudflareTunnelStatus,
   useNetworkInfo,
+  useRepoTunnelStatus,
   useSettings,
-  useStartCloudflareTunnel,
-  useStartTailscaleTunnel,
-  useTailscaleTunnelStatus,
+  useStartRepoTunnel,
   useTunnelAvailability,
 } from "../hooks/useSettings";
-import type { CloudflareTunnelState, TailscaleTunnelState } from "../api/types";
 import Button from "../components/common/Button";
 import Card from "../components/common/Card";
 import InfoTooltip from "../components/common/InfoTooltip";
@@ -20,6 +17,7 @@ import Modal from "../components/common/Modal";
 import PageHeader from "../components/common/PageHeader";
 import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
 import WebhookUrlField from "../components/webhooks/WebhookUrlField";
+import TunnelControl from "../components/webhooks/TunnelControl";
 
 type Method = "cloudflare" | "tailscale" | "tunnel" | "manual";
 
