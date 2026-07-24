@@ -43,9 +43,12 @@ export default function RepoConnectPage() {
   );
 
   const orgs = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const r of connectable) counts.set(r.owner, (counts.get(r.owner) ?? 0) + 1);
-    const list = Array.from(counts.entries()).map(([owner, count]) => ({ owner, count }));
+    const counts = new Map<string, { count: number; accountType: string | null | undefined }>();
+    for (const r of connectable) {
+      const existing = counts.get(r.owner);
+      counts.set(r.owner, { count: (existing?.count ?? 0) + 1, accountType: r.account_type ?? existing?.accountType });
+    }
+    const list = Array.from(counts.entries()).map(([owner, { count, accountType }]) => ({ owner, count, accountType }));
     const myLogin = tokenStatus?.github_login;
     list.sort((a, b) => {
       if (a.owner === myLogin) return -1;
