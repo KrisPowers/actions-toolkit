@@ -77,3 +77,10 @@ pub async fn start(process: std::sync::Arc<TunnelProcess>, provider: TunnelProvi
         TunnelProvider::Tailscale => tailscale::start(process, port).await,
     }
 }
+
+pub async fn stop(process: &TunnelProcess) {
+    if let Some(mut child) = process.child.lock().await.take() {
+        let _ = child.kill().await;
+    }
+    *process.state.write().await = TunnelState::Idle;
+}
