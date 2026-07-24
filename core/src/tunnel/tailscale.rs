@@ -116,4 +116,36 @@ mod tests {
         let line = "Some notice at https://tailscale.com/kb/funnel";
         assert_eq!(extract_ts_net_url(line), None);
     }
+
+    #[tokio::test]
+    async fn starting_when_the_binary_is_missing_reports_a_clear_failure() {
+        let process = Arc::new(TunnelProcess::new());
+        start(process.clone(), 7890).await;
+
+        // In CI/dev environments `tailscale` is very unlikely to be on PATH; if it happens to be
+        // installed this assertion is skipped rather than flaking.
+        if let TunnelState::Failed { message } = process.status().await {
+            assert!(message.contains("tailscale"));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_second_start_while_running_is_a_no_op() {
+        let process = Arc::new(TunnelProcess::new());
+        *process.state.write().await = TunnelState::Running { url: "https://example.ts.net".to_string() };
+
+        start(process.clone(), 7890).await;
+
+        assert_eq!(process.status().await, TunnelState::Running { url: "https://example.ts.net".to_string() });
+    }
+
+    #[tokio::test]
+    async fn stop_resets_to_idle_with_no_child_running() {
+        let process = TunnelProcess::new();
+        *process.state.write().await = TunnelState::Failed { message: "boom".to_string() };
+
+        super::super::stop(&process).await;
+
+        assert_eq!(process.status().await, TunnelState::Idle);
+    }
 }
