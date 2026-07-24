@@ -134,6 +134,8 @@ pub async fn list_accessible_repos_for_installation(client: &Octocrab, installat
                 full_name: full_name.clone(),
                 private: repo.private.unwrap_or(false),
                 default_branch: repo.default_branch.unwrap_or_else(|| "main".to_string()),
+                account_login: None,
+                account_type: None,
             });
         }
 
