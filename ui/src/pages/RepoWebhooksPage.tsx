@@ -146,6 +146,10 @@ export default function RepoWebhooksPage() {
           <div className="text-sm font-medium text-neutral-200">Point GitHub at this instance</div>
           <InfoTooltip text="GitHub needs a real public URL to call back into this instance. Pick whichever matches how you're exposing it. Nothing is applied until you confirm inside." />
         </div>
+        <p className="mb-3 text-xs text-neutral-600">
+          The Cloudflare Tunnel and Tailscale Funnel options below are independent per repo: starting or stopping this repo's
+          tunnel never affects any other connected repo's tunnel.
+        </p>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {METHODS.map(({ id, label, icon: Icon, blurb, requiresBinary }) => {
