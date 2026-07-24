@@ -456,6 +456,20 @@ pub struct GithubInstallation {
     pub connected_at: String,
 }
 
+/// One request that arrived over the dashboard tunnel (Decision 3's heavier auditing). Never
+/// recorded for LAN/local traffic -- only the hardened tunnel-facing listener writes these.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct DashboardTunnelRequest {
+    pub id: String,
+    pub user_id: Option<String>,
+    pub ip_address: Option<String>,
+    pub method: String,
+    pub path: String,
+    pub status_code: i64,
+    pub rate_limited: i64,
+    pub created_at: String,
+}
+
 pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
 }
