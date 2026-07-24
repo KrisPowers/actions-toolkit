@@ -5,6 +5,7 @@ mod auth;
 mod config;
 mod error;
 mod github;
+mod net;
 mod runner;
 mod telemetry;
 mod tailscale;
@@ -196,7 +197,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
     let listener = bind_with_fallback(&bind_addr, port).await?;
     let actual_port = listener.local_addr()?.port();
     tracing::info!(port = actual_port, "actions-toolkit listening");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await?;
 
     Ok(())
 }

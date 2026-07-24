@@ -17,6 +17,8 @@ pub enum AppError {
     BadRequest(String),
     #[error("conflict: {0}")]
     Conflict(String),
+    #[error("rate limited: {0}")]
+    RateLimited(String),
     /// The stored GitHub connection can't authenticate a call right now (a `pat` row past the
     /// legacy migration cutoff, or a `github_app` row whose refresh attempt failed) and needs
     /// the user to reconnect through Settings. Distinct from a bare `Unauthorized` so the
@@ -42,6 +44,7 @@ impl IntoResponse for AppError {
             AppError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::Conflict(_) => (StatusCode::CONFLICT, self.to_string()),
+            AppError::RateLimited(_) => (StatusCode::TOO_MANY_REQUESTS, self.to_string()),
             AppError::NeedsReconnect(_) => unreachable!("handled above"),
             AppError::Database(e) => {
                 tracing::error!(error = %e, "database error");
