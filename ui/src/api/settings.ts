@@ -24,3 +24,11 @@ export const settingsApi = {
   stopDashboardTunnel: () => api.delete<TunnelState>("/settings/dashboard-tunnel"),
   dashboardTunnelRequests: () => api.get<DashboardTunnelRequest[]>("/settings/dashboard-tunnel/requests"),
 };
+
+// Every repo's webhook tunnel is independent (its own process, its own listener); this is never
+// shared with another repo's tunnel or with the dashboard tunnel above.
+export const repoTunnelApi = {
+  status: (repoId: string) => api.get<TunnelState>(`/repos/${repoId}/webhook-tunnel`),
+  start: (repoId: string, provider: TunnelProvider) => api.post<TunnelState>(`/repos/${repoId}/webhook-tunnel`, { provider }),
+  stop: (repoId: string) => api.delete<TunnelState>(`/repos/${repoId}/webhook-tunnel`),
+};
