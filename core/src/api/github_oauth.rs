@@ -162,6 +162,7 @@ pub async fn device_poll(State(state): State<AppState>, ApprovedUser(_user): App
 async fn persist_connection(state: &AppState, exchanged: oauth::ExchangedToken) -> AppResult<DevicePollResponse> {
     let github_client = client::for_token(&exchanged.access_token).map_err(AppError::Internal)?;
     let login = discovery::validate_token(&github_client).await.map_err(AppError::Internal)?;
+
     // Every installation of the App the connected account administers (personal account or any
     // org), not just the first one, so repos from more than one org are visible to the
     // connect-repo picker (see `api::github_account::accessible_repos`).
