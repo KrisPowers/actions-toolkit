@@ -32,12 +32,12 @@ export default function GlobalHeader({ user }: { user: User }) {
         align="right"
         trigger={({ toggle, open }) => (
           <button type="button" onClick={toggle} aria-expanded={open} aria-label="User menu" className="flex items-center gap-1.5 rounded-md p-1 hover:bg-white/10">
-            <Avatar login={user.username} size={24} />
+            <Avatar login={user.github_login} src={user.avatar_url} size={24} />
           </button>
         )}
       >
         <div className="px-2.5 py-1.5 text-xs text-neutral-500">
-          Signed in as <span className="font-semibold text-neutral-200">{user.username}</span>
+          Signed in as <span className="font-semibold text-neutral-200">@{user.github_login}</span>
         </div>
         <div className="my-1 h-px bg-neutral-800" />
         <Link to="/settings" className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100">

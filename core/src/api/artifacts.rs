@@ -1,4 +1,4 @@
-use axum::body::Body;
+﻿use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
@@ -6,7 +6,7 @@ use axum::Json;
 use tokio_util::io::ReaderStream;
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::db::models::Artifact;
 use crate::db::queries::artifacts::{self as artifact_queries, ArtifactWithContext};
 use crate::error::{AppError, AppResult};
@@ -14,7 +14,7 @@ use crate::error::{AppError, AppResult};
 pub async fn list_for_run(
     State(state): State<AppState>,
     Path(run_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Vec<Artifact>>> {
     Ok(Json(artifact_queries::list_for_run(&state.db, &run_id).await?))
 }
@@ -22,7 +22,7 @@ pub async fn list_for_run(
 pub async fn list_for_repo(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Vec<ArtifactWithContext>>> {
     Ok(Json(artifact_queries::list_for_repo(&state.db, &repo_id, 200).await?))
 }
@@ -30,7 +30,7 @@ pub async fn list_for_repo(
 pub async fn download(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Response> {
     let artifact = artifact_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     let path = std::path::PathBuf::from(&artifact.path_on_disk);

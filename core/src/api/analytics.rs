@@ -1,9 +1,9 @@
-use axum::extract::{Path, Query, State};
+﻿use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::error::AppResult;
 
 #[derive(Serialize)]
@@ -19,7 +19,7 @@ pub struct AnalyticsSummary {
 pub async fn summary(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<AnalyticsSummary>> {
     let row: (i64, i64, i64, i64) = sqlx::query_as(
         "SELECT \
@@ -70,7 +70,7 @@ pub async fn duration_trend(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
     Query(q): Query<TrendQuery>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Vec<DurationTrendPoint>>> {
     let days = q.days.unwrap_or(30);
     let points = sqlx::query_as::<_, DurationTrendPoint>(
@@ -99,7 +99,7 @@ pub struct StatusCount {
 pub async fn status_breakdown(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Vec<StatusCount>>> {
     let rows = sqlx::query_as::<_, StatusCount>(
         "SELECT status, COUNT(*) as count FROM workflow_runs WHERE repo_id = ? GROUP BY status",

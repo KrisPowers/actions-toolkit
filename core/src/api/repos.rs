@@ -1,10 +1,10 @@
-use axum::extract::{Path, State};
+﻿use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::db::models::{Repo, RepoPublic, WebhookEvent};
 use crate::db::queries::{repos as repo_queries, webhook_events as event_queries};
 use crate::error::{AppError, AppResult};
@@ -24,7 +24,7 @@ fn to_public(repo: &Repo) -> RepoPublic {
     }
 }
 
-pub async fn list(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<Vec<RepoPublic>>> {
+pub async fn list(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<Vec<RepoPublic>>> {
     let repos = repo_queries::list(&state.db).await?;
     Ok(Json(repos.iter().map(to_public).collect()))
 }
@@ -32,7 +32,7 @@ pub async fn list(State(state): State<AppState>, _user: CurrentUser) -> AppResul
 pub async fn get(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<RepoPublic>> {
     let repo = repo_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     Ok(Json(to_public(&repo)))
@@ -53,7 +53,7 @@ pub struct CreateRepoResponse {
 
 pub async fn create(
     State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
+    ApprovedUser(user): ApprovedUser,
     headers: HeaderMap,
     Json(req): Json<CreateRepoRequest>,
 ) -> AppResult<Json<CreateRepoResponse>> {
@@ -103,7 +103,7 @@ pub async fn create(
 pub async fn delete(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<()> {
     let repo = repo_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
 
@@ -136,7 +136,7 @@ pub struct TestConnectionResponse {
 pub async fn webhook_events(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Vec<WebhookEvent>>> {
     Ok(Json(event_queries::list_for_repo(&state.db, &id, 100).await?))
 }
@@ -144,7 +144,7 @@ pub async fn webhook_events(
 pub async fn test_connection(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<TestConnectionResponse>> {
     let repo = repo_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     let client = crate::github::client::shared(&state).await?;
@@ -171,7 +171,7 @@ pub struct SyncResponse {
 /// Manual trigger for the polling fallback (`runner::poll_sync`), lets an operator sync
 /// immediately instead of waiting for the periodic sweep, e.g. right after publishing a release
 /// on a repo without a working webhook.
-pub async fn sync(State(state): State<AppState>, Path(id): Path<String>, _user: CurrentUser) -> AppResult<Json<SyncResponse>> {
+pub async fn sync(State(state): State<AppState>, Path(id): Path<String>, _user: ApprovedUser) -> AppResult<Json<SyncResponse>> {
     let repo = repo_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     let dispatched = crate::runner::poll_sync::sync_repo_releases(&state, &repo).await.map_err(AppError::Internal)?;
     Ok(Json(SyncResponse { dispatched }))
@@ -186,7 +186,7 @@ pub async fn recreate_webhook(
     State(state): State<AppState>,
     Path(id): Path<String>,
     headers: HeaderMap,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<RepoPublic>> {
     let repo = repo_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     let settings = crate::db::queries::settings::get(&state.db).await?;
@@ -259,7 +259,7 @@ mod tests {
             github_oauth_token_url: crate::github::oauth::GITHUB_TOKEN_URL.to_string(),
             github_device_code_url: crate::github::oauth::GITHUB_DEVICE_CODE_URL.to_string(),
         };
-        let user = user_queries::create(&db, "tester", "hash", "admin").await.unwrap();
+        let user = user_queries::upsert_from_github(&db, 1, "tester", None, None, "admin", "approved").await.unwrap();
 
         let state = AppState(Arc::new(AppStateInner {
             db,
@@ -275,6 +275,11 @@ mod tests {
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
             device_flow_result: RwLock::new(None),
+            login_flows: RwLock::new(std::collections::HashMap::new()),
+            login_rate_limiter: atk_auth::rate_limit::RateLimiter::new(
+                crate::auth::login_flow::LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+                crate::auth::login_flow::LOGIN_RATE_LIMIT_WINDOW,
+            ),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
             tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
@@ -310,7 +315,7 @@ mod tests {
             .await;
 
         let (state, user) = test_state(&mock_server).await;
-        let result = create(State(state.clone()), CurrentUser(user), test_headers(), Json(connect_request())).await;
+        let result = create(State(state.clone()), ApprovedUser(user), test_headers(), Json(connect_request())).await;
         assert!(result.is_err());
         assert!(repo_queries::list(&state.db).await.unwrap().is_empty());
     }
@@ -325,7 +330,7 @@ mod tests {
             .await;
 
         let (state, user) = test_state(&mock_server).await;
-        let response = create(State(state.clone()), CurrentUser(user), test_headers(), Json(connect_request())).await.unwrap();
+        let response = create(State(state.clone()), ApprovedUser(user), test_headers(), Json(connect_request())).await.unwrap();
 
         let repo = repo_queries::find_by_id(&state.db, &response.0.repo.id).await.unwrap().unwrap();
         assert_eq!(repo.github_hook_id, Some(555));
@@ -357,7 +362,7 @@ mod tests {
         .await
         .unwrap();
 
-        let response = create(State(state.clone()), CurrentUser(user), test_headers(), Json(connect_request())).await.unwrap();
+        let response = create(State(state.clone()), ApprovedUser(user), test_headers(), Json(connect_request())).await.unwrap();
 
         let requests = mock_server.received_requests().await.unwrap();
         let create_body: serde_json::Value = requests
@@ -386,10 +391,10 @@ mod tests {
             .await;
 
         let (state, user) = test_state(&mock_server).await;
-        let response = create(State(state.clone()), CurrentUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
+        let response = create(State(state.clone()), ApprovedUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
         let repo_id = response.0.repo.id.clone();
 
-        delete(State(state.clone()), Path(repo_id.clone()), CurrentUser(user)).await.unwrap();
+        delete(State(state.clone()), Path(repo_id.clone()), ApprovedUser(user)).await.unwrap();
 
         assert!(repo_queries::find_by_id(&state.db, &repo_id).await.unwrap().is_none());
         let requests = mock_server.received_requests().await.unwrap();
@@ -429,7 +434,7 @@ mod tests {
             .await;
 
         let (state, user) = test_state(&mock_server).await;
-        let response = create(State(state.clone()), CurrentUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
+        let response = create(State(state.clone()), ApprovedUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
         let repo_id = response.0.repo.id.clone();
 
         let workflow = crate::db::queries::workflows::create(&state.db, &repo_id, "CI", None, ".github/workflows/ci.yml", "on: push\njobs: {}", "{}")
@@ -446,7 +451,7 @@ mod tests {
         // deletion; this is what proves the fix doesn't over-cascade.
         let other = create(
             State(state.clone()),
-            CurrentUser(user.clone()),
+            ApprovedUser(user.clone()),
             test_headers(),
             Json(CreateRepoRequest { owner: "octocat".to_string(), name: "other-repo".to_string(), default_branch: None }),
         )
@@ -460,7 +465,7 @@ mod tests {
         let other_job_run = crate::db::queries::runs::create_job_run(&state.db, &other_run.id, "build", None, "[]").await.unwrap();
         crate::db::queries::runs::create_step_run(&state.db, &other_job_run.id, 0, Some("checkout"), "run").await.unwrap();
 
-        delete(State(state.clone()), Path(repo_id.clone()), CurrentUser(user)).await.unwrap();
+        delete(State(state.clone()), Path(repo_id.clone()), ApprovedUser(user)).await.unwrap();
 
         assert!(repo_queries::find_by_id(&state.db, &repo_id).await.unwrap().is_none());
         assert!(crate::db::queries::runs::find_job_run(&state.db, &other_job_run.id).await.unwrap().is_some(), "unrelated job_run must survive");
@@ -490,7 +495,7 @@ mod tests {
             .await;
 
         let (state, user) = test_state(&mock_server).await;
-        let response = create(State(state.clone()), CurrentUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
+        let response = create(State(state.clone()), ApprovedUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
         let repo_id = response.0.repo.id.clone();
 
         crate::db::queries::settings::update(
@@ -504,7 +509,7 @@ mod tests {
         .unwrap();
 
         let recreated =
-            recreate_webhook(State(state.clone()), Path(repo_id.clone()), test_headers(), CurrentUser(user)).await.unwrap();
+            recreate_webhook(State(state.clone()), Path(repo_id.clone()), test_headers(), ApprovedUser(user)).await.unwrap();
 
         assert!(recreated.0.webhook_connected);
         let repo = repo_queries::find_by_id(&state.db, &repo_id).await.unwrap().unwrap();
@@ -549,10 +554,10 @@ mod tests {
             .await;
 
         let (state, user) = test_state(&mock_server).await;
-        let response = create(State(state.clone()), CurrentUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
+        let response = create(State(state.clone()), ApprovedUser(user.clone()), test_headers(), Json(connect_request())).await.unwrap();
         let repo_id = response.0.repo.id.clone();
 
-        let result = recreate_webhook(State(state.clone()), Path(repo_id), test_headers(), CurrentUser(user)).await;
+        let result = recreate_webhook(State(state.clone()), Path(repo_id), test_headers(), ApprovedUser(user)).await;
         let message = result.unwrap_err().to_string();
         assert!(message.contains("insufficient permission"), "message did not surface the GitHub error: {message}");
     }

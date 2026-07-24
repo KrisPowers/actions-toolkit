@@ -5,12 +5,15 @@ use sqlx::FromRow;
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct User {
     pub id: String,
-    pub username: String,
-    #[serde(skip_serializing)]
-    pub password_hash: String,
+    pub github_id: i64,
+    pub github_login: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
     pub role: String,
+    pub status: String,
     pub created_at: String,
     pub updated_at: String,
+    pub last_login_at: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]
@@ -20,6 +23,29 @@ pub struct Session {
     pub created_at: String,
     pub expires_at: String,
     pub revoked: i64,
+}
+
+/// A single login attempt, successful or not, recorded regardless of whether the GitHub
+/// login matched an approved (or even existing) user -- this is the "who tried to get in"
+/// audit trail the admin reviews on the Login Attempts settings page.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct LoginEvent {
+    pub id: String,
+    pub user_id: Option<String>,
+    pub github_login: Option<String>,
+    pub github_id: Option<i64>,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    pub outcome: String,
+    pub created_at: String,
+}
+
+/// A GitHub login pre-approved by an admin before that person has ever signed in.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct WhitelistEntry {
+    pub github_login: String,
+    pub added_by: Option<String>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, FromRow)]

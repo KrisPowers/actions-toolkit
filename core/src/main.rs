@@ -5,6 +5,7 @@ mod auth;
 mod config;
 mod error;
 mod github;
+mod net;
 mod runner;
 mod telemetry;
 mod tailscale;
@@ -177,6 +178,11 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         github_client: RwLock::new(None),
         pending_device_flow: RwLock::new(None),
         device_flow_result: RwLock::new(None),
+        login_flows: RwLock::new(std::collections::HashMap::new()),
+        login_rate_limiter: atk_auth::rate_limit::RateLimiter::new(
+            auth::login_flow::LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+            auth::login_flow::LOGIN_RATE_LIMIT_WINDOW,
+        ),
         token_refresh_lock: tokio::sync::Mutex::new(()),
         cloudflare_tunnel: Arc::new(tunnel::CloudflareTunnel::new()),
         tailscale_tunnel: Arc::new(tailscale::TailscaleTunnel::new()),
@@ -191,7 +197,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
     let listener = bind_with_fallback(&bind_addr, port).await?;
     let actual_port = listener.local_addr()?.port();
     tracing::info!(port = actual_port, "actions-toolkit listening");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await?;
 
     Ok(())
 }

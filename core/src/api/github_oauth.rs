@@ -1,9 +1,9 @@
-use axum::extract::State;
+﻿use axum::extract::State;
 use axum::Json;
 use serde::Serialize;
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::config::GITHUB_APP_SLUG;
 use crate::db::queries::github_token as token_queries;
 use crate::error::{AppError, AppResult};
@@ -17,7 +17,7 @@ pub struct DeviceStartResponse {
     pub expires_in: i64,
 }
 
-/// Starts a device-flow connect attempt. Gated behind `CurrentUser` so only a logged-in operator
+/// Starts a device-flow connect attempt. Gated behind `ApprovedUser` so only a logged-in operator
 /// can kick off a connect that would replace the instance-wide GitHub connection.
 ///
 /// Also spawns `run_device_flow_poller`, which polls GitHub for this attempt on the server, not
@@ -25,7 +25,7 @@ pub struct DeviceStartResponse {
 /// frontend polled, closing the browser tab the instant GitHub says "you're done" would silently
 /// lose the connection: GitHub really did approve it, but nothing would ever ask GitHub for the
 /// resulting token, so the device code just expires unused and the operator sees no connection.
-pub async fn device_start(State(state): State<AppState>, CurrentUser(_user): CurrentUser) -> AppResult<Json<DeviceStartResponse>> {
+pub async fn device_start(State(state): State<AppState>, ApprovedUser(_user): ApprovedUser) -> AppResult<Json<DeviceStartResponse>> {
     let started =
         oauth::start_device_flow(&state.config.github_device_code_url, &state.config.github_app_client_id).await.map_err(AppError::Internal)?;
 
@@ -143,7 +143,7 @@ pub enum DevicePollResponse {
 /// server-side in `run_device_flow_poller` (spawned by `device_start`), so this just reads
 /// whatever that background task has (or hasn't yet) recorded. That split is what lets the
 /// attempt still complete when GitHub reports success even if no browser tab is open to see it.
-pub async fn device_poll(State(state): State<AppState>, CurrentUser(_user): CurrentUser) -> AppResult<Json<DevicePollResponse>> {
+pub async fn device_poll(State(state): State<AppState>, ApprovedUser(_user): ApprovedUser) -> AppResult<Json<DevicePollResponse>> {
     if let Some(result) = state.device_flow_result.read().await.clone() {
         return match result {
             oauth::DeviceFlowResult::Denied => Ok(Json(DevicePollResponse::Denied)),
@@ -203,7 +203,7 @@ mod tests {
             github_oauth_token_url: mock_server.uri(),
             github_device_code_url: oauth::GITHUB_DEVICE_CODE_URL.to_string(),
         };
-        let user = user_queries::create(&db, "tester", "hash", "admin").await.unwrap();
+        let user = user_queries::upsert_from_github(&db, 1, "tester", None, None, "admin", "approved").await.unwrap();
 
         let state = AppState(Arc::new(AppStateInner {
             db,
@@ -219,6 +219,11 @@ mod tests {
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
             device_flow_result: RwLock::new(None),
+            login_flows: RwLock::new(std::collections::HashMap::new()),
+            login_rate_limiter: atk_auth::rate_limit::RateLimiter::new(
+                crate::auth::login_flow::LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+                crate::auth::login_flow::LOGIN_RATE_LIMIT_WINDOW,
+            ),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
             tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
@@ -247,7 +252,7 @@ mod tests {
         let (state, user) = test_state(&mock_server).await;
         *state.pending_device_flow.write().await = Some(pending(chrono::Duration::minutes(5)));
 
-        let Json(resp) = device_poll(State(state.clone()), CurrentUser(user)).await.unwrap();
+        let Json(resp) = device_poll(State(state.clone()), ApprovedUser(user)).await.unwrap();
         assert!(matches!(resp, DevicePollResponse::Pending));
     }
 
@@ -258,7 +263,7 @@ mod tests {
         let mock_server = MockServer::start().await;
         let (state, user) = test_state(&mock_server).await;
 
-        let Json(resp) = device_poll(State(state.clone()), CurrentUser(user)).await.unwrap();
+        let Json(resp) = device_poll(State(state.clone()), ApprovedUser(user)).await.unwrap();
         assert!(matches!(resp, DevicePollResponse::NotStarted));
     }
 
@@ -288,7 +293,7 @@ mod tests {
 
         assert!(state.pending_device_flow.read().await.is_none(), "the attempt ends once GitHub reports a terminal outcome");
         assert!(token_queries::get(&state.db).await.unwrap().is_none());
-        let Json(resp) = device_poll(State(state.clone()), CurrentUser(user)).await.unwrap();
+        let Json(resp) = device_poll(State(state.clone()), ApprovedUser(user)).await.unwrap();
         assert!(matches!(resp, DevicePollResponse::Denied), "device_poll must surface the terminal outcome the poller recorded");
     }
 
@@ -310,7 +315,7 @@ mod tests {
 
         assert!(state.pending_device_flow.read().await.is_none(), "a denied attempt must be cleared, not left for a stale poll to resurrect");
         assert!(token_queries::get(&state.db).await.unwrap().is_none());
-        let Json(resp) = device_poll(State(state.clone()), CurrentUser(user)).await.unwrap();
+        let Json(resp) = device_poll(State(state.clone()), ApprovedUser(user)).await.unwrap();
         assert!(matches!(resp, DevicePollResponse::Denied));
     }
 
@@ -332,7 +337,7 @@ mod tests {
 
         assert!(state.pending_device_flow.read().await.is_none());
         assert!(token_queries::get(&state.db).await.unwrap().is_none());
-        let Json(resp) = device_poll(State(state.clone()), CurrentUser(user)).await.unwrap();
+        let Json(resp) = device_poll(State(state.clone()), ApprovedUser(user)).await.unwrap();
         assert!(matches!(resp, DevicePollResponse::Expired));
     }
 
@@ -350,7 +355,7 @@ mod tests {
         run_device_flow_poller(state.clone(), "test-device-code".to_string(), 0).await;
 
         assert!(state.pending_device_flow.read().await.is_none());
-        let Json(resp) = device_poll(State(state.clone()), CurrentUser(user)).await.unwrap();
+        let Json(resp) = device_poll(State(state.clone()), ApprovedUser(user)).await.unwrap();
         assert!(matches!(resp, DevicePollResponse::Expired));
     }
 

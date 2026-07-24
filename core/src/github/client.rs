@@ -182,6 +182,11 @@ mod tests {
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
             device_flow_result: RwLock::new(None),
+            login_flows: RwLock::new(std::collections::HashMap::new()),
+            login_rate_limiter: atk_auth::rate_limit::RateLimiter::new(
+                crate::auth::login_flow::LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+                crate::auth::login_flow::LOGIN_RATE_LIMIT_WINDOW,
+            ),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
             tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),

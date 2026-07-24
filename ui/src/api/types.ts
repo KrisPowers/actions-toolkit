@@ -1,7 +1,44 @@
 export interface User {
   id: string;
-  username: string;
+  github_login: string;
+  display_name: string | null;
+  avatar_url: string | null;
   role: string;
+  status: string;
+}
+
+export interface LoginStartResponse {
+  attempt_id: string;
+  user_code: string;
+  verification_uri: string;
+  interval: number;
+  expires_in: number;
+}
+
+export type LoginPollResponse =
+  | { status: "pending" }
+  | { status: "denied" }
+  | { status: "expired" }
+  | { status: "not_started" }
+  | { status: "approved"; user: User }
+  | { status: "pending_approval"; user: User }
+  | { status: "restricted"; user: User };
+
+export interface WhitelistEntry {
+  github_login: string;
+  added_by: string | null;
+  created_at: string;
+}
+
+export interface LoginEvent {
+  id: string;
+  user_id: string | null;
+  github_login: string | null;
+  github_id: number | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  outcome: string;
+  created_at: string;
 }
 
 export interface RepoPublic {

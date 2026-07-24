@@ -1,8 +1,8 @@
-use axum::extract::State;
+﻿use axum::extract::State;
 use axum::Json;
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::db::models::{GithubToken, GithubTokenStatus};
 use crate::db::queries::github_token as token_queries;
 use crate::error::{AppError, AppResult};
@@ -35,12 +35,12 @@ fn to_status(row: Option<GithubToken>) -> GithubTokenStatus {
     }
 }
 
-pub async fn status(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<GithubTokenStatus>> {
+pub async fn status(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<GithubTokenStatus>> {
     let row = token_queries::get(&state.db).await?;
     Ok(Json(to_status(row)))
 }
 
-pub async fn delete_token(State(state): State<AppState>, _user: CurrentUser) -> AppResult<()> {
+pub async fn delete_token(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<()> {
     token_queries::delete(&state.db).await?;
     client::invalidate(&state).await;
     Ok(())
@@ -48,7 +48,7 @@ pub async fn delete_token(State(state): State<AppState>, _user: CurrentUser) -> 
 
 pub async fn accessible_repos(
     State(state): State<AppState>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Vec<discovery::AccessibleRepo>>> {
     let client = client::shared(&state).await?;
 

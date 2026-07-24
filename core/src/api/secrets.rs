@@ -1,9 +1,9 @@
-use axum::extract::{Path, State};
+﻿use axum::extract::{Path, State};
 use axum::Json;
 use serde::Deserialize;
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::db::models::Secret;
 use crate::db::queries::secrets as secret_queries;
 use crate::error::{AppError, AppResult};
@@ -20,7 +20,7 @@ fn validate_name(name: &str) -> AppResult<()> {
     Ok(())
 }
 
-pub async fn list_for_repo(State(state): State<AppState>, Path(repo_id): Path<String>, _user: CurrentUser) -> AppResult<Json<Vec<Secret>>> {
+pub async fn list_for_repo(State(state): State<AppState>, Path(repo_id): Path<String>, _user: ApprovedUser) -> AppResult<Json<Vec<Secret>>> {
     Ok(Json(secret_queries::list_for_repo(&state.db, &repo_id).await?))
 }
 
@@ -33,7 +33,7 @@ pub struct CreateSecretRequest {
 pub async fn create(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    CurrentUser(user): CurrentUser,
+    ApprovedUser(user): ApprovedUser,
     Json(req): Json<CreateSecretRequest>,
 ) -> AppResult<Json<Secret>> {
     validate_name(&req.name)?;
@@ -46,7 +46,7 @@ pub async fn create(
     Ok(Json(secret))
 }
 
-pub async fn delete(State(state): State<AppState>, Path((_repo_id, id)): Path<(String, String)>, _user: CurrentUser) -> AppResult<()> {
+pub async fn delete(State(state): State<AppState>, Path((_repo_id, id)): Path<(String, String)>, _user: ApprovedUser) -> AppResult<()> {
     secret_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     secret_queries::delete(&state.db, &id).await?;
     Ok(())
@@ -96,7 +96,7 @@ mod tests {
             github_oauth_token_url: crate::github::oauth::GITHUB_TOKEN_URL.to_string(),
             github_device_code_url: crate::github::oauth::GITHUB_DEVICE_CODE_URL.to_string(),
         };
-        let user = user_queries::create(&db, "tester", "hash", "admin").await.unwrap();
+        let user = user_queries::upsert_from_github(&db, 1, "tester", None, None, "admin", "approved").await.unwrap();
         let repo = repo_queries::create(&db, "octocat", "hello-world", "main", b"secret", b"nonce", &user.id).await.unwrap();
 
         let state = AppState(Arc::new(AppStateInner {
@@ -113,6 +113,11 @@ mod tests {
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
             device_flow_result: RwLock::new(None),
+            login_flows: RwLock::new(std::collections::HashMap::new()),
+            login_rate_limiter: atk_auth::rate_limit::RateLimiter::new(
+                crate::auth::login_flow::LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+                crate::auth::login_flow::LOGIN_RATE_LIMIT_WINDOW,
+            ),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
             tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
@@ -130,7 +135,7 @@ mod tests {
         let Json(secret) = create(
             State(state.clone()),
             Path(repo.id.clone()),
-            CurrentUser(user),
+            ApprovedUser(user),
             Json(CreateSecretRequest { name: "NPM_TOKEN".to_string(), value: "npm_supersecretvalue123".to_string() }),
         )
         .await
@@ -153,13 +158,13 @@ mod tests {
         let _ = create(
             State(state.clone()),
             Path(repo.id.clone()),
-            CurrentUser(user.clone()),
+            ApprovedUser(user.clone()),
             Json(CreateSecretRequest { name: "API_KEY".to_string(), value: "sk-supersecretvalue456".to_string() }),
         )
         .await
         .unwrap();
 
-        let Json(list) = list_for_repo(State(state.clone()), Path(repo.id.clone()), CurrentUser(user)).await.unwrap();
+        let Json(list) = list_for_repo(State(state.clone()), Path(repo.id.clone()), ApprovedUser(user)).await.unwrap();
 
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "API_KEY");
@@ -176,7 +181,7 @@ mod tests {
         let _ = create(
             State(state.clone()),
             Path(repo.id.clone()),
-            CurrentUser(user.clone()),
+            ApprovedUser(user.clone()),
             Json(CreateSecretRequest { name: "TOKEN".to_string(), value: "old-value".to_string() }),
         )
         .await
@@ -184,7 +189,7 @@ mod tests {
         let _ = create(
             State(state.clone()),
             Path(repo.id.clone()),
-            CurrentUser(user),
+            ApprovedUser(user),
             Json(CreateSecretRequest { name: "TOKEN".to_string(), value: "new-value".to_string() }),
         )
         .await
@@ -202,7 +207,7 @@ mod tests {
         let result = create(
             State(state),
             Path(repo.id),
-            CurrentUser(user),
+            ApprovedUser(user),
             Json(CreateSecretRequest { name: "not-valid".to_string(), value: "x".to_string() }),
         )
         .await;
