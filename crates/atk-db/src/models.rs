@@ -444,6 +444,18 @@ pub struct DashboardTunnel {
     pub updated_at: String,
 }
 
+/// One GitHub App installation (personal account or org) this instance's account-wide connection
+/// currently has, so repos can be sourced from any of them (Decision 2). A discovery cache,
+/// refreshed wholesale on reconnect or an explicit refresh, not a credential itself.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct GithubInstallation {
+    pub id: i64,
+    pub account_login: String,
+    pub account_type: String,
+    pub app_slug: Option<String>,
+    pub connected_at: String,
+}
+
 pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
 }
