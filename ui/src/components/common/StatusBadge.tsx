@@ -17,9 +17,14 @@ const STATUS: Record<string, { color: string; icon: LucideIcon; spin?: boolean }
   skipped: { color: "var(--color-status-muted)", icon: CircleSlash },
 };
 
-export default function StatusBadge({ status, label }: { status: string; label?: string }) {
+export default function StatusBadge({ status, label, iconOnly }: { status: string; label?: string; iconOnly?: boolean }) {
   const entry = STATUS[status] ?? { color: "var(--color-status-muted)", icon: CircleDashed };
   const Icon = entry.icon;
+
+  if (iconOnly) {
+    return <Icon className={entry.spin ? "h-4 w-4 shrink-0 animate-spin" : "h-4 w-4 shrink-0"} style={{ color: entry.color }} strokeWidth={2} />;
+  }
+
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium${label ? "" : " capitalize"}`}

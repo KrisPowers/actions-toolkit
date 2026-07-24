@@ -15,7 +15,7 @@ export interface RunDetailContext {
 }
 
 export default function RunDetailLayout() {
-  const { runId } = useParams();
+  const { repoId, runId } = useParams();
   const { data: tree } = useRun(runId);
   const cancel = useCancelRun();
   const rerun = useRerun();
@@ -56,7 +56,7 @@ export default function RunDetailLayout() {
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 md:grid-cols-[200px_1fr]">
-        <RunDetailSidebar runId={tree.run.id} />
+        <RunDetailSidebar repoId={repoId as string} runId={tree.run.id} />
         <div className="flex min-h-0 min-w-0 flex-col">
           <Outlet context={{ tree, runActive } satisfies RunDetailContext} />
         </div>

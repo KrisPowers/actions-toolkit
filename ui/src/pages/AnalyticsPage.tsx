@@ -46,7 +46,7 @@ export default function AnalyticsPage() {
         </div>
         <div className={listCardClass("mt-2")}>
           {(recentRuns ?? []).map((run) => (
-            <Link key={run.id} to={`/runs/${run.id}`} className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-800/50">
+            <Link key={run.id} to={`/repos/${repoId}/runs/${run.id}`} className="flex items-center justify-between px-4 py-2.5 hover:bg-neutral-800/50">
               <span className="text-sm text-neutral-300">
                 {run.trigger_event}
                 {run.ref_name ? ` · ${run.ref_name}` : ""}
