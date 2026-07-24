@@ -45,7 +45,17 @@ pub(crate) fn webhook_base_url(headers: &axum::http::HeaderMap, settings: &crate
     }
 }
 
-pub fn router(state: AppState) -> Router {
+/// Builds the `/api` + SPA route table shared between the plain LAN-facing listener (`router`)
+/// and the hardened dashboard-tunnel listener (`tunnel::dashboard_manager`). Identical routes
+/// either way -- the dashboard-tunnel variant just layers the extra rate-limit/audit-log guard on
+/// top (see `tunnel::dashboard_guard::guard`). The webhook receiver is deliberately NOT part of
+/// this route table at all: it's mounted only on `router` (for the generic/manual-tunnel path)
+/// and per-repo on each repo's own listener (`tunnel::repo_listener`), so the dashboard tunnel can
+/// never reach a webhook endpoint and no webhook tunnel can ever reach `/api` or the SPA.
+/// Returns a `Router<AppState>` still open on its state, deliberately not calling `with_state`
+/// itself, so a caller can layer on more routes/middleware first and bind the concrete state
+/// exactly once, at the very end of whichever variant it's building.
+pub fn dashboard_routes() -> Router<AppState> {
     let api_routes = Router::new()
         .route("/auth/status", get(auth_handlers::status))
         .route("/auth/logout", post(auth_handlers::logout))
