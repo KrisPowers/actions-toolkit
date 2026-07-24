@@ -209,6 +209,18 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             });
         }
     }
+    if let Ok(dashboard_tunnel) = db::queries::dashboard_tunnel::get(&state.db).await {
+        if dashboard_tunnel.enabled != 0 {
+            if let Some(provider) = tunnel::TunnelProvider::parse(&dashboard_tunnel.provider) {
+                let state = state.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = state.dashboard_tunnel.start(&state, provider).await {
+                        tracing::warn!(error = %e, "failed to auto-start dashboard tunnel on boot");
+                    }
+                });
+            }
+        }
+    }
 
     let app = api::router(state);
 
