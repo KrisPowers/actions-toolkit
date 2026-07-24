@@ -159,3 +159,17 @@ pub fn dashboard_routes() -> Router<AppState> {
         .fallback(static_files::spa_fallback)
         .route("/", get(static_files::spa_root))
 }
+
+/// The main LAN-facing listener: `dashboard_routes` plus the generic, still-`{repo_id}`-templated
+/// public webhook receiver (kept for manual port-forward / pasted "other tunnel" repos, which
+/// never get a per-repo tunnel listener of their own) and the health check.
+pub fn router(state: AppState) -> Router {
+    dashboard_routes()
+        .route("/health", get(|| async { "ok" }))
+        .route("/webhooks/github/{repo_id}", post(webhooks::receive))
+        .layer(TraceLayer::new_for_http())
+        // Permissive CORS: this server is meant to be reached only from the local network by
+        // the operator's own frontend build; tighten this if ever exposed beyond that.
+        .layer(CorsLayer::permissive())
+        .with_state(state)
+}
