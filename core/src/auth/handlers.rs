@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::app::AppState;
 use crate::auth::login_flow::{LoginFlowResult, LoginFlowState};
-use crate::auth::middleware::{ApprovedUser, CurrentUser, SESSION_COOKIE};
+use crate::auth::middleware::{AdminUser, ApprovedUser, CurrentUser, SESSION_COOKIE};
 use crate::db::models::User;
 use crate::db::queries::{github_token as token_queries, login_events as login_event_queries, users as user_queries, whitelist as whitelist_queries};
 use crate::error::{AppError, AppResult};
@@ -291,4 +291,97 @@ pub async fn login_poll(State(state): State<AppState>, jar: CookieJar, Json(req)
             Ok((jar, Json(response)))
         }
     }
+}
+
+const VALID_STATUSES: [&str; 3] = ["approved", "restricted", "pending"];
+const VALID_ROLES: [&str; 2] = ["admin", "member"];
+
+#[derive(Deserialize)]
+pub struct SetStatusRequest {
+    pub status: String,
+}
+
+/// Approves, restricts, or resets a user's access. Admin only: this is the gate between
+/// "authenticated via GitHub" and "can see app data" (see `ApprovedUser`).
+pub async fn set_user_status(
+    State(state): State<AppState>,
+    AdminUser(_actor): AdminUser,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(req): Json<SetStatusRequest>,
+) -> AppResult<()> {
+    if !VALID_STATUSES.contains(&req.status.as_str()) {
+        return Err(AppError::BadRequest(format!("status must be one of {}", VALID_STATUSES.join(", "))));
+    }
+    user_queries::set_status(&state.db, &id, &req.status).await?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct SetRoleRequest {
+    pub role: String,
+}
+
+pub async fn set_user_role(
+    State(state): State<AppState>,
+    AdminUser(actor): AdminUser,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(req): Json<SetRoleRequest>,
+) -> AppResult<()> {
+    if !VALID_ROLES.contains(&req.role.as_str()) {
+        return Err(AppError::BadRequest(format!("role must be one of {}", VALID_ROLES.join(", "))));
+    }
+    if actor.id == id && req.role != "admin" {
+        return Err(AppError::BadRequest("cannot demote your own account".into()));
+    }
+    user_queries::set_role(&state.db, &id, &req.role).await?;
+    Ok(())
+}
+
+pub async fn delete_user(State(state): State<AppState>, AdminUser(actor): AdminUser, axum::extract::Path(id): axum::extract::Path<String>) -> AppResult<()> {
+    if actor.id == id {
+        return Err(AppError::BadRequest("cannot delete your own account".into()));
+    }
+    user_queries::delete(&state.db, &id).await?;
+    Ok(())
+}
+
+pub async fn list_whitelist(State(state): State<AppState>, _admin: AdminUser) -> AppResult<Json<Vec<crate::db::models::WhitelistEntry>>> {
+    Ok(Json(whitelist_queries::list(&state.db).await?))
+}
+
+#[derive(Deserialize)]
+pub struct AddWhitelistRequest {
+    pub github_login: String,
+}
+
+/// Pre-approves a GitHub login before that person has ever signed in; see
+/// `whitelist_queries::add`'s doc comment for why this is a separate table from `users`.
+pub async fn add_whitelist(State(state): State<AppState>, AdminUser(actor): AdminUser, Json(req): Json<AddWhitelistRequest>) -> AppResult<()> {
+    let login = req.github_login.trim();
+    if login.is_empty() {
+        return Err(AppError::BadRequest("github_login is required".into()));
+    }
+    whitelist_queries::add(&state.db, login, Some(&actor.id)).await?;
+    Ok(())
+}
+
+pub async fn remove_whitelist(State(state): State<AppState>, _admin: AdminUser, axum::extract::Path(login): axum::extract::Path<String>) -> AppResult<()> {
+    whitelist_queries::remove(&state.db, &login).await?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct ListLoginEventsQuery {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+pub async fn list_login_events(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    axum::extract::Query(q): axum::extract::Query<ListLoginEventsQuery>,
+) -> AppResult<Json<Vec<crate::db::models::LoginEvent>>> {
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    let offset = q.offset.unwrap_or(0).max(0);
+    Ok(Json(login_event_queries::list(&state.db, limit, offset).await?))
 }
