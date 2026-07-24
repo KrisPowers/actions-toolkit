@@ -6,6 +6,8 @@ pub mod repo_manager;
 pub mod tailscale;
 
 use serde::Serialize;
+use tokio::process::Child;
+use tokio::sync::{Mutex, RwLock};
 
 /// One tunnel provider's process state, shared by every tunnel this instance ever runs, whether
 /// it's a specific repo's webhook tunnel or the instance's own dashboard tunnel: each is its own
@@ -40,5 +42,29 @@ impl TunnelProvider {
             "tailscale" => Some(TunnelProvider::Tailscale),
             _ => None,
         }
+    }
+}
+
+/// A single tunnel process (either `cloudflared` or `tailscale funnel`), tracked independently of
+/// any other tunnel. Whether this backs a specific repo's webhook tunnel or the instance's
+/// dashboard tunnel, its lifecycle (start/stop/state) never affects any other `TunnelProcess`.
+pub struct TunnelProcess {
+    state: RwLock<TunnelState>,
+    child: Mutex<Option<Child>>,
+}
+
+impl TunnelProcess {
+    pub fn new() -> Self {
+        Self { state: RwLock::new(TunnelState::Idle), child: Mutex::new(None) }
+    }
+
+    pub async fn status(&self) -> TunnelState {
+        self.state.read().await.clone()
+    }
+}
+
+impl Default for TunnelProcess {
+    fn default() -> Self {
+        Self::new()
     }
 }
