@@ -166,15 +166,17 @@ export default function RepoConnectPage() {
         subtitle={`Connected as @${tokenStatus.github_login}. Pick from repos the actions-toolkit GitHub App can access.`}
       />
       {tokenStatus.token_type === "github_app" && (
-        <a
-          href="https://github.com/settings/installations"
-          target="_blank"
-          rel="noreferrer"
-          className="mt-1.5 inline-flex items-center gap-1 text-xs text-accent hover:underline"
-        >
-          Not seeing a repo? Manage which repos the App can access on GitHub
-          <ExternalLink className="h-3 w-3" strokeWidth={2} />
-        </a>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <a
+            href="https://github.com/settings/installations"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+          >
+            Not seeing a repo? Manage which repos the App can access on GitHub
+            <ExternalLink className="h-3 w-3" strokeWidth={2} />
+          </a>
+        </div>
       )}
 
       <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1">
