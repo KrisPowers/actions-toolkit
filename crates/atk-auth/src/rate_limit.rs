@@ -32,6 +32,14 @@ impl RateLimiter {
     pub fn check(&self, key: &str) -> bool {
         let mut state = self.state.lock().unwrap();
         let now = Instant::now();
+
+        if !state.contains_key(key) && state.len() >= self.max_tracked_keys {
+            // Correctness only needs "eventually forgets stale keys under sustained pressure,"
+            // not perfect fairness -- an outright clear is enough to keep memory bounded without
+            // the cost of tracking per-entry last-seen recency.
+            state.clear();
+        }
+
         let entry = state.entry(key.to_string()).or_insert((0, now));
         if now.duration_since(entry.1) > self.window {
             *entry = (0, now);
