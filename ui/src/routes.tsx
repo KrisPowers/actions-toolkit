@@ -51,7 +51,7 @@ export default function AppRoutes() {
         <Route path="/repos/:repoId/workflows" element={<Navigate to="../overview" replace />} />
         <Route path="/repos/:repoId/workflows/:workflowId" element={<WorkflowEditorPage />} />
         <Route path="/repos/:repoId/runs" element={<Navigate to="../overview" replace />} />
-        <Route path="/runs/:runId" element={<RunDetailLayout />}>
+        <Route path="/repos/:repoId/runs/:runId" element={<RunDetailLayout />}>
           <Route index element={<Navigate to="logs" replace />} />
           <Route path="logs" element={<RunLogsPanel />} />
           <Route path="artifacts" element={<RunArtifactsPanel />} />
