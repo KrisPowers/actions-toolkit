@@ -10,13 +10,13 @@ const SECTIONS: { path: string; icon: LucideIcon; label: string }[] = [
   { path: "backend", icon: Boxes, label: "Backend" },
 ];
 
-export default function RunDetailSidebar({ runId }: { runId: string }) {
+export default function RunDetailSidebar({ repoId, runId }: { repoId: string; runId: string }) {
   return (
     <nav className="flex flex-col gap-0.5">
       {SECTIONS.map(({ path, icon: Icon, label }) => (
         <NavLink
           key={path}
-          to={`/runs/${runId}/${path}`}
+          to={`/repos/${repoId}/runs/${runId}/${path}`}
           className={({ isActive }) =>
             cn(
               "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
