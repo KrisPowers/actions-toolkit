@@ -85,6 +85,8 @@ pub fn dashboard_routes() -> Router<AppState> {
             get(dashboard_tunnel::status).post(dashboard_tunnel::start).delete(dashboard_tunnel::stop),
         )
         .route("/settings/dashboard-tunnel/requests", get(dashboard_tunnel::list_requests))
+        .route("/github/installations", get(github_account::list_installations))
+        .route("/github/installations/refresh", post(github_account::refresh_installations))
         .route("/repos", get(repos::list).post(repos::create))
         .route("/repos/{id}", get(repos::get).delete(repos::delete))
         .route("/repos/{id}/test-connection", post(repos::test_connection))
