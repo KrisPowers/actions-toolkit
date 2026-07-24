@@ -259,7 +259,7 @@ mod tests {
             github_oauth_token_url: crate::github::oauth::GITHUB_TOKEN_URL.to_string(),
             github_device_code_url: crate::github::oauth::GITHUB_DEVICE_CODE_URL.to_string(),
         };
-        let user = user_queries::create(&db, "tester", "hash", "admin").await.unwrap();
+        let user = user_queries::upsert_from_github(&db, 1, "tester", None, None, "admin", "approved").await.unwrap();
 
         let state = AppState(Arc::new(AppStateInner {
             db,
@@ -275,6 +275,11 @@ mod tests {
             github_client: RwLock::new(None),
             pending_device_flow: RwLock::new(None),
             device_flow_result: RwLock::new(None),
+            login_flows: RwLock::new(std::collections::HashMap::new()),
+            login_rate_limiter: atk_auth::rate_limit::RateLimiter::new(
+                crate::auth::login_flow::LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+                crate::auth::login_flow::LOGIN_RATE_LIMIT_WINDOW,
+            ),
             token_refresh_lock: tokio::sync::Mutex::new(()),
             cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
             tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
