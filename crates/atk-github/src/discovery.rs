@@ -90,14 +90,22 @@ struct InstallationRepositories {
 }
 
 #[derive(Debug, Deserialize)]
-struct Installation {
+struct InstallationAccount {
+    login: String,
+    #[serde(rename = "type")]
+    account_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawInstallation {
     id: i64,
     app_slug: Option<String>,
+    account: Option<InstallationAccount>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ListInstallationsResponse {
-    installations: Vec<Installation>,
+    installations: Vec<RawInstallation>,
 }
 
 /// Finds the installation of `app_slug` (the actions-toolkit App) among the ones the connected
