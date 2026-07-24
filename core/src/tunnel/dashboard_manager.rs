@@ -67,6 +67,15 @@ impl DashboardTunnelManager {
         dashboard_tunnel_queries::update(&state.db, provider.as_str(), true, Some(local_port as i64), None).await?;
         Ok(())
     }
+
+    /// Stops the tunnel process but leaves the loopback listener bound, so a subsequent `start`
+    /// can reuse the same local port instead of allocating a new one.
+    pub async fn stop(&self, state: &AppState) -> anyhow::Result<()> {
+        super::stop(&self.process).await;
+        let current = dashboard_tunnel_queries::get(&state.db).await?;
+        dashboard_tunnel_queries::update(&state.db, &current.provider, false, current.local_port, current.last_url.as_deref()).await?;
+        Ok(())
+    }
 }
 
 impl Default for DashboardTunnelManager {
