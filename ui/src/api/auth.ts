@@ -1,5 +1,5 @@
 import { api } from "./client";
-import type { User } from "./types";
+import type { LoginEvent, LoginPollResponse, LoginStartResponse, User, WhitelistEntry } from "./types";
 
 export interface AuthStatus {
   needs_setup: boolean;
@@ -9,12 +9,16 @@ export interface AuthStatus {
 
 export const authApi = {
   status: () => api.get<AuthStatus>("/auth/status"),
-  setup: (username: string, password: string) => api.post<User>("/auth/setup", { username, password }),
-  login: (username: string, password: string) => api.post<User>("/auth/login", { username, password }),
+  loginStart: () => api.post<LoginStartResponse>("/auth/github/login/start"),
+  loginPoll: (attemptId: string) => api.post<LoginPollResponse>("/auth/github/login/poll", { attempt_id: attemptId }),
   logout: () => api.post<void>("/auth/logout"),
   me: () => api.get<User>("/auth/me"),
   listUsers: () => api.get<User[]>("/users"),
-  createUser: (username: string, password: string, role?: string) =>
-    api.post<User>("/users", { username, password, role }),
   deleteUser: (id: string) => api.delete<void>(`/users/${id}`),
+  setUserStatus: (id: string, status: string) => api.patch<void>(`/users/${id}/status`, { status }),
+  setUserRole: (id: string, role: string) => api.patch<void>(`/users/${id}/role`, { role }),
+  listWhitelist: () => api.get<WhitelistEntry[]>("/whitelist"),
+  addWhitelist: (githubLogin: string) => api.post<void>("/whitelist", { github_login: githubLogin }),
+  removeWhitelist: (githubLogin: string) => api.delete<void>(`/whitelist/${encodeURIComponent(githubLogin)}`),
+  listLoginEvents: (limit = 50, offset = 0) => api.get<LoginEvent[]>(`/login-events?limit=${limit}&offset=${offset}`),
 };
