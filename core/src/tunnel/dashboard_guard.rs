@@ -35,3 +35,8 @@ pub async fn guard(State(state): State<AppState>, ConnectInfo(addr): ConnectInfo
     state.dashboard_tunnel.record_request(&state.db, Some(ip), user_id, method, path, response.status().as_u16(), false).await;
     response
 }
+
+async fn reject(state: &AppState, ip: Option<String>, user_id: Option<String>, method: String, path: String, status: StatusCode) -> Response {
+    state.dashboard_tunnel.record_request(&state.db, ip, user_id, method, path, status.as_u16(), true).await;
+    (status, "rate limit exceeded").into_response()
+}
