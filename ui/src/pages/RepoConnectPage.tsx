@@ -17,6 +17,7 @@ export default function RepoConnectPage() {
   const { data: tokenStatus } = useGithubTokenStatus();
   const { data: connectedRepos } = useRepos();
   const { data: accessibleRepos, isLoading } = useAccessibleRepos(!!tokenStatus?.connected);
+  const refreshInstallations = useRefreshInstallations();
   const create = useCreateRepo();
   const navigate = useNavigate();
 
