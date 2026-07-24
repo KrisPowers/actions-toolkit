@@ -417,6 +417,21 @@ pub struct ResourceSample {
     pub host_memory_percent: Option<f64>,
 }
 
+/// A repo's own one-click webhook tunnel config (Decision 1: independent per repo, never shared
+/// with another repo's tunnel). Absent entirely for a repo that has never used the one-click
+/// Cloudflare/Tailscale flow (manual port-forward or a pasted "other tunnel" URL never creates a
+/// row here). `local_port`/`last_url` are best-effort caches of the last known state, not a
+/// source of truth -- the live child process/listener are what actually matter at runtime.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct RepoTunnel {
+    pub repo_id: String,
+    pub provider: String,
+    pub enabled: i64,
+    pub local_port: Option<i64>,
+    pub last_url: Option<String>,
+    pub updated_at: String,
+}
+
 pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
 }
