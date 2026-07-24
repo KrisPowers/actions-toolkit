@@ -1,5 +1,10 @@
 import { AlertTriangle, Cloud, Network, Wifi } from "lucide-react";
-import { useDashboardTunnelStatus, useStartDashboardTunnel, useTunnelAvailability } from "../../hooks/useSettings";
+import {
+  useDashboardTunnelRequests,
+  useDashboardTunnelStatus,
+  useStartDashboardTunnel,
+  useTunnelAvailability,
+} from "../../hooks/useSettings";
 import Card from "../../components/common/Card";
 import InfoTooltip from "../../components/common/InfoTooltip";
 import TunnelControl from "../../components/webhooks/TunnelControl";
@@ -15,6 +20,7 @@ export default function DashboardTunnelSettingsPage() {
   const { data: status } = useDashboardTunnelStatus();
   const { data: tunnelAvailability } = useTunnelAvailability();
   const startTunnel = useStartDashboardTunnel();
+  const { data: requests } = useDashboardTunnelRequests();
 
   const url = status?.status === "running" ? status.url : undefined;
 
@@ -73,6 +79,42 @@ export default function DashboardTunnelSettingsPage() {
               binaryLabel="tailscale"
             />
           </div>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <h3 className="text-sm font-semibold text-neutral-200">Recent tunnel requests</h3>
+        <p className="mt-1 text-xs text-neutral-500">Every request that arrived over this tunnel, including rate-limited ones.</p>
+
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-neutral-800 text-xs text-neutral-500">
+                <th className="py-2 pr-4 font-medium">IP address</th>
+                <th className="py-2 pr-4 font-medium">Method</th>
+                <th className="py-2 pr-4 font-medium">Path</th>
+                <th className="py-2 pr-4 font-medium">Status</th>
+                <th className="py-2 pr-4 font-medium">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(requests ?? []).map((r) => (
+                <tr key={r.id} className="border-b border-neutral-900">
+                  <td className="py-2 pr-4 text-neutral-400">{r.ip_address ?? "—"}</td>
+                  <td className="py-2 pr-4 text-neutral-400">{r.method}</td>
+                  <td className="max-w-xs truncate py-2 pr-4 text-neutral-400" title={r.path}>
+                    {r.path}
+                  </td>
+                  <td className={`py-2 pr-4 ${r.rate_limited ? "text-[var(--color-status-error)]" : "text-neutral-400"}`}>
+                    {r.rate_limited ? "rate limited" : r.status_code}
+                  </td>
+                  <td className="py-2 pr-4 whitespace-nowrap text-neutral-500">{new Date(r.created_at).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {(requests ?? []).length === 0 && <p className="py-4 text-sm text-neutral-500">No requests over this tunnel yet.</p>}
         </div>
       </Card>
     </div>
