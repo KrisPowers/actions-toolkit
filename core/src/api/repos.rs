@@ -123,6 +123,10 @@ pub async fn delete(
         }
     }
 
+    // Torn down before the row is deleted so a stopped/orphaned tunnel process or listener never
+    // outlives the repo it was serving.
+    state.repo_tunnels.teardown(&id).await;
+
     repo_queries::delete(&state.db, &id).await?;
     Ok(())
 }
