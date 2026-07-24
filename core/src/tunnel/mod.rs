@@ -84,3 +84,10 @@ pub async fn stop(process: &TunnelProcess) {
     }
     *process.state.write().await = TunnelState::Idle;
 }
+
+pub async fn is_installed(provider: TunnelProvider) -> bool {
+    match provider {
+        TunnelProvider::Cloudflare => cloudflare::is_installed().await,
+        TunnelProvider::Tailscale => tailscale::is_installed().await,
+    }
+}
