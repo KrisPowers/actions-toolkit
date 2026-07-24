@@ -285,8 +285,8 @@ mod tests {
                 crate::auth::login_flow::LOGIN_RATE_LIMIT_WINDOW,
             ),
             token_refresh_lock: tokio::sync::Mutex::new(()),
-            cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
-            tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
+            repo_tunnels: std::sync::Arc::new(crate::tunnel::repo_manager::RepoTunnelManager::new()),
+            dashboard_tunnel: std::sync::Arc::new(crate::tunnel::dashboard_manager::DashboardTunnelManager::new()),
         }));
 
         // Pre-seed the cached client pointed at the mock server, since client::shared() would
