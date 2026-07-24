@@ -25,6 +25,7 @@ const BucketDetailPage = lazy(() => import("./pages/BucketDetailPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const GeneralSettingsPage = lazy(() => import("./pages/settings/GeneralSettingsPage"));
 const AccessSettingsPage = lazy(() => import("./pages/settings/AccessSettingsPage"));
+const LoginAttemptsPage = lazy(() => import("./pages/settings/LoginAttemptsPage"));
 
 function RouteFallback() {
   return (
@@ -66,6 +67,7 @@ export default function AppRoutes() {
           <Route index element={<Navigate to="general" replace />} />
           <Route path="general" element={<GeneralSettingsPage />} />
           <Route path="access" element={<AccessSettingsPage />} />
+          <Route path="login-attempts" element={<LoginAttemptsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
