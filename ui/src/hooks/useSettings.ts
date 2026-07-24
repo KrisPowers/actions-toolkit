@@ -58,3 +58,14 @@ export function useStopRepoTunnel(repoId: string | undefined) {
     onSuccess: (data) => qc.setQueryData(["repo-tunnel", repoId], data),
   });
 }
+
+// The dashboard/API remote-access tunnel is a singleton, entirely separate from any repo's
+// webhook tunnel above.
+
+export function useDashboardTunnelStatus() {
+  return useQuery({
+    queryKey: ["settings", "dashboard-tunnel"],
+    queryFn: settingsApi.dashboardTunnelStatus,
+    refetchInterval: (query) => (query.state.data?.status === "starting" ? 1000 : false),
+  });
+}
