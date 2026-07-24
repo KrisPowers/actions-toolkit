@@ -432,6 +432,18 @@ pub struct RepoTunnel {
     pub updated_at: String,
 }
 
+/// Singleton row (id is always 1) for the instance's own dashboard/API remote-access tunnel
+/// (Decision 3). Never shares a process, port, or listener with any repo webhook tunnel.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct DashboardTunnel {
+    pub id: i64,
+    pub provider: String,
+    pub enabled: i64,
+    pub local_port: Option<i64>,
+    pub last_url: Option<String>,
+    pub updated_at: String,
+}
+
 pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
 }
