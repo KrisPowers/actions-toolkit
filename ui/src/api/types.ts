@@ -146,6 +146,9 @@ export interface AccessibleRepo {
   full_name: string;
   private: boolean;
   default_branch: string;
+  /** Which GitHub account (personal or org) this repo was listed under, when known. */
+  account_login?: string | null;
+  account_type?: "User" | "Organization" | null;
 }
 
 export interface WorkflowRow {
