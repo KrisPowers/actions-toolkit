@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { settingsApi } from "../api/settings";
-import type { UpdateSettingsRequest } from "../api/types";
+import { repoTunnelApi, settingsApi } from "../api/settings";
+import type { TunnelProvider, UpdateSettingsRequest } from "../api/types";
 
 export function useSettings() {
   return useQuery({ queryKey: ["settings"], queryFn: settingsApi.get });
@@ -28,4 +28,17 @@ export function useNetworkInfo() {
 // front instead of letting the operator pick it and only then find out.
 export function useTunnelAvailability() {
   return useQuery({ queryKey: ["settings", "tunnel-availability"], queryFn: settingsApi.tunnelAvailability });
+}
+
+// Each repo's webhook tunnel is tracked independently on the backend (its own process, its own
+// listener); these hooks are keyed by repoId so one repo's status/mutations never touch
+// another's cached data.
+
+export function useRepoTunnelStatus(repoId: string | undefined) {
+  return useQuery({
+    queryKey: ["repo-tunnel", repoId],
+    queryFn: () => repoTunnelApi.status(repoId!),
+    enabled: !!repoId,
+    refetchInterval: (query) => (query.state.data?.status === "starting" ? 1000 : false),
+  });
 }
