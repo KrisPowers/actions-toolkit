@@ -2,6 +2,7 @@ pub mod agent_join_tokens;
 pub mod agents;
 pub mod artifacts;
 pub mod buckets;
+pub mod dashboard_tunnel;
 pub mod shards;
 pub mod github_token;
 pub mod login_events;
