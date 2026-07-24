@@ -14,7 +14,7 @@ import TunnelControl from "../../components/webhooks/TunnelControl";
  * separate tunnel, listener, and process on the backend) from a repo's Webhooks page: this
  * tunnel is never shared with any repo's webhook tunnel, and it's reachable by any approved
  * account rather than just receiving signed GitHub payloads, so it carries its own much heavier
- * rate limiting and request auditing.
+ * rate limiting and request auditing (see the log below).
  */
 export default function DashboardTunnelSettingsPage() {
   const { data: status } = useDashboardTunnelStatus();
