@@ -185,6 +185,15 @@ export default function RepoConnectPage() {
             Install on another organization
             <ExternalLink className="h-3 w-3" strokeWidth={2} />
           </a>
+          <button
+            type="button"
+            onClick={() => refreshInstallations.mutate()}
+            disabled={refreshInstallations.isPending}
+            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-300 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${refreshInstallations.isPending ? "animate-spin" : ""}`} strokeWidth={2} />
+            {refreshInstallations.isPending ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
       )}
 
