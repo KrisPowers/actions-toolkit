@@ -22,6 +22,11 @@ const USER_MAX_REQUESTS_PER_MINUTE: u32 = 300;
 /// comment on why the login-only limiter's "never evict" assumption doesn't hold here).
 const MAX_TRACKED_KEYS: usize = 10_000;
 
+const AUDIT_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
+/// Above this many buffered entries, flush immediately rather than waiting for the next tick, so
+/// a burst can't grow the in-memory buffer unbounded between ticks.
+const AUDIT_FLUSH_BATCH_SIZE: usize = 200;
+
 /// The instance's own dashboard/API remote-access tunnel (Decision 3): a singleton, entirely
 /// separate from every repo's webhook tunnel (`tunnel::repo_manager::RepoTunnelManager`) -- its
 /// own `TunnelProcess`, its own loopback listener, its own hardened router, never sharing a
