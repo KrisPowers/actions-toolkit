@@ -78,6 +78,13 @@ pub async fn start(process: Arc<TunnelProcess>, port: u16) {
     });
 }
 
+/// Whether `tailscale` is on PATH, used to enable/disable the "Tailscale Funnel" option before the
+/// operator ever clicks it and only then discovers the binary is missing.
+pub async fn is_installed() -> bool {
+    let check = Command::new("tailscale").arg("version").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    matches!(tokio::time::timeout(std::time::Duration::from_secs(3), check).await, Ok(Ok(_)))
+}
+
 /// `tailscale funnel <port>` prints its assigned URL once the funnel is live, e.g.:
 /// `Available on the internet: https://host.tailnet-name.ts.net/`
 fn extract_ts_net_url(line: &str) -> Option<String> {
