@@ -75,6 +75,10 @@ pub async fn accessible_repos(
     Ok(Json(repos))
 }
 
+pub async fn list_installations(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<Vec<crate::db::models::GithubInstallation>>> {
+    Ok(Json(installations_queries::list(&state.db).await?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
