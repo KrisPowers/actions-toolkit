@@ -30,3 +30,8 @@ pub async fn start(
     state.repo_tunnels.start(&state, &repo_id, req.provider).await.map_err(AppError::Internal)?;
     Ok(Json(state.repo_tunnels.status(&repo_id).await))
 }
+
+pub async fn stop(State(state): State<AppState>, Path(repo_id): Path<String>, _user: ApprovedUser) -> AppResult<Json<TunnelState>> {
+    state.repo_tunnels.stop(&state, &repo_id).await.map_err(AppError::Internal)?;
+    Ok(Json(state.repo_tunnels.status(&repo_id).await))
+}
