@@ -42,3 +42,19 @@ export function useRepoTunnelStatus(repoId: string | undefined) {
     refetchInterval: (query) => (query.state.data?.status === "starting" ? 1000 : false),
   });
 }
+
+export function useStartRepoTunnel(repoId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: TunnelProvider) => repoTunnelApi.start(repoId!, provider),
+    onSuccess: (data) => qc.setQueryData(["repo-tunnel", repoId], data),
+  });
+}
+
+export function useStopRepoTunnel(repoId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => repoTunnelApi.stop(repoId!),
+    onSuccess: (data) => qc.setQueryData(["repo-tunnel", repoId], data),
+  });
+}
