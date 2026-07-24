@@ -8,6 +8,7 @@ pub mod shards;
 pub mod github_installations;
 pub mod github_token;
 pub mod login_events;
+pub mod repo_tunnels;
 pub mod repos;
 pub mod resource_cache;
 pub mod resource_samples;
