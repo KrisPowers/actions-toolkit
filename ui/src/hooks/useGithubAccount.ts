@@ -23,3 +23,7 @@ export function useAccessibleRepos(enabled: boolean) {
     enabled,
   });
 }
+
+export function useInstallations() {
+  return useQuery({ queryKey: ["github", "installations"], queryFn: githubAccountApi.listInstallations });
+}
