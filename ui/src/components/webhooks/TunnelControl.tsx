@@ -1,4 +1,4 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import type { TunnelState } from "../../api/types";
 
 /**
@@ -25,6 +25,15 @@ export default function TunnelControl({
         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-status-warning)]" strokeWidth={2} />
         {binaryLabel} isn't installed on this machine, so this instance can't start the tunnel for you. Install it, then reopen this dialog.
       </p>
+    );
+  }
+
+  if (status?.status === "running") {
+    return (
+      <div className="mt-3 flex items-center gap-1.5 text-xs text-[var(--color-status-success)]">
+        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+        Tunnel running
+      </div>
     );
   }
 
