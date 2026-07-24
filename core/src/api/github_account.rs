@@ -3,7 +3,8 @@ use axum::Json;
 
 use crate::app::AppState;
 use crate::auth::middleware::ApprovedUser;
-use crate::db::models::{GithubToken, GithubTokenStatus};
+use crate::config::GITHUB_APP_SLUG;
+use crate::db::models::{GithubInstallation, GithubToken, GithubTokenStatus};
 use crate::db::queries::{github_installations as installations_queries, github_token as token_queries};
 use crate::error::{AppError, AppResult};
 use crate::github::{client, discovery};
@@ -75,7 +76,22 @@ pub async fn accessible_repos(
     Ok(Json(repos))
 }
 
-pub async fn list_installations(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<Vec<crate::db::models::GithubInstallation>>> {
+pub async fn list_installations(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<Vec<GithubInstallation>>> {
+    Ok(Json(installations_queries::list(&state.db).await?))
+}
+
+/// Re-runs installation discovery against GitHub, picking up an installation on a newly-added
+/// org: unlike the initial connect flow, GitHub has no callback into this instance when the App
+/// is installed on another account afterward, so this is the explicit "I just did that, go
+/// notice it" action (the "Refresh" button next to "Install on another organization").
+pub async fn refresh_installations(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<Vec<GithubInstallation>>> {
+    let client = client::shared(&state).await?;
+    let installations = discovery::list_installations(&client, GITHUB_APP_SLUG).await.map_err(AppError::Internal)?;
+    let rows: Vec<_> = installations
+        .iter()
+        .map(|i| (i.id, i.account_login.clone(), i.account_type.clone(), Some(GITHUB_APP_SLUG.to_string())))
+        .collect();
+    installations_queries::upsert_all(&state.db, &rows).await?;
     Ok(Json(installations_queries::list(&state.db).await?))
 }
 
