@@ -29,3 +29,13 @@ pub async fn upsert(pool: &SqlitePool, repo_id: &str, provider: &str, enabled: b
     .await?;
     Ok(())
 }
+
+pub async fn set_enabled(pool: &SqlitePool, repo_id: &str, enabled: bool) -> sqlx::Result<()> {
+    sqlx::query("UPDATE repo_tunnels SET enabled = ?, updated_at = ? WHERE repo_id = ?")
+        .bind(enabled as i64)
+        .bind(now_iso())
+        .bind(repo_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
