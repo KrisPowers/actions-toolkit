@@ -28,3 +28,8 @@ pub async fn start(
     state.dashboard_tunnel.start(&state, req.provider).await.map_err(AppError::Internal)?;
     Ok(Json(state.dashboard_tunnel.status().await))
 }
+
+pub async fn stop(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<TunnelState>> {
+    state.dashboard_tunnel.stop(&state).await.map_err(AppError::Internal)?;
+    Ok(Json(state.dashboard_tunnel.status().await))
+}
