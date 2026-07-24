@@ -5,6 +5,7 @@ pub mod buckets;
 pub mod dashboard_tunnel;
 pub mod dashboard_tunnel_requests;
 pub mod shards;
+pub mod github_installations;
 pub mod github_token;
 pub mod login_events;
 pub mod repos;
