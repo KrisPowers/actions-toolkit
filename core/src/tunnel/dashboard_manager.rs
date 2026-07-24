@@ -2,8 +2,11 @@ use std::time::Duration;
 
 use tokio::sync::RwLock;
 
-use super::repo_listener::ListenerHandle;
-use super::{TunnelProcess, TunnelState};
+use crate::app::AppState;
+use crate::db::queries::dashboard_tunnel as dashboard_tunnel_queries;
+
+use super::repo_listener::{self, ListenerHandle};
+use super::{TunnelProcess, TunnelProvider, TunnelState};
 
 /// Requests over the limit within a 60s window per source IP, before any session even exists --
 /// a blunt backstop for pre-auth traffic (the login poll, `/auth/status`, etc).
@@ -41,6 +44,28 @@ impl DashboardTunnelManager {
 
     pub async fn status(&self) -> TunnelState {
         self.process.status().await
+    }
+
+    /// Ensures the hardened dashboard-tunnel listener exists (building it from
+    /// `api::dashboard_routes()` plus the `dashboard_guard` middleware layer, entirely separate
+    /// from the plain LAN router), then starts the tunnel process pointed at it. Persists the
+    /// choice so a restart of the whole instance can bring it back automatically.
+    pub async fn start(&self, state: &AppState, provider: TunnelProvider) -> anyhow::Result<()> {
+        let local_port = {
+            let mut listener = self.listener.write().await;
+            if listener.is_none() {
+                let router = crate::api::dashboard_routes()
+                    .layer(axum::middleware::from_fn_with_state(state.clone(), super::dashboard_guard::guard))
+                    .layer(tower_http::trace::TraceLayer::new_for_http())
+                    .with_state(state.clone());
+                *listener = Some(repo_listener::spawn_with_router(router).await?);
+            }
+            listener.as_ref().expect("just ensured above").local_port
+        };
+
+        super::start(self.process.clone(), provider, local_port).await;
+        dashboard_tunnel_queries::update(&state.db, provider.as_str(), true, Some(local_port as i64), None).await?;
+        Ok(())
     }
 }
 
