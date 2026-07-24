@@ -1,9 +1,10 @@
 use std::time::Duration;
 
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::app::AppState;
 use crate::db::queries::dashboard_tunnel as dashboard_tunnel_queries;
+use crate::db::queries::dashboard_tunnel_requests::NewRequest;
 
 use super::repo_listener::{self, ListenerHandle};
 use super::{TunnelProcess, TunnelProvider, TunnelState};
@@ -30,6 +31,7 @@ pub struct DashboardTunnelManager {
     listener: RwLock<Option<ListenerHandle>>,
     pub ip_limiter: atk_auth::rate_limit::RateLimiter,
     pub user_limiter: atk_auth::rate_limit::RateLimiter,
+    audit_buffer: Mutex<Vec<NewRequest>>,
 }
 
 impl DashboardTunnelManager {
@@ -39,6 +41,7 @@ impl DashboardTunnelManager {
             listener: RwLock::new(None),
             ip_limiter: atk_auth::rate_limit::RateLimiter::with_capacity_bound(IP_MAX_REQUESTS_PER_MINUTE, Duration::from_secs(60), MAX_TRACKED_KEYS),
             user_limiter: atk_auth::rate_limit::RateLimiter::with_capacity_bound(USER_MAX_REQUESTS_PER_MINUTE, Duration::from_secs(60), MAX_TRACKED_KEYS),
+            audit_buffer: Mutex::new(Vec::new()),
         }
     }
 
