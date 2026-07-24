@@ -7,8 +7,6 @@ use crate::auth::middleware::ApprovedUser;
 use crate::db::models::Settings;
 use crate::db::queries::settings::{self as settings_queries, SettingsPatch};
 use crate::error::AppResult;
-use crate::tailscale::TailscaleTunnelState;
-use crate::tunnel::CloudflareTunnelState;
 
 pub async fn get(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<Settings>> {
     Ok(Json(settings_queries::get(&state.db).await?))
@@ -122,55 +120,21 @@ pub async fn network_info(State(state): State<AppState>, _user: ApprovedUser) ->
     }))
 }
 
-/// Starts (or reports the status of) the instance-wide Cloudflare Quick Tunnel, so the operator
-/// never has to run `cloudflared` in a terminal themselves. Fire-and-poll: this returns
-/// immediately with whatever the state is right after kicking off the spawn (usually `Starting`);
-/// the frontend polls `GET /settings/cloudflare-tunnel` until it flips to `Running` or `Failed`.
-pub async fn start_cloudflare_tunnel(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<CloudflareTunnelState>> {
-    let settings = settings_queries::get(&state.db).await?;
-    crate::tunnel::start(state.cloudflare_tunnel.clone(), settings.port as u16).await;
-    Ok(Json(state.cloudflare_tunnel.status().await))
-}
-
-pub async fn cloudflare_tunnel_status(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<CloudflareTunnelState>> {
-    Ok(Json(state.cloudflare_tunnel.status().await))
-}
-
-pub async fn stop_cloudflare_tunnel(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<CloudflareTunnelState>> {
-    crate::tunnel::stop(&state.cloudflare_tunnel).await;
-    Ok(Json(state.cloudflare_tunnel.status().await))
-}
-
-/// Starts (or reports the status of) the instance-wide Tailscale Funnel, so the operator never
-/// has to run `tailscale funnel` in a terminal themselves. Fire-and-poll, same shape as the
-/// Cloudflare Quick Tunnel handlers above: the frontend polls `GET /settings/tailscale-tunnel`
-/// until it flips to `Running` or `Failed`.
-pub async fn start_tailscale_tunnel(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<TailscaleTunnelState>> {
-    let settings = settings_queries::get(&state.db).await?;
-    crate::tailscale::start(state.tailscale_tunnel.clone(), settings.port as u16).await;
-    Ok(Json(state.tailscale_tunnel.status().await))
-}
-
-pub async fn tailscale_tunnel_status(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<TailscaleTunnelState>> {
-    Ok(Json(state.tailscale_tunnel.status().await))
-}
-
-pub async fn stop_tailscale_tunnel(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<TailscaleTunnelState>> {
-    crate::tailscale::stop(&state.tailscale_tunnel).await;
-    Ok(Json(state.tailscale_tunnel.status().await))
-}
-
 #[derive(Serialize)]
 pub struct TunnelAvailability {
     pub cloudflared_available: bool,
     pub tailscale_available: bool,
 }
 
-/// Whether the `cloudflared` / `tailscale` binaries are on PATH, so the Webhooks page can disable
-/// each one-click tunnel button up front instead of letting the operator click it and only then
-/// discover the binary is missing.
+/// Whether the `cloudflared` / `tailscale` binaries are on PATH. Instance-wide (whether a binary
+/// exists on this host doesn't vary per repo or between a repo tunnel and the dashboard tunnel),
+/// used to disable each one-click tunnel option up front instead of letting the operator pick it
+/// and only then discover the binary is missing.
 pub async fn tunnel_availability(_user: ApprovedUser) -> Json<TunnelAvailability> {
-    let (cloudflared_available, tailscale_available) = tokio::join!(crate::tunnel::is_installed(), crate::tailscale::is_installed());
+    let (cloudflared_available, tailscale_available) = tokio::join!(
+        crate::tunnel::is_installed(crate::tunnel::TunnelProvider::Cloudflare),
+        crate::tunnel::is_installed(crate::tunnel::TunnelProvider::Tailscale)
+    );
     Json(TunnelAvailability { cloudflared_available, tailscale_available })
 }
 
