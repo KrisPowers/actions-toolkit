@@ -108,7 +108,7 @@ function WorkflowCatalogRow({
 function RunRow({ run }: { run: WorkflowRun }) {
   const Icon = triggerIcon(run.trigger_event);
   return (
-    <Link to={`/runs/${run.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-neutral-800/50">
+    <Link to={`/repos/${run.repo_id}/runs/${run.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-neutral-800/50">
       <div className="flex min-w-0 items-center gap-2.5">
         <Icon className="h-4 w-4 shrink-0 text-neutral-500" strokeWidth={2} />
         <div className="min-w-0">
