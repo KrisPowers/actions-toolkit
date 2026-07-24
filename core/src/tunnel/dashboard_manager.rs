@@ -4,7 +4,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::app::AppState;
 use crate::db::queries::dashboard_tunnel as dashboard_tunnel_queries;
-use crate::db::queries::dashboard_tunnel_requests::NewRequest;
+use crate::db::queries::dashboard_tunnel_requests::{self as requests_queries, NewRequest};
 
 use super::repo_listener::{self, ListenerHandle};
 use super::{TunnelProcess, TunnelProvider, TunnelState};
@@ -107,6 +107,16 @@ impl DashboardTunnelManager {
         };
         if should_flush_now {
             self.flush(pool).await;
+        }
+    }
+
+    async fn flush(&self, pool: &sqlx::SqlitePool) {
+        let batch = {
+            let mut buf = self.audit_buffer.lock().await;
+            std::mem::take(&mut *buf)
+        };
+        if let Err(e) = requests_queries::record_batch(pool, &batch).await {
+            tracing::error!(error = %e, "failed to flush dashboard tunnel request audit batch");
         }
     }
 }
