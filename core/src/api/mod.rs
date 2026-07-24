@@ -94,6 +94,10 @@ pub fn dashboard_routes() -> Router<AppState> {
         .route("/repos/{id}/webhook-events", get(repos::webhook_events))
         .route("/webhook-events/{id}/runs", get(runs::list_for_webhook_event))
         .route("/repos/{id}/webhooks/recreate", post(repos::recreate_webhook))
+        .route(
+            "/repos/{id}/webhook-tunnel",
+            get(repo_tunnels::status).post(repo_tunnels::start).delete(repo_tunnels::stop),
+        )
         .route("/repos/{repo_id}/secrets", get(secrets::list_for_repo).post(secrets::create))
         .route("/repos/{repo_id}/secrets/{id}", delete(secrets::delete))
         .route("/repos/{repo_id}/workflows", get(workflows::list_for_repo).post(workflows::create))
