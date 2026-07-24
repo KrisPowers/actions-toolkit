@@ -191,6 +191,11 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
     // dispatched, just on a poll instead of a push.
     tokio::spawn(runner::poll_sync::run_periodic_sync(state.clone(), std::time::Duration::from_secs(300)));
 
+    tokio::spawn(tunnel::dashboard_manager::DashboardTunnelManager::run_periodic_flush(
+        state.dashboard_tunnel.clone(),
+        state.db.clone(),
+    ));
+
     let app = api::router(state);
 
     let listener = bind_with_fallback(&bind_addr, port).await?;
