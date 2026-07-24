@@ -151,6 +151,14 @@ export interface AccessibleRepo {
   account_type?: "User" | "Organization" | null;
 }
 
+export interface GithubInstallation {
+  id: number;
+  account_login: string;
+  account_type: "User" | "Organization";
+  app_slug: string | null;
+  connected_at: string;
+}
+
 export interface WorkflowRow {
   id: string;
   repo_id: string;
