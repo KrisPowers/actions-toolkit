@@ -65,10 +65,12 @@ export default function RepoWebhooksPage() {
   const syncRepo = useSyncRepo();
   const [openMethod, setOpenMethod] = useState<Method | null>(null);
 
-  const { data: cloudflareStatus } = useCloudflareTunnelStatus();
-  const startCloudflareTunnel = useStartCloudflareTunnel();
-  const { data: tailscaleStatus } = useTailscaleTunnelStatus();
-  const startTailscaleTunnel = useStartTailscaleTunnel();
+  // This repo's own webhook tunnel: independent of every other repo's, tracked and mutated only
+  // under this repoId's cache key (see useRepoTunnelStatus/useStartRepoTunnel). A repo has at
+  // most one tunnel process running at a time, so the Cloudflare and Tailscale method cards
+  // below share this same status/mutation, just starting it with a different provider.
+  const { data: tunnelStatus } = useRepoTunnelStatus(repoId);
+  const startTunnel = useStartRepoTunnel(repoId);
 
   if (!repo) return null;
 
@@ -76,8 +78,7 @@ export default function RepoWebhooksPage() {
   const portForwardUrl = networkInfo?.public_ip
     ? `http://${networkInfo.public_ip}:${networkInfo.port}${networkInfo.webhook_path_template.replace("{repo_id}", repo.id)}`
     : undefined;
-  const cloudflareUrl = cloudflareStatus?.status === "running" ? cloudflareStatus.url : undefined;
-  const tailscaleUrl = tailscaleStatus?.status === "running" ? tailscaleStatus.url : undefined;
+  const tunnelUrl = tunnelStatus?.status === "running" ? tunnelStatus.url : undefined;
 
   function isAvailable(requiresBinary?: "cloudflared" | "tailscale") {
     if (!requiresBinary || !tunnelAvailability) return true;
