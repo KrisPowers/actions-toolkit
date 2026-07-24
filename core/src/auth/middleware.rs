@@ -1,6 +1,6 @@
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum_extra::extract::cookie::CookieJar;
 
 use crate::app::AppState;
@@ -8,6 +8,19 @@ use crate::db::models::User;
 use crate::db::queries::users as user_queries;
 
 pub const SESSION_COOKIE: &str = "session";
+
+/// Best-effort session peek for middleware that runs ahead of the `CurrentUser` extractor (e.g.
+/// the dashboard tunnel's rate limiter/audit layer, which needs a per-user key before any handler
+/// or extractor has run): decodes the session cookie's JWT if present and valid, without touching
+/// the DB. Returns `None` for anonymous/pre-login requests or an expired/malformed token, which
+/// callers should fall back to IP-only handling for -- this is only ever used to pick a rate-limit
+/// key and an audit-log field, never to authorize anything, so it deliberately skips the
+/// `session_valid` DB check `CurrentUser` does.
+pub fn peek_user_id(headers: &HeaderMap, state: &AppState) -> Option<String> {
+    let jar = CookieJar::from_headers(headers);
+    let token = jar.get(SESSION_COOKIE)?.value().to_string();
+    state.jwt.decode(&token).ok().map(|claims| claims.sub)
+}
 
 /// Axum extractor: pulls the session cookie, validates the JWT + session record, and loads
 /// the current `User`. Any handler that takes `CurrentUser` as a parameter is implicitly
