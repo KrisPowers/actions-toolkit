@@ -159,6 +159,17 @@ export interface GithubInstallation {
   connected_at: string;
 }
 
+export interface DashboardTunnelRequest {
+  id: string;
+  user_id: string | null;
+  ip_address: string | null;
+  method: string;
+  path: string;
+  status_code: number;
+  rate_limited: number;
+  created_at: string;
+}
+
 export interface WorkflowRow {
   id: string;
   repo_id: string;
