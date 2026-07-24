@@ -182,14 +182,14 @@ export default function RepoWebhooksPage() {
         </div>
 
         <TunnelControl
-          status={cloudflareStatus}
-          onStart={() => startCloudflareTunnel.mutate()}
-          starting={startCloudflareTunnel.isPending}
+          status={tunnelStatus}
+          onStart={() => startTunnel.mutate("cloudflare")}
+          starting={startTunnel.isPending}
           installed={tunnelAvailability?.cloudflared_available}
           binaryLabel="cloudflared"
         />
 
-        <WebhookUrlField repoId={repo.id} placeholder="https://random-words.trycloudflare.com" initialUrl={cloudflareUrl} className="mt-3" />
+        <WebhookUrlField repoId={repo.id} placeholder="https://random-words.trycloudflare.com" initialUrl={tunnelUrl} className="mt-3" />
       </Modal>
 
       <Modal open={openMethod === "tailscale"} onClose={() => setOpenMethod(null)} className="max-w-xl">
