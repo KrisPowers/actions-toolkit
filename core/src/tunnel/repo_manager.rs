@@ -67,4 +67,14 @@ impl RepoTunnelManager {
         repo_tunnels_queries::set_enabled(&state.db, repo_id, false).await?;
         Ok(())
     }
+
+    /// Tears a repo's tunnel down completely: stops the process AND frees its loopback listener's
+    /// port. Called when a repo is disconnected, so no orphaned process/listener is left bound to
+    /// a now-deleted repo_id.
+    pub async fn teardown(&self, repo_id: &str) {
+        if let Some(mut entry) = self.entries.write().await.remove(repo_id) {
+            super::stop(&entry.process).await;
+            entry.listener.shutdown();
+        }
+    }
 }
