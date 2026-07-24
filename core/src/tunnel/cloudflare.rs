@@ -86,3 +86,26 @@ fn extract_trycloudflare_url(line: &str) -> Option<String> {
     let url = &candidate[..end];
     url.contains(".trycloudflare.com").then(|| url.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_the_url_from_a_bordered_cloudflared_log_line() {
+        let line = "2024-01-01T00:00:00Z INF |  https://random-words-here.trycloudflare.com                |";
+        assert_eq!(extract_trycloudflare_url(line), Some("https://random-words-here.trycloudflare.com".to_string()));
+    }
+
+    #[test]
+    fn ignores_unrelated_log_lines() {
+        let line = "2024-01-01T00:00:00Z INF Starting tunnel";
+        assert_eq!(extract_trycloudflare_url(line), None);
+    }
+
+    #[test]
+    fn ignores_https_urls_that_are_not_a_trycloudflare_hostname() {
+        let line = "2024-01-01T00:00:00Z INF |  https://api.cloudflare.com/health  |";
+        assert_eq!(extract_trycloudflare_url(line), None);
+    }
+}
