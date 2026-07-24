@@ -18,3 +18,27 @@ pub enum TunnelState {
     Running { url: String },
     Failed { message: String },
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TunnelProvider {
+    Cloudflare,
+    Tailscale,
+}
+
+impl TunnelProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TunnelProvider::Cloudflare => "cloudflare",
+            TunnelProvider::Tailscale => "tailscale",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "cloudflare" => Some(TunnelProvider::Cloudflare),
+            "tailscale" => Some(TunnelProvider::Tailscale),
+            _ => None,
+        }
+    }
+}
