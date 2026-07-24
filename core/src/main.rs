@@ -8,7 +8,6 @@ mod github;
 mod net;
 mod runner;
 mod telemetry;
-mod tailscale;
 mod tunnel;
 mod ws;
 
