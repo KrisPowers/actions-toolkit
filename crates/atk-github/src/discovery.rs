@@ -36,6 +36,13 @@ pub struct AccessibleRepo {
     pub full_name: String,
     pub private: bool,
     pub default_branch: String,
+    /// Which GitHub account (personal or org) this repo was listed under, when known -- `None`
+    /// for the legacy account-wide `list_accessible_repos` fallback, which has no single
+    /// installation to attribute a repo to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_login: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_type: Option<String>,
 }
 
 /// List repos the configured token can access, for the "connect a repo" picker. Fetches up to
@@ -65,6 +72,8 @@ pub async fn list_accessible_repos(client: &Octocrab) -> Result<Vec<AccessibleRe
                 full_name: full_name.clone(),
                 private: repo.private.unwrap_or(false),
                 default_branch: repo.default_branch.unwrap_or_else(|| "main".to_string()),
+                account_login: None,
+                account_type: None,
             });
         }
 
