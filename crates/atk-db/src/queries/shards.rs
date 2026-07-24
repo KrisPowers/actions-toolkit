@@ -95,11 +95,11 @@ mod tests {
         let now = now_iso();
         let user_id = format!("user-{repo_id}");
         sqlx::query(
-            "INSERT INTO users (id, username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, 'admin', ?, ?)",
+            "INSERT INTO users (id, github_id, github_login, role, status, created_at, updated_at) VALUES (?, ?, ?, 'admin', 'approved', ?, ?)",
         )
         .bind(&user_id)
+        .bind(repo_id.as_bytes().iter().fold(0_i64, |acc, b| acc.wrapping_mul(31).wrapping_add(*b as i64)))
         .bind(format!("test-user-{repo_id}"))
-        .bind("hash")
         .bind(&now)
         .bind(&now)
         .execute(pool)
