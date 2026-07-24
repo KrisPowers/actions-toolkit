@@ -1,16 +1,16 @@
-use axum::extract::State;
+﻿use axum::extract::State;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::db::models::Settings;
 use crate::db::queries::settings::{self as settings_queries, SettingsPatch};
 use crate::error::AppResult;
 use crate::tailscale::TailscaleTunnelState;
 use crate::tunnel::CloudflareTunnelState;
 
-pub async fn get(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<Settings>> {
+pub async fn get(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<Settings>> {
     Ok(Json(settings_queries::get(&state.db).await?))
 }
 
@@ -26,7 +26,7 @@ pub struct RuntimeStatus {
 /// Bucket's capability isn't re-probed here: unlike Docker it isn't a service the user starts or
 /// stops, and the real probe actually spins up a throwaway sandbox, too heavy to run on every
 /// poll from the UI.
-pub async fn runtime_status(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<RuntimeStatus>> {
+pub async fn runtime_status(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<RuntimeStatus>> {
     let settings = settings_queries::get(&state.db).await?;
     let docker_available = match crate::runner::docker::connect(settings.docker_host.as_deref()) {
         Ok(client) => crate::runner::docker::ping(&client).await.is_ok(),
@@ -63,7 +63,7 @@ pub struct UpdateSettingsRequest {
 
 pub async fn update(
     State(state): State<AppState>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
     Json(req): Json<UpdateSettingsRequest>,
 ) -> AppResult<Json<Settings>> {
     let patch = SettingsPatch {
@@ -110,7 +110,7 @@ async fn fetch_public_ip(url: &str) -> Option<String> {
 }
 
 /// Best-effort public-IP lookup for the "manual port forward" webhook quick action.
-pub async fn network_info(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<NetworkInfo>> {
+pub async fn network_info(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<NetworkInfo>> {
     let settings = settings_queries::get(&state.db).await?;
     let public_ip = fetch_public_ip(IPIFY_URL).await;
 
@@ -126,17 +126,17 @@ pub async fn network_info(State(state): State<AppState>, _user: CurrentUser) -> 
 /// never has to run `cloudflared` in a terminal themselves. Fire-and-poll: this returns
 /// immediately with whatever the state is right after kicking off the spawn (usually `Starting`);
 /// the frontend polls `GET /settings/cloudflare-tunnel` until it flips to `Running` or `Failed`.
-pub async fn start_cloudflare_tunnel(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<CloudflareTunnelState>> {
+pub async fn start_cloudflare_tunnel(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<CloudflareTunnelState>> {
     let settings = settings_queries::get(&state.db).await?;
     crate::tunnel::start(state.cloudflare_tunnel.clone(), settings.port as u16).await;
     Ok(Json(state.cloudflare_tunnel.status().await))
 }
 
-pub async fn cloudflare_tunnel_status(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<CloudflareTunnelState>> {
+pub async fn cloudflare_tunnel_status(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<CloudflareTunnelState>> {
     Ok(Json(state.cloudflare_tunnel.status().await))
 }
 
-pub async fn stop_cloudflare_tunnel(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<CloudflareTunnelState>> {
+pub async fn stop_cloudflare_tunnel(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<CloudflareTunnelState>> {
     crate::tunnel::stop(&state.cloudflare_tunnel).await;
     Ok(Json(state.cloudflare_tunnel.status().await))
 }
@@ -145,17 +145,17 @@ pub async fn stop_cloudflare_tunnel(State(state): State<AppState>, _user: Curren
 /// has to run `tailscale funnel` in a terminal themselves. Fire-and-poll, same shape as the
 /// Cloudflare Quick Tunnel handlers above: the frontend polls `GET /settings/tailscale-tunnel`
 /// until it flips to `Running` or `Failed`.
-pub async fn start_tailscale_tunnel(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<TailscaleTunnelState>> {
+pub async fn start_tailscale_tunnel(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<TailscaleTunnelState>> {
     let settings = settings_queries::get(&state.db).await?;
     crate::tailscale::start(state.tailscale_tunnel.clone(), settings.port as u16).await;
     Ok(Json(state.tailscale_tunnel.status().await))
 }
 
-pub async fn tailscale_tunnel_status(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<TailscaleTunnelState>> {
+pub async fn tailscale_tunnel_status(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<TailscaleTunnelState>> {
     Ok(Json(state.tailscale_tunnel.status().await))
 }
 
-pub async fn stop_tailscale_tunnel(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<TailscaleTunnelState>> {
+pub async fn stop_tailscale_tunnel(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<TailscaleTunnelState>> {
     crate::tailscale::stop(&state.tailscale_tunnel).await;
     Ok(Json(state.tailscale_tunnel.status().await))
 }
@@ -169,7 +169,7 @@ pub struct TunnelAvailability {
 /// Whether the `cloudflared` / `tailscale` binaries are on PATH, so the Webhooks page can disable
 /// each one-click tunnel button up front instead of letting the operator click it and only then
 /// discover the binary is missing.
-pub async fn tunnel_availability(_user: CurrentUser) -> Json<TunnelAvailability> {
+pub async fn tunnel_availability(_user: ApprovedUser) -> Json<TunnelAvailability> {
     let (cloudflared_available, tailscale_available) = tokio::join!(crate::tunnel::is_installed(), crate::tailscale::is_installed());
     Json(TunnelAvailability { cloudflared_available, tailscale_available })
 }

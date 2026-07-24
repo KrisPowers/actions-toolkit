@@ -1,4 +1,4 @@
-use axum::body::Body;
+﻿use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
@@ -6,7 +6,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::db::models::Workflow as WorkflowRow;
 use crate::db::queries::{repos as repo_queries, workflows as workflow_queries};
 use crate::error::{AppError, AppResult};
@@ -15,7 +15,7 @@ use crate::workflow::{validate, yaml};
 pub async fn list_for_repo(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Vec<WorkflowRow>>> {
     Ok(Json(workflow_queries::list_for_repo(&state.db, &repo_id).await?))
 }
@@ -23,7 +23,7 @@ pub async fn list_for_repo(
 pub async fn get(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<WorkflowRow>> {
     Ok(Json(workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?))
 }
@@ -56,7 +56,7 @@ fn resolve_yaml_and_json(req_yaml: Option<String>, req_json: Option<serde_json::
 pub async fn create(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
     Json(req): Json<CreateWorkflowRequest>,
 ) -> AppResult<Json<WorkflowRow>> {
     repo_queries::find_by_id(&state.db, &repo_id).await?.ok_or(AppError::NotFound)?;
@@ -97,7 +97,7 @@ pub struct WorkflowSaveResponse {
 pub async fn update(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
     Json(req): Json<UpdateWorkflowRequest>,
 ) -> AppResult<Json<WorkflowSaveResponse>> {
     workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
@@ -115,7 +115,7 @@ pub struct SetEnabledRequest {
 pub async fn set_enabled(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
     Json(req): Json<SetEnabledRequest>,
 ) -> AppResult<()> {
     workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
@@ -126,7 +126,7 @@ pub async fn set_enabled(
 pub async fn delete(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<()> {
     workflow_queries::delete(&state.db, &id).await?;
     Ok(())
@@ -145,7 +145,7 @@ pub struct ValidateRequest {
 }
 
 pub async fn validate_workflow(
-    _user: CurrentUser,
+    _user: ApprovedUser,
     Json(req): Json<ValidateRequest>,
 ) -> Json<ValidateResponse> {
     match resolve_yaml_and_json(req.yaml_source, req.workflow_json) {
@@ -164,7 +164,7 @@ fn yaml_filename(file_path: &str) -> String {
 pub async fn export(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Response> {
     let workflow = workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
 
@@ -182,7 +182,7 @@ pub async fn export(
 pub async fn export_repo(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Response> {
     let repo = repo_queries::find_by_id(&state.db, &repo_id).await?.ok_or(AppError::NotFound)?;
     let workflows = workflow_queries::list_for_repo(&state.db, &repo_id).await?;
@@ -219,7 +219,7 @@ pub async fn export_repo(
 pub async fn dispatch(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<crate::db::models::WorkflowRun>> {
     let workflow_row = workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     let repo = repo_queries::find_by_id(&state.db, &workflow_row.repo_id).await?.ok_or(AppError::NotFound)?;
