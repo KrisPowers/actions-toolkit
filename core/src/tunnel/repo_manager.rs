@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::repo_listener::ListenerHandle;
-use super::TunnelProcess;
+use super::{TunnelProcess, TunnelState};
 
 struct RepoTunnelEntry {
     process: Arc<TunnelProcess>,
@@ -23,5 +23,12 @@ pub struct RepoTunnelManager {
 impl RepoTunnelManager {
     pub fn new() -> Self {
         Self { entries: RwLock::new(HashMap::new()) }
+    }
+
+    pub async fn status(&self, repo_id: &str) -> TunnelState {
+        match self.entries.read().await.get(repo_id) {
+            Some(entry) => entry.process.status().await,
+            None => TunnelState::Idle,
+        }
     }
 }
