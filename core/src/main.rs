@@ -183,8 +183,8 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             auth::login_flow::LOGIN_RATE_LIMIT_WINDOW,
         ),
         token_refresh_lock: tokio::sync::Mutex::new(()),
-        cloudflare_tunnel: Arc::new(tunnel::CloudflareTunnel::new()),
-        tailscale_tunnel: Arc::new(tailscale::TailscaleTunnel::new()),
+        repo_tunnels: Arc::new(tunnel::repo_manager::RepoTunnelManager::new()),
+        dashboard_tunnel: Arc::new(tunnel::dashboard_manager::DashboardTunnelManager::new()),
     }));
 
     // Repos GitHub can't reach with a real webhook still get their `on: release` workflows
