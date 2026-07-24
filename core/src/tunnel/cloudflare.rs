@@ -69,6 +69,14 @@ pub async fn start(process: Arc<TunnelProcess>, port: u16) {
     });
 }
 
+/// Whether `cloudflared` is on PATH, used to enable/disable the "Cloudflare Tunnel" option before
+/// the operator ever clicks it and only then discovers the binary is missing.
+pub async fn is_installed() -> bool {
+    let check =
+        Command::new("cloudflared").arg("--version").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    matches!(tokio::time::timeout(std::time::Duration::from_secs(3), check).await, Ok(Ok(_)))
+}
+
 /// cloudflared logs its assigned URL inside a bordered box on stderr, e.g.:
 /// `2024-01-01T00:00:00Z INF |  https://random-words-here.trycloudflare.com  |`
 fn extract_trycloudflare_url(line: &str) -> Option<String> {
