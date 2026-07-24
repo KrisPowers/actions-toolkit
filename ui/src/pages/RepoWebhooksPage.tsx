@@ -202,14 +202,14 @@ export default function RepoWebhooksPage() {
         </div>
 
         <TunnelControl
-          status={tailscaleStatus}
-          onStart={() => startTailscaleTunnel.mutate()}
-          starting={startTailscaleTunnel.isPending}
+          status={tunnelStatus}
+          onStart={() => startTunnel.mutate("tailscale")}
+          starting={startTunnel.isPending}
           installed={tunnelAvailability?.tailscale_available}
           binaryLabel="tailscale"
         />
 
-        <WebhookUrlField repoId={repo.id} placeholder="https://your-machine.your-tailnet.ts.net" initialUrl={tailscaleUrl} className="mt-3" />
+        <WebhookUrlField repoId={repo.id} placeholder="https://your-machine.your-tailnet.ts.net" initialUrl={tunnelUrl} className="mt-3" />
       </Modal>
 
       <Modal open={openMethod === "tunnel"} onClose={() => setOpenMethod(null)} className="max-w-xl">
