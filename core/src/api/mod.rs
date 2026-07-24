@@ -1,9 +1,11 @@
 pub mod agents;
 pub mod analytics;
 pub mod artifacts;
+pub mod dashboard_tunnel;
 pub mod github_account;
 pub mod github_oauth;
 pub mod github_proxy;
+pub mod repo_tunnels;
 pub mod repos;
 pub mod runs;
 pub mod runstats;
