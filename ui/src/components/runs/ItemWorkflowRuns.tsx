@@ -60,7 +60,7 @@ export default function ItemWorkflowRuns({
         <div className="mt-2 flex flex-col gap-1.5">
           {runs.map((run) => (
             <div key={run.id} className="flex items-center justify-between gap-2 rounded border border-neutral-800 bg-neutral-950/40 px-2.5 py-1.5">
-              <Link to={`/runs/${run.id}`} className="min-w-0 truncate text-xs text-neutral-300 hover:text-accent">
+              <Link to={`/repos/${repoId}/runs/${run.id}`} className="min-w-0 truncate text-xs text-neutral-300 hover:text-accent">
                 {run.trigger_event} · {relativeTime(run.created_at)}
               </Link>
               <div className="flex shrink-0 items-center gap-2">
