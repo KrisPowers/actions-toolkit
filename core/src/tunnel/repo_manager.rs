@@ -57,4 +57,14 @@ impl RepoTunnelManager {
         repo_tunnels_queries::upsert(&state.db, repo_id, provider.as_str(), true, Some(local_port as i64), None).await?;
         Ok(())
     }
+
+    /// Stops repo_id's tunnel process but leaves its loopback listener bound, so a subsequent
+    /// `start` for the same repo can reuse the same local port instead of allocating a new one.
+    pub async fn stop(&self, state: &AppState, repo_id: &str) -> anyhow::Result<()> {
+        if let Some(entry) = self.entries.read().await.get(repo_id) {
+            super::stop(&entry.process).await;
+        }
+        repo_tunnels_queries::set_enabled(&state.db, repo_id, false).await?;
+        Ok(())
+    }
 }
