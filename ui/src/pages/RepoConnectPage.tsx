@@ -210,7 +210,7 @@ export default function RepoConnectPage() {
           <LayoutGrid className="h-3.5 w-3.5" strokeWidth={2} />
           All
         </button>
-        {orgs.map(({ owner, count }) => (
+        {orgs.map(({ owner, count, accountType }) => (
           <button
             key={owner}
             type="button"
@@ -223,6 +223,7 @@ export default function RepoConnectPage() {
           >
             <Avatar login={owner} size={16} />
             {owner}
+            {accountType === "Organization" && <span className="text-[10px] uppercase tracking-wide text-neutral-500">org</span>}
             <span className="text-neutral-500">{count}</span>
           </button>
         ))}
