@@ -69,3 +69,19 @@ export function useDashboardTunnelStatus() {
     refetchInterval: (query) => (query.state.data?.status === "starting" ? 1000 : false),
   });
 }
+
+export function useStartDashboardTunnel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: TunnelProvider) => settingsApi.startDashboardTunnel(provider),
+    onSuccess: (data) => qc.setQueryData(["settings", "dashboard-tunnel"], data),
+  });
+}
+
+export function useStopDashboardTunnel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: settingsApi.stopDashboardTunnel,
+    onSuccess: (data) => qc.setQueryData(["settings", "dashboard-tunnel"], data),
+  });
+}
