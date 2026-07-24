@@ -1,0 +1,80 @@
+use std::process::Stdio;
+use std::sync::Arc;
+
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+
+use super::{TunnelProcess, TunnelState};
+
+/// Starts (or restarts) `cloudflared` as a quick tunnel pointed at `port`. A no-op if `process` is
+/// already starting or running. cloudflared prints the assigned `https://*.trycloudflare.com` URL
+/// to stderr once the tunnel is actually up; a background task scans for it and flips the shared
+/// state to `Running` as soon as it appears, so the caller can poll `status()` instead of the
+/// operator having to copy the URL out of a terminal.
+pub async fn start(process: Arc<TunnelProcess>, port: u16) {
+    {
+        let current = process.state.read().await;
+        if matches!(&*current, TunnelState::Starting | TunnelState::Running { .. }) {
+            return;
+        }
+    }
+
+    super::stop(&process).await;
+    *process.state.write().await = TunnelState::Starting;
+
+    let mut command = Command::new("cloudflared");
+    command.args(["tunnel", "--url", &format!("http://localhost:{port}")]).stdout(Stdio::null()).stderr(Stdio::piped());
+
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            *process.state.write().await = TunnelState::Failed {
+                message: "cloudflared isn't installed or not on PATH. Install it from the Cloudflare docs (search \
+                          \"cloudflared install\"), then try again."
+                    .to_string(),
+            };
+            return;
+        }
+        Err(e) => {
+            *process.state.write().await = TunnelState::Failed { message: format!("failed to start cloudflared: {e}") };
+            return;
+        }
+    };
+
+    let stderr = match child.stderr.take() {
+        Some(s) => s,
+        None => {
+            *process.state.write().await = TunnelState::Failed { message: "could not read cloudflared's output".to_string() };
+            return;
+        }
+    };
+    *process.child.lock().await = Some(child);
+
+    let bg_process = process.clone();
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if let Some(url) = extract_trycloudflare_url(&line) {
+                *bg_process.state.write().await = TunnelState::Running { url };
+                return;
+            }
+        }
+        // The stderr stream ended (cloudflared exited or was killed) without ever printing a
+        // URL. Only report that as a failure if nothing else already moved the state on
+        // (e.g. `stop` resetting it to `Idle` out from under this task).
+        let mut guard = bg_process.state.write().await;
+        if matches!(&*guard, TunnelState::Starting) {
+            *guard = TunnelState::Failed { message: "cloudflared exited before reporting a tunnel URL".to_string() };
+        }
+    });
+}
+
+/// cloudflared logs its assigned URL inside a bordered box on stderr, e.g.:
+/// `2024-01-01T00:00:00Z INF |  https://random-words-here.trycloudflare.com  |`
+fn extract_trycloudflare_url(line: &str) -> Option<String> {
+    let start = line.find("https://")?;
+    let candidate = &line[start..];
+    let end = candidate.find(|c: char| c.is_whitespace() || c == '|').unwrap_or(candidate.len());
+    let url = &candidate[..end];
+    url.contains(".trycloudflare.com").then(|| url.to_string())
+}
