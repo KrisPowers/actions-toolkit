@@ -196,6 +196,20 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         state.db.clone(),
     ));
 
+    // Bring back any per-repo tunnel that was running before the last restart, so the operator
+    // doesn't have to re-click "Start" once per repo.
+    for repo_tunnel in db::queries::repo_tunnels::list_enabled(&state.db).await.unwrap_or_default() {
+        if let Some(provider) = tunnel::TunnelProvider::parse(&repo_tunnel.provider) {
+            let state = state.clone();
+            let repo_id = repo_tunnel.repo_id.clone();
+            tokio::spawn(async move {
+                if let Err(e) = state.repo_tunnels.start(&state, &repo_id, provider).await {
+                    tracing::warn!(error = %e, repo_id, "failed to auto-start repo tunnel on boot");
+                }
+            });
+        }
+    }
+
     let app = api::router(state);
 
     let listener = bind_with_fallback(&bind_addr, port).await?;
