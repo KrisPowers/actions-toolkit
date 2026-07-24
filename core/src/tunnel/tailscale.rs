@@ -94,3 +94,26 @@ fn extract_ts_net_url(line: &str) -> Option<String> {
     let url = candidate[..end].trim_end_matches('/');
     url.contains(".ts.net").then(|| url.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_the_url_from_the_funnel_status_line() {
+        let line = "Available on the internet: https://myhost.tailnet-name.ts.net/";
+        assert_eq!(extract_ts_net_url(line), Some("https://myhost.tailnet-name.ts.net".to_string()));
+    }
+
+    #[test]
+    fn ignores_unrelated_log_lines() {
+        let line = "Press Ctrl+C to exit.";
+        assert_eq!(extract_ts_net_url(line), None);
+    }
+
+    #[test]
+    fn ignores_https_urls_that_are_not_a_ts_net_hostname() {
+        let line = "Some notice at https://tailscale.com/kb/funnel";
+        assert_eq!(extract_ts_net_url(line), None);
+    }
+}
