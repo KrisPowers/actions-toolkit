@@ -8,6 +8,27 @@ pub async fn validate_token(client: &Octocrab) -> Result<String> {
     Ok(user.login)
 }
 
+/// The subset of GitHub's `GET /user` response the login flow needs. Fetched with a
+/// hand-rolled struct via `Octocrab::get` rather than `client.current().user()` (used by
+/// `validate_token` above), since octocrab's reused `Author` model doesn't carry the
+/// account's display name, which the login flow wants for the Login Attempts / user list
+/// display.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GithubIdentity {
+    pub id: i64,
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// Fetches the authenticated account's identity for the GitHub-login flow. Kept separate
+/// from `validate_token`/the account-wide repo-access connection on purpose: a user's
+/// login identity and the instance's shared repo-access token are two independent GitHub
+/// connections that happen to both use device flow, nothing more.
+pub async fn fetch_identity(client: &Octocrab) -> Result<GithubIdentity> {
+    client.get("/user", None::<&()>).await.context("failed to fetch the authenticated GitHub identity")
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AccessibleRepo {
     pub owner: String,

@@ -868,11 +868,11 @@ mod tests {
     async fn seed_fk_chain(pool: &sqlx::SqlitePool, repo_id: &str, workflow_id: &str, run_id: &str, job_run_id: &str) {
         let now = crate::db::models::now_iso();
         sqlx::query(
-            "INSERT INTO users (id, username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, 'admin', ?, ?)",
+            "INSERT INTO users (id, github_id, github_login, role, status, created_at, updated_at) VALUES (?, ?, ?, 'admin', 'approved', ?, ?)",
         )
         .bind("user-1")
+        .bind(1_i64)
         .bind("test-user")
-        .bind("hash")
         .bind(&now)
         .bind(&now)
         .execute(pool)

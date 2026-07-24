@@ -1,19 +1,12 @@
-import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Loader2 } from "lucide-react";
-import GithubMark from "../common/GithubMark";
-import Button from "../common/Button";
-import Modal from "../common/Modal";
+import { ExternalLink } from "lucide-react";
 import { githubAccountApi } from "../../api/githubAccount";
+import GithubDeviceFlow from "../auth/GithubDeviceFlow";
 
-type FlowState =
-  | { phase: "idle" }
-  | { phase: "starting" }
-  | { phase: "waiting"; userCode: string; verificationUri: string; intervalSeconds: number }
-  | { phase: "denied" }
-  | { phase: "expired" }
-  | { phase: "error"; message: string }
-  | { phase: "connected"; githubLogin: string; hasInstallation: boolean };
+interface ConnectedData {
+  githubLogin: string;
+  hasInstallation: boolean;
+}
 
 /**
  * GitHub requires a client_secret for the redirect-based authorization-code flow even with PKCE
@@ -30,150 +23,53 @@ export default function GithubConnectButton({
 }: {
   label?: string;
   variant?: "primary" | "outline";
-  /** "modal" shows the device-code flow as a popup instead of growing the space around the
-   * button in place, for callers (like the site-wide reconnect banner) too height-constrained to
-   * absorb an inline block appearing underneath it. */
   presentation?: "inline" | "modal";
   onConnected?: (hasInstallation: boolean) => void;
 }) {
-  const [state, setState] = useState<FlowState>({ phase: "idle" });
   const qc = useQueryClient();
 
-  useEffect(() => {
-    if (state.phase !== "waiting") return;
-    const { intervalSeconds } = state;
-
-    let cancelled = false;
-    const timer = setInterval(async () => {
-      try {
+  return (
+    <GithubDeviceFlow<undefined, ConnectedData>
+      label={label}
+      variant={variant}
+      presentation={presentation}
+      start={async () => {
+        const res = await githubAccountApi.deviceStart();
+        return { pollKey: undefined, userCode: res.user_code, verificationUri: res.verification_uri, intervalSeconds: res.interval };
+      }}
+      poll={async () => {
         const res = await githubAccountApi.devicePoll();
-        if (cancelled) return;
-        if (res.status === "pending" || res.status === "not_started") return;
-        if (res.status === "denied") setState({ phase: "denied" });
-        else if (res.status === "expired") setState({ phase: "expired" });
-        else if (res.status === "connected") {
-          setState({ phase: "connected", githubLogin: res.github_login, hasInstallation: res.has_installation });
-          qc.invalidateQueries({ queryKey: ["github", "token-status"] });
-          qc.invalidateQueries({ queryKey: ["auth", "status"] });
-          onConnected?.(res.has_installation);
-        }
-      } catch {
-        if (!cancelled) setState({ phase: "error", message: "Lost contact with the server while waiting on GitHub." });
-      }
-    }, intervalSeconds * 1000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.phase === "waiting" ? state.intervalSeconds : null]);
-
-  async function start() {
-    setState({ phase: "starting" });
-    try {
-      const res = await githubAccountApi.deviceStart();
-      setState({ phase: "waiting", userCode: res.user_code, verificationUri: res.verification_uri, intervalSeconds: res.interval });
-    } catch (e) {
-      setState({ phase: "error", message: (e as Error).message });
-    }
-  }
-
-  if (state.phase === "idle" || state.phase === "starting") {
-    return (
-      <Button variant={variant === "primary" ? "primary" : "default"} onClick={start} disabled={state.phase === "starting"}>
-        <GithubMark className="h-4 w-4" />
-        {state.phase === "starting" ? "Starting…" : label}
-      </Button>
-    );
-  }
-
-  if (state.phase === "connected") {
-    return (
-      <p className="text-sm text-[var(--color-status-success)]">
-        Connected as @{state.githubLogin}.
-        {!state.hasInstallation && (
-          <>
-            {" "}
-            Install the App on your repos to finish:{" "}
-            <a
-              href="https://github.com/apps/actionstoolkit/installations/new"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-accent hover:underline"
-            >
-              github.com/apps/actionstoolkit
-              <ExternalLink className="h-3 w-3" strokeWidth={2} />
-            </a>
-          </>
-        )}
-      </p>
-    );
-  }
-
-  const flow = (
-    <div className={presentation === "inline" ? "rounded-md border border-neutral-700 bg-neutral-950 p-3 text-sm" : "text-sm"}>
-      {state.phase === "waiting" && (
-        <>
-          <p className="flex items-center gap-1.5 text-neutral-300">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
-            Waiting for you to authorize on GitHub…
-          </p>
-          <p className="mt-2 text-neutral-400">
-            1. Open{" "}
-            <a
-              href={state.verificationUri}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-accent hover:underline"
-            >
-              {state.verificationUri}
-              <ExternalLink className="h-3 w-3" strokeWidth={2} />
-            </a>
-          </p>
-          <p className="mt-1 text-neutral-400">2. Enter this code:</p>
-          <code className="mt-1 block rounded bg-neutral-900 px-2 py-1.5 text-center text-base font-semibold tracking-widest text-neutral-100">
-            {state.userCode}
-          </code>
-          <Button variant="invisible" size="sm" onClick={() => setState({ phase: "idle" })} className="mt-2 text-xs">
-            Cancel
-          </Button>
-        </>
-      )}
-      {state.phase === "denied" && (
-        <p className="text-[var(--color-status-error)]">
-          Authorization was denied on GitHub.{" "}
-          <button type="button" onClick={start} className="underline">
-            Try again
-          </button>
+        if (res.status === "pending" || res.status === "not_started") return { kind: "pending" };
+        if (res.status === "denied") return { kind: "denied" };
+        if (res.status === "expired") return { kind: "expired" };
+        return { kind: "done", data: { githubLogin: res.github_login, hasInstallation: res.has_installation } };
+      }}
+      onDone={(data) => {
+        qc.invalidateQueries({ queryKey: ["github", "token-status"] });
+        qc.invalidateQueries({ queryKey: ["auth", "status"] });
+        onConnected?.(data.hasInstallation);
+      }}
+    >
+      {(data) => (
+        <p className="text-sm text-[var(--color-status-success)]">
+          Connected as @{data.githubLogin}.
+          {!data.hasInstallation && (
+            <>
+              {" "}
+              Install the App on your repos to finish:{" "}
+              <a
+                href="https://github.com/apps/actionstoolkit/installations/new"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-accent hover:underline"
+              >
+                github.com/apps/actionstoolkit
+                <ExternalLink className="h-3 w-3" strokeWidth={2} />
+              </a>
+            </>
+          )}
         </p>
       )}
-      {state.phase === "expired" && (
-        <p className="text-[var(--color-status-error)]">
-          That code expired before it was used.{" "}
-          <button type="button" onClick={start} className="underline">
-            Try again
-          </button>
-        </p>
-      )}
-      {state.phase === "error" && (
-        <p className="text-[var(--color-status-error)]">
-          {state.message}{" "}
-          <button type="button" onClick={start} className="underline">
-            Try again
-          </button>
-        </p>
-      )}
-    </div>
+    </GithubDeviceFlow>
   );
-
-  if (presentation === "modal") {
-    return (
-      <Modal open onClose={() => setState({ phase: "idle" })} className="max-w-sm">
-        {flow}
-      </Modal>
-    );
-  }
-
-  return flow;
 }

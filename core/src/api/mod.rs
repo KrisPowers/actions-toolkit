@@ -46,14 +46,19 @@ pub(crate) fn webhook_base_url(headers: &axum::http::HeaderMap, settings: &crate
 pub fn router(state: AppState) -> Router {
     let api_routes = Router::new()
         .route("/auth/status", get(auth_handlers::status))
-        .route("/auth/setup", post(auth_handlers::setup))
-        .route("/auth/login", post(auth_handlers::login))
         .route("/auth/logout", post(auth_handlers::logout))
         .route("/auth/me", get(auth_handlers::me))
+        .route("/auth/github/login/start", post(auth_handlers::login_start))
+        .route("/auth/github/login/poll", post(auth_handlers::login_poll))
         .route("/auth/github/device/start", post(github_oauth::device_start))
         .route("/auth/github/device/poll", post(github_oauth::device_poll))
-        .route("/users", get(auth_handlers::list_users).post(auth_handlers::create_user))
+        .route("/users", get(auth_handlers::list_users))
         .route("/users/{id}", delete(auth_handlers::delete_user))
+        .route("/users/{id}/status", patch(auth_handlers::set_user_status))
+        .route("/users/{id}/role", patch(auth_handlers::set_user_role))
+        .route("/whitelist", get(auth_handlers::list_whitelist).post(auth_handlers::add_whitelist))
+        .route("/whitelist/{login}", delete(auth_handlers::remove_whitelist))
+        .route("/login-events", get(auth_handlers::list_login_events))
         .route(
             "/github/token",
             get(github_account::status).delete(github_account::delete_token),

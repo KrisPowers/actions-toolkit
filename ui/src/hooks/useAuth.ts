@@ -9,19 +9,19 @@ export function useMe() {
   return useQuery({ queryKey: ["auth", "me"], queryFn: authApi.me, retry: false });
 }
 
-export function useLogin() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ username, password }: { username: string; password: string }) => authApi.login(username, password),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["auth"] }),
-  });
+export function useLoginStart() {
+  return useMutation({ mutationFn: authApi.loginStart });
 }
 
-export function useSetup() {
+export function useLoginPoll() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ username, password }: { username: string; password: string }) => authApi.setup(username, password),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["auth"] }),
+    mutationFn: (attemptId: string) => authApi.loginPoll(attemptId),
+    onSuccess: (res) => {
+      if (res.status === "approved" || res.status === "pending_approval" || res.status === "restricted") {
+        qc.invalidateQueries({ queryKey: ["auth"] });
+      }
+    },
   });
 }
 

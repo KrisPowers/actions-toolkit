@@ -1,7 +1,7 @@
-//! Operator-facing agent management (join tokens, list/approve/revoke) plus the small REST
+﻿//! Operator-facing agent management (join tokens, list/approve/revoke) plus the small REST
 //! surface an agent process itself calls (join, heartbeat, poll for assigned shells, fetch a
 //! shell's spec, report it started). Agent calls authenticate with a bearer token issued at join
-//! time (see the security note on `atk_rcp::tcp` — this is not yet backed by mTLS), never a
+//! time (see the security note on `atk_rcp::tcp` â€” this is not yet backed by mTLS), never a
 //! browser session.
 
 use axum::extract::{Path, State};
@@ -10,7 +10,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::db::models::Agent;
 use crate::db::queries::{agent_join_tokens as join_token_queries, agents as agent_queries, shells as shell_queries};
 use crate::error::{AppError, AppResult};
@@ -26,7 +26,7 @@ pub struct JoinTokenResponse {
 /// Operator action: mints a single-use token an agent process can redeem (within
 /// `JOIN_TOKEN_TTL_SECONDS`) to register itself. Shown once in the Agents UI, same convention as
 /// a secret's plaintext value never round-tripping back from the API after creation.
-pub async fn create_join_token(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<JoinTokenResponse>> {
+pub async fn create_join_token(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<JoinTokenResponse>> {
     let mut token_bytes = [0u8; 32];
     rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut token_bytes);
     let token = hex::encode(token_bytes);
@@ -53,7 +53,7 @@ pub struct JoinResponse {
 
 /// Agent action: redeems a join token (single-use; a replayed or expired token is
 /// indistinguishable from a wrong one, `AppError::Unauthorized` either way) and registers as
-/// `status = "pending"` — an operator still has to approve it from the Agents UI before the
+/// `status = "pending"` â€” an operator still has to approve it from the Agents UI before the
 /// scheduler will ever pick it for a job.
 pub async fn join(State(state): State<AppState>, Json(req): Json<JoinRequest>) -> AppResult<Json<JoinResponse>> {
     // Hashing is one-way, so the presented token has to be checked against every still-valid
@@ -76,17 +76,17 @@ pub async fn join(State(state): State<AppState>, Json(req): Json<JoinRequest>) -
     Ok(Json(JoinResponse { agent_id: agent.id, auth_token }))
 }
 
-pub async fn list(State(state): State<AppState>, _user: CurrentUser) -> AppResult<Json<Vec<Agent>>> {
+pub async fn list(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<Vec<Agent>>> {
     Ok(Json(agent_queries::list(&state.db).await?))
 }
 
-pub async fn approve(State(state): State<AppState>, Path(id): Path<String>, _user: CurrentUser) -> AppResult<()> {
+pub async fn approve(State(state): State<AppState>, Path(id): Path<String>, _user: ApprovedUser) -> AppResult<()> {
     agent_queries::find(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     agent_queries::set_status(&state.db, &id, "approved").await?;
     Ok(())
 }
 
-pub async fn revoke(State(state): State<AppState>, Path(id): Path<String>, _user: CurrentUser) -> AppResult<()> {
+pub async fn revoke(State(state): State<AppState>, Path(id): Path<String>, _user: ApprovedUser) -> AppResult<()> {
     agent_queries::find(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     agent_queries::set_status(&state.db, &id, "revoked").await?;
     Ok(())
@@ -129,7 +129,7 @@ pub async fn list_assignments(State(state): State<AppState>, Path(id): Path<Stri
     Ok(Json(shells.into_iter().map(|s| AssignedShell { shell_id: s.id, workflow_run_id: s.workflow_run_id }).collect()))
 }
 
-/// Returns the raw `ShellRunSpec` JSON for one of this agent's assigned shells — deliberately
+/// Returns the raw `ShellRunSpec` JSON for one of this agent's assigned shells â€” deliberately
 /// scoped to `shell.agent_id == id`, not just any authenticated agent, since the spec contains a
 /// live checkout PAT.
 pub async fn fetch_shell_spec(State(state): State<AppState>, Path((id, shell_id)): Path<(String, String)>, headers: HeaderMap) -> AppResult<String> {

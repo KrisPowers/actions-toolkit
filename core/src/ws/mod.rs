@@ -1,10 +1,10 @@
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+﻿use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use serde::Deserialize;
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::db::queries::runs as run_queries;
 
 #[derive(Deserialize)]
@@ -20,7 +20,7 @@ pub async fn run_logs_ws(
     State(state): State<AppState>,
     Path(run_id): Path<String>,
     Query(query): Query<LogWsQuery>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(state, run_id, query.step_run_id, socket))
@@ -77,7 +77,7 @@ async fn handle_socket(state: AppState, run_id: String, step_filter: Option<Stri
 /// (per-step channels fanned out over the whole run tree), stats are already published under one
 /// channel per `workflow_run_id` (see `stats_hub::StatsHub`), so there's only ever one receiver to
 /// drive here.
-pub async fn run_stats_ws(State(state): State<AppState>, Path(run_id): Path<String>, _user: CurrentUser, ws: WebSocketUpgrade) -> impl IntoResponse {
+pub async fn run_stats_ws(State(state): State<AppState>, Path(run_id): Path<String>, _user: ApprovedUser, ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_stats_socket(state, run_id, socket))
 }
 
@@ -110,7 +110,7 @@ async fn handle_stats_socket(state: AppState, run_id: String, mut socket: WebSoc
 /// Live "a new run just started" push for a repo's Overview page, the `ActivityHub` equivalent of
 /// `run_logs_ws`/`run_stats_ws`. One channel per `repo_id`; each message is the newly created
 /// `WorkflowRun` itself so the frontend can show it immediately without a follow-up fetch.
-pub async fn run_activity_ws(State(state): State<AppState>, Path(repo_id): Path<String>, _user: CurrentUser, ws: WebSocketUpgrade) -> impl IntoResponse {
+pub async fn run_activity_ws(State(state): State<AppState>, Path(repo_id): Path<String>, _user: ApprovedUser, ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_activity_socket(state, repo_id, socket))
 }
 

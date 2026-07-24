@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useAuthStatus, useMe } from "./hooks/useAuth";
 import SetupWizard from "./pages/setup/SetupWizard";
 import LoginPage from "./pages/LoginPage";
+import AccessPendingPage from "./pages/AccessPendingPage";
 import AppShell from "./components/layout/AppShell";
 import AppRoutes from "./routes";
 
@@ -34,6 +35,10 @@ export default function App() {
 
   if (meError || !me) {
     return <LoginPage />;
+  }
+
+  if (me.status !== "approved") {
+    return <AccessPendingPage user={me} />;
   }
 
   return (

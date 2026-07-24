@@ -1,10 +1,10 @@
-use axum::extract::{Path, Query, State};
+﻿use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::db::models::Workflow as WorkflowRow;
 use crate::db::queries::repos as repo_queries;
 use crate::db::queries::workflows as workflow_queries;
@@ -27,7 +27,7 @@ pub async fn list_issues(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
     Query(q): Query<StateQuery>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Value>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
     let result = issues::list_issues(&client, &repo.owner, &repo.name, q.state.as_deref().unwrap_or("open"))
@@ -39,7 +39,7 @@ pub async fn list_issues(
 pub async fn get_issue(
     State(state): State<AppState>,
     Path((repo_id, number)): Path<(String, u64)>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Value>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
     let result = issues::get_issue(&client, &repo.owner, &repo.name, number).await.map_err(AppError::Internal)?;
@@ -54,7 +54,7 @@ pub struct CommentRequest {
 pub async fn add_comment(
     State(state): State<AppState>,
     Path((repo_id, number)): Path<(String, u64)>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
     Json(req): Json<CommentRequest>,
 ) -> AppResult<Json<Value>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
@@ -74,7 +74,7 @@ pub struct UpdateIssueRequest {
 pub async fn update_issue(
     State(state): State<AppState>,
     Path((repo_id, number)): Path<(String, u64)>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
     Json(req): Json<UpdateIssueRequest>,
 ) -> AppResult<Json<Value>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
@@ -104,7 +104,7 @@ pub async fn list_pull_requests(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
     Query(q): Query<StateQuery>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Value>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
     let result = issues::list_pull_requests(&client, &repo.owner, &repo.name, q.state.as_deref().unwrap_or("open"))
@@ -116,7 +116,7 @@ pub async fn list_pull_requests(
 pub async fn get_pull_request(
     State(state): State<AppState>,
     Path((repo_id, number)): Path<(String, u64)>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Value>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
     let result = issues::get_pull_request(&client, &repo.owner, &repo.name, number)
@@ -128,7 +128,7 @@ pub async fn get_pull_request(
 pub async fn list_releases(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Value>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
     let result = releases::list_releases(&client, &repo.owner, &repo.name).await.map_err(AppError::Internal)?;
@@ -138,7 +138,7 @@ pub async fn list_releases(
 pub async fn get_release(
     State(state): State<AppState>,
     Path((repo_id, release_id)): Path<(String, u64)>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Value>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
     let result = releases::get_release(&client, &repo.owner, &repo.name, release_id)
@@ -161,7 +161,7 @@ pub struct CreateReleaseRequest {
 pub async fn create_release(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
     Json(req): Json<CreateReleaseRequest>,
 ) -> AppResult<Json<Value>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
@@ -187,7 +187,7 @@ pub async fn create_release(
 pub async fn list_github_workflows(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Vec<actions::GithubWorkflowFile>>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
     let result = actions::list_workflow_files(&client, &repo.owner, &repo.name).await.map_err(AppError::Internal)?;
@@ -204,7 +204,7 @@ pub struct ImportGithubWorkflowRequest {
 pub async fn import_github_workflow(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
     Json(req): Json<ImportGithubWorkflowRequest>,
 ) -> AppResult<Json<WorkflowRow>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
@@ -255,7 +255,7 @@ pub struct UpdateReleaseRequest {
 pub async fn update_release(
     State(state): State<AppState>,
     Path((repo_id, release_id)): Path<(String, u64)>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
     Json(req): Json<UpdateReleaseRequest>,
 ) -> AppResult<Json<Value>> {
     let (client, repo) = client_for(&state, &repo_id).await?;

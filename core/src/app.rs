@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::extract::FromRef;
@@ -7,6 +8,7 @@ use sqlx::SqlitePool;
 use tokio::sync::RwLock;
 
 use crate::auth::jwt::JwtCodec;
+use crate::auth::login_flow::LoginFlowState;
 use crate::config::AppConfig;
 use crate::crypto::EncryptionKey;
 use crate::github::oauth::{DeviceFlowResult, PendingDeviceFlow};
@@ -57,6 +59,15 @@ pub struct AppStateInner {
     /// rather than calling GitHub itself, so the attempt still completes (and, on success, gets
     /// persisted) even if no browser tab is polling at the moment GitHub reports success.
     pub device_flow_result: RwLock<Option<DeviceFlowResult>>,
+    /// In-flight GitHub-login device-flow attempts, keyed by a server-generated
+    /// `attempt_id`. Unlike `pending_device_flow` above, this is keyed rather than a single
+    /// slot, since multiple different people can be mid-login at once (see
+    /// `auth::login_flow::LoginFlowState`'s doc comment for why that distinction matters).
+    pub login_flows: RwLock<HashMap<String, LoginFlowState>>,
+    /// Throttles `/auth/github/login/start`, keyed by client IP, so the auth service's
+    /// stated job of rate limiting/throttling login attempts is enforced at the one place
+    /// that actually costs GitHub API calls per attempt.
+    pub login_rate_limiter: atk_auth::rate_limit::RateLimiter,
     /// Serializes the GitHub App access-token refresh in `github::client::ensure_fresh_app_token`.
     /// GitHub App refresh tokens are single-use: two callers racing to refresh the same stale
     /// token at once (e.g. two workflow runs checking out code at the same moment) would have the

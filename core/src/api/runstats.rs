@@ -1,4 +1,4 @@
-//! Read-only endpoints for the run/bucket "Backend" topology and runtime-resource insights: the
+﻿//! Read-only endpoints for the run/bucket "Backend" topology and runtime-resource insights: the
 //! REST side of the observability pipeline `runner::sampler` feeds (see `crate::ws::run_stats_ws`
 //! for the live-tail half). Every handler here only reads rows other code already wrote; nothing
 //! in this module touches an RCP connection or a running shell/shard directly.
@@ -8,7 +8,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::ApprovedUser;
 use crate::db::models::{Bucket, ResourceSample, Shard, Shell};
 use crate::db::queries::{
     buckets as bucket_queries, resource_cache as cache_queries, resource_samples as sample_queries,
@@ -19,7 +19,7 @@ use crate::error::{AppError, AppResult};
 #[derive(Serialize)]
 pub struct BucketSummary {
     pub bucket: Bucket,
-    /// Distinct resources this bucket's shells have successfully cached (a count only — never the
+    /// Distinct resources this bucket's shells have successfully cached (a count only â€” never the
     /// cache keys, paths, or contents themselves).
     pub assets_cached: i64,
     pub shell_count: i64,
@@ -57,13 +57,13 @@ pub struct ListBucketsQuery {
     limit: Option<i64>,
 }
 
-/// A repo's triggering events (buckets), most recent first — the Overview page's right-hand
+/// A repo's triggering events (buckets), most recent first â€” the Overview page's right-hand
 /// list. Optionally filtered to buckets that ran a given workflow.
 pub async fn list_for_repo(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
     Query(q): Query<ListBucketsQuery>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<Vec<BucketSummary>>> {
     let buckets = bucket_queries::list_for_repo(&state.db, &repo_id, q.workflow_id.as_deref(), q.limit.unwrap_or(50)).await?;
     let mut summaries = Vec::with_capacity(buckets.len());
@@ -76,7 +76,7 @@ pub async fn list_for_repo(
 pub async fn topology_for_run(
     State(state): State<AppState>,
     Path(run_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<RunTopology>> {
     run_queries::find_run(&state.db, &run_id).await?.ok_or(AppError::NotFound)?;
 
@@ -102,7 +102,7 @@ pub struct RunStatsSummary {
 pub async fn stats_for_run(
     State(state): State<AppState>,
     Path(run_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<RunStatsSummary>> {
     run_queries::find_run(&state.db, &run_id).await?.ok_or(AppError::NotFound)?;
 
@@ -130,7 +130,7 @@ pub struct BucketTopology {
 pub async fn topology_for_bucket(
     State(state): State<AppState>,
     Path(bucket_id): Path<String>,
-    _user: CurrentUser,
+    _user: ApprovedUser,
 ) -> AppResult<Json<BucketTopology>> {
     let summary = bucket_summary(&state, &bucket_id).await?.ok_or(AppError::NotFound)?;
 

@@ -1,41 +1,37 @@
-import { useState } from "react";
-import { useSetup } from "../../hooks/useAuth";
-import Button from "../../components/common/Button";
-import Input from "../../components/common/Input";
+import { useQueryClient } from "@tanstack/react-query";
+import { authApi } from "../../api/auth";
+import GithubDeviceFlow from "../../components/auth/GithubDeviceFlow";
 
 export default function AdminStep({ onNext }: { onNext: () => void }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const setup = useSetup();
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setup.mutate({ username, password }, { onSuccess: onNext });
-  }
+  const qc = useQueryClient();
 
   return (
-    <form onSubmit={submit}>
-      <h1 className="text-lg font-semibold text-neutral-100">Create the admin account</h1>
-      <p className="mt-1 text-sm text-neutral-400">This account manages workflows, repos, and other users.</p>
+    <div>
+      <h1 className="text-lg font-semibold text-neutral-100">Connect your GitHub account</h1>
+      <p className="mt-1 text-sm text-neutral-400">
+        The first person to connect becomes the admin. They manage workflows, repos, and who else is allowed in.
+      </p>
 
-      <label className="mt-5 block text-xs font-medium text-neutral-400">Username</label>
-      <Input value={username} onChange={(e) => setUsername(e.target.value)} className="mt-1 w-full" autoComplete="username" autoFocus />
-
-      <label className="mt-4 block text-xs font-medium text-neutral-400">Password</label>
-      <Input
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        className="mt-1 w-full"
-        autoComplete="new-password"
-      />
-      <p className="mt-1 text-xs text-neutral-600">At least 3 characters for the username, 8 for the password.</p>
-
-      {setup.isError && <p className="mt-3 text-sm text-[var(--color-status-error)]">{(setup.error as Error).message}</p>}
-
-      <Button type="submit" variant="primary" disabled={setup.isPending} className="mt-5 w-full">
-        {setup.isPending ? "Creating…" : "Continue"}
-      </Button>
-    </form>
+      <div className="mt-5">
+        <GithubDeviceFlow
+          label="Connect GitHub"
+          start={async () => {
+            const res = await authApi.loginStart();
+            return { pollKey: res.attempt_id, userCode: res.user_code, verificationUri: res.verification_uri, intervalSeconds: res.interval };
+          }}
+          poll={async (attemptId: string) => {
+            const res = await authApi.loginPoll(attemptId);
+            if (res.status === "pending" || res.status === "not_started") return { kind: "pending" };
+            if (res.status === "denied") return { kind: "denied" };
+            if (res.status === "expired") return { kind: "expired" };
+            return { kind: "done", data: res };
+          }}
+          onDone={() => {
+            qc.invalidateQueries({ queryKey: ["auth"] });
+            onNext();
+          }}
+        />
+      </div>
+    </div>
   );
 }
