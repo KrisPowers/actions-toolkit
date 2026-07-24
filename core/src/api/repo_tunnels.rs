@@ -19,3 +19,14 @@ pub struct StartRepoTunnelRequest {
 pub async fn status(State(state): State<AppState>, Path(repo_id): Path<String>, _user: ApprovedUser) -> AppResult<Json<TunnelState>> {
     Ok(Json(state.repo_tunnels.status(&repo_id).await))
 }
+
+pub async fn start(
+    State(state): State<AppState>,
+    Path(repo_id): Path<String>,
+    _user: ApprovedUser,
+    Json(req): Json<StartRepoTunnelRequest>,
+) -> AppResult<Json<TunnelState>> {
+    crate::db::queries::repos::find_by_id(&state.db, &repo_id).await?.ok_or(AppError::NotFound)?;
+    state.repo_tunnels.start(&state, &repo_id, req.provider).await.map_err(AppError::Internal)?;
+    Ok(Json(state.repo_tunnels.status(&repo_id).await))
+}
