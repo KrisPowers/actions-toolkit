@@ -1,22 +1,22 @@
 import type { LucideIcon } from "lucide-react";
 import { NavLink } from "react-router-dom";
-import { History, ShieldCheck, SlidersHorizontal, Wifi } from "lucide-react";
+import { History, Radio, ShieldCheck, Wifi } from "lucide-react";
 import { cn } from "../../lib/cn";
 
 const SECTIONS: { path: string; icon: LucideIcon; label: string }[] = [
-  { path: "general", icon: SlidersHorizontal, label: "General" },
   { path: "access", icon: ShieldCheck, label: "Access" },
   { path: "login-attempts", icon: History, label: "Login attempts" },
-  { path: "dashboard-access", icon: Wifi, label: "Remote access" },
+  { path: "remote-access", icon: Wifi, label: "Remote access" },
+  { path: "repo-tunnels", icon: Radio, label: "Repo tunnels" },
 ];
 
-export default function InstanceSettingsSidebar() {
+export default function AdminSidebar() {
   return (
     <nav className="flex flex-col gap-0.5">
       {SECTIONS.map(({ path, icon: Icon, label }) => (
         <NavLink
           key={path}
-          to={`/settings/${path}`}
+          to={`/admin/${path}`}
           className={({ isActive }) =>
             cn(
               "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",

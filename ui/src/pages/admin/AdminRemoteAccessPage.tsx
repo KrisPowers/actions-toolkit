@@ -16,7 +16,7 @@ import TunnelControl from "../../components/webhooks/TunnelControl";
  * account rather than just receiving signed GitHub payloads, so it carries its own much heavier
  * rate limiting and request auditing (see the log below).
  */
-export default function DashboardTunnelSettingsPage() {
+export default function AdminRemoteAccessPage() {
   const { data: status } = useDashboardTunnelStatus();
   const { data: tunnelAvailability } = useTunnelAvailability();
   const startTunnel = useStartDashboardTunnel();

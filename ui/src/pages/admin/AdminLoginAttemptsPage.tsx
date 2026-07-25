@@ -21,7 +21,7 @@ const OUTCOME_STYLES: Record<string, string> = {
  * Raw IP + user agent only, no geo/device parsing library or external lookup: this instance
  * is self-hosted and shouldn't depend on (or leak login IPs to) a third-party geo-IP service.
  */
-export default function LoginAttemptsPage() {
+export default function AdminLoginAttemptsPage() {
   const [page, setPage] = useState(0);
   const { data: events, isLoading } = useQuery({
     queryKey: ["login-events", page],

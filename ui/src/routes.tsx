@@ -24,10 +24,11 @@ const RunBackendPanel = lazy(() => import("./pages/runs/RunBackendPanel"));
 const BucketDetailPage = lazy(() => import("./pages/BucketDetailPage"));
 const AuditLogPage = lazy(() => import("./pages/AuditLogPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
-const GeneralSettingsPage = lazy(() => import("./pages/settings/GeneralSettingsPage"));
-const AccessSettingsPage = lazy(() => import("./pages/settings/AccessSettingsPage"));
-const LoginAttemptsPage = lazy(() => import("./pages/settings/LoginAttemptsPage"));
-const DashboardTunnelSettingsPage = lazy(() => import("./pages/settings/DashboardTunnelSettingsPage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const AdminAccessPage = lazy(() => import("./pages/admin/AdminAccessPage"));
+const AdminLoginAttemptsPage = lazy(() => import("./pages/admin/AdminLoginAttemptsPage"));
+const AdminRemoteAccessPage = lazy(() => import("./pages/admin/AdminRemoteAccessPage"));
+const AdminRepoTunnelsPage = lazy(() => import("./pages/admin/AdminRepoTunnelsPage"));
 
 function RouteFallback() {
   return (
@@ -66,12 +67,13 @@ export default function AppRoutes() {
         <Route path="/buckets/:bucketId" element={<BucketDetailPage />} />
         <Route path="/repos/:repoId/webhooks" element={<RepoWebhooksPage />} />
         <Route path="/repos/:repoId/audit-log" element={<AuditLogPage />} />
-        <Route path="/settings" element={<SettingsPage />}>
-          <Route index element={<Navigate to="general" replace />} />
-          <Route path="general" element={<GeneralSettingsPage />} />
-          <Route path="access" element={<AccessSettingsPage />} />
-          <Route path="login-attempts" element={<LoginAttemptsPage />} />
-          <Route path="dashboard-access" element={<DashboardTunnelSettingsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/admin" element={<AdminPage />}>
+          <Route index element={<Navigate to="access" replace />} />
+          <Route path="access" element={<AdminAccessPage />} />
+          <Route path="login-attempts" element={<AdminLoginAttemptsPage />} />
+          <Route path="remote-access" element={<AdminRemoteAccessPage />} />
+          <Route path="repo-tunnels" element={<AdminRepoTunnelsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

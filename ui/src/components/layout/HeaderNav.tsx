@@ -14,7 +14,7 @@ export default function HeaderNav({ user }: { user: User }) {
         Dashboard
       </NavLink>
       {user.role === "admin" && (
-        <NavLink to="/settings/access" className={NAV_LINK_CLASS}>
+        <NavLink to="/admin" className={NAV_LINK_CLASS}>
           Admin
         </NavLink>
       )}

@@ -8,7 +8,7 @@ import Button from "../../components/common/Button";
 import Input from "../../components/common/Input";
 import Card from "../../components/common/Card";
 
-export default function AccessSettingsPage() {
+export default function AdminAccessPage() {
   const { data: me } = useMe();
   const isAdmin = me?.role === "admin";
   const qc = useQueryClient();
