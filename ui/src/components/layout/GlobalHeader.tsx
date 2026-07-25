@@ -28,11 +28,11 @@ export default function GlobalHeader({ user }: { user: User }) {
         <GithubMark className="h-6 w-6 text-header-fg" />
       </Link>
 
-      <RepoSwitcher />
-
       <HeaderSearch />
 
       <div className="flex-1" />
+
+      <RepoSwitcher />
 
       <HeaderAddMenu triggerClassName={headerBoxButton} onAddWorkflow={setAddWorkflowRepoId} />
 
