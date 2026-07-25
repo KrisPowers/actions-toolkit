@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 
 use crate::app::AppState;
 use crate::db::models::Repo;
+use crate::db::queries::audit_log::{self as audit_log_queries, NewAuditLogEntry};
 use crate::db::queries::{repos as repo_queries, webhook_events as event_queries, workflows as workflow_queries};
 use crate::workflow::{trigger_match, yaml};
 
@@ -43,7 +44,7 @@ pub async fn sync_repo_releases(state: &AppState, repo: &Repo) -> Result<bool> {
     let event_id = event.as_ref().ok().map(|e| e.id.as_str());
 
     for (workflow_row, matched) in matches {
-        if let Err(e) = crate::runner::dispatch::spawn_run(
+        match crate::runner::dispatch::spawn_run(
             state,
             &workflow_row,
             repo,
@@ -55,7 +56,28 @@ pub async fn sync_repo_releases(state: &AppState, repo: &Repo) -> Result<bool> {
         )
         .await
         {
-            tracing::error!(error = %e, workflow_id = %workflow_row.id, "failed to spawn run for polled release");
+            Ok(run) => {
+                if let Err(e) = audit_log_queries::record(
+                    &state.db,
+                    NewAuditLogEntry {
+                        repo_id: &repo.id,
+                        actor_id: None,
+                        actor_login: None,
+                        action: "run.dispatched",
+                        target_type: Some("run"),
+                        target_id: Some(&run.id),
+                        summary: &format!("Workflow \"{}\" triggered by polled release {}", workflow_row.name, latest.tag_name),
+                        metadata: None,
+                    },
+                )
+                .await
+                {
+                    tracing::warn!(error = %e, repo_id = %repo.id, "failed to record audit log entry");
+                }
+            }
+            Err(e) => {
+                tracing::error!(error = %e, workflow_id = %workflow_row.id, "failed to spawn run for polled release");
+            }
         }
     }
 
