@@ -5,6 +5,7 @@ import Menu from "../common/Menu";
 import Avatar from "../common/Avatar";
 import ThemeToggle from "../common/ThemeToggle";
 import RepoSwitcher from "./RepoSwitcher";
+import HeaderSearch from "./HeaderSearch";
 import { useLogout } from "../../hooks/useAuth";
 import type { User } from "../../api/types";
 
@@ -24,6 +25,8 @@ export default function GlobalHeader({ user }: { user: User }) {
       </Link>
 
       <RepoSwitcher />
+
+      <HeaderSearch />
 
       <div className="flex-1" />
 
