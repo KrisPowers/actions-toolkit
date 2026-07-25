@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { Lock, Search } from "lucide-react";
-import { useAccessibleRepos } from "../../hooks/useGithubAccount";
+import { ExternalLink, Lock, RefreshCw, Search } from "lucide-react";
+import { useAccessibleRepos, useGithubTokenStatus, useRefreshInstallations } from "../../hooks/useGithubAccount";
 import { useCreateRepo } from "../../hooks/useRepos";
 import Avatar from "../../components/common/Avatar";
 import Button from "../../components/common/Button";
@@ -8,7 +8,9 @@ import Input from "../../components/common/Input";
 import Checkbox from "../../components/common/Checkbox";
 
 export default function ReposStep({ onNext }: { onNext: () => void }) {
+  const { data: tokenStatus } = useGithubTokenStatus();
   const { data: repos, isLoading } = useAccessibleRepos(true);
+  const refreshInstallations = useRefreshInstallations();
   const createRepo = useCreateRepo();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [connecting, setConnecting] = useState(false);
@@ -56,6 +58,29 @@ export default function ReposStep({ onNext }: { onNext: () => void }) {
       <p className="mt-1 text-sm text-neutral-400">
         Pick any repos you want to run workflows for. You can always connect more later from the Repos page.
       </p>
+
+      {tokenStatus?.token_type === "github_app" && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <a
+            href="https://github.com/apps/actionstoolkit/installations/new"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+          >
+            Not seeing a repo? Install the App on it
+            <ExternalLink className="h-3 w-3" strokeWidth={2} />
+          </a>
+          <button
+            type="button"
+            onClick={() => refreshInstallations.mutate()}
+            disabled={refreshInstallations.isPending}
+            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-300 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${refreshInstallations.isPending ? "animate-spin" : ""}`} strokeWidth={2} />
+            {refreshInstallations.isPending ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
+      )}
 
       <div className="relative mt-4">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" strokeWidth={2} />
