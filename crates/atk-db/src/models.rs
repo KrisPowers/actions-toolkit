@@ -40,6 +40,24 @@ pub struct LoginEvent {
     pub created_at: String,
 }
 
+/// One entry in a repo's audit trail: a run dispatched, a workflow created/changed/deleted, or a
+/// repo-level integration action (secrets, webhooks, sync). `actor_id`/`actor_login` are both
+/// `None` for entries with no human actor at all (a webhook-triggered run, a polled release
+/// sync), not just when the acting user has since been deleted.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct AuditLogEntry {
+    pub id: String,
+    pub repo_id: String,
+    pub actor_id: Option<String>,
+    pub actor_login: Option<String>,
+    pub action: String,
+    pub target_type: Option<String>,
+    pub target_id: Option<String>,
+    pub summary: String,
+    pub metadata: Option<String>,
+    pub created_at: String,
+}
+
 /// A GitHub login pre-approved by an admin before that person has ever signed in.
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct WhitelistEntry {
