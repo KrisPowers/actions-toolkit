@@ -11,7 +11,8 @@ import type { User } from "../../api/types";
 // GitHub's global nav stays this dark shade regardless of the site's light/dark theme setting,
 // so this header is styled directly off --color-header-* rather than the theme-flipping neutral
 // tokens the rest of the app uses.
-const headerIconButton = "text-header-fg-muted hover:bg-white/10 hover:text-header-fg";
+const headerBoxButton =
+  "flex h-8 w-8 items-center justify-center rounded-md border border-header-border bg-white/5 text-header-fg-muted hover:bg-white/10 hover:text-header-fg";
 
 export default function GlobalHeader({ user }: { user: User }) {
   const logout = useLogout();
@@ -26,7 +27,7 @@ export default function GlobalHeader({ user }: { user: User }) {
 
       <div className="flex-1" />
 
-      <ThemeToggle triggerClassName={headerIconButton} />
+      <ThemeToggle triggerClassName={headerBoxButton} />
 
       <Menu
         align="right"
