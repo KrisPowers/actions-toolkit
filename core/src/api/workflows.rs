@@ -8,9 +8,38 @@ use serde::{Deserialize, Serialize};
 use crate::app::AppState;
 use crate::auth::middleware::ApprovedUser;
 use crate::db::models::Workflow as WorkflowRow;
+use crate::db::queries::audit_log::{self as audit_log_queries, NewAuditLogEntry};
 use crate::db::queries::{repos as repo_queries, workflows as workflow_queries};
 use crate::error::{AppError, AppResult};
 use crate::workflow::{validate, yaml};
+
+async fn log_workflow_action(
+    state: &AppState,
+    repo_id: &str,
+    actor_id: &str,
+    actor_login: &str,
+    action: &str,
+    workflow_id: &str,
+    summary: &str,
+) {
+    if let Err(e) = audit_log_queries::record(
+        &state.db,
+        NewAuditLogEntry {
+            repo_id,
+            actor_id: Some(actor_id),
+            actor_login: Some(actor_login),
+            action,
+            target_type: Some("workflow"),
+            target_id: Some(workflow_id),
+            summary,
+            metadata: None,
+        },
+    )
+    .await
+    {
+        tracing::warn!(error = %e, repo_id, action, "failed to record audit log entry");
+    }
+}
 
 pub async fn list_for_repo(
     State(state): State<AppState>,
@@ -56,7 +85,7 @@ fn resolve_yaml_and_json(req_yaml: Option<String>, req_json: Option<serde_json::
 pub async fn create(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: ApprovedUser,
+    ApprovedUser(user): ApprovedUser,
     Json(req): Json<CreateWorkflowRequest>,
 ) -> AppResult<Json<WorkflowRow>> {
     repo_queries::find_by_id(&state.db, &repo_id).await?.ok_or(AppError::NotFound)?;
@@ -80,6 +109,17 @@ pub async fn create(
             other => AppError::Database(other),
         })?;
 
+    log_workflow_action(
+        &state,
+        &repo_id,
+        &user.id,
+        &user.github_login,
+        "workflow.created",
+        &workflow.id,
+        &format!("Created workflow \"{}\"", workflow.name),
+    )
+    .await;
+
     Ok(Json(workflow))
 }
 
@@ -97,13 +137,25 @@ pub struct WorkflowSaveResponse {
 pub async fn update(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: ApprovedUser,
+    ApprovedUser(user): ApprovedUser,
     Json(req): Json<UpdateWorkflowRequest>,
 ) -> AppResult<Json<WorkflowSaveResponse>> {
     workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     let (yaml_source, parsed_json) = resolve_yaml_and_json(req.yaml_source, req.workflow_json)?;
     workflow_queries::update(&state.db, &id, &yaml_source, &parsed_json).await?;
     let workflow = workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
+
+    log_workflow_action(
+        &state,
+        &workflow.repo_id,
+        &user.id,
+        &user.github_login,
+        "workflow.updated",
+        &workflow.id,
+        &format!("Updated workflow \"{}\"", workflow.name),
+    )
+    .await;
+
     Ok(Json(WorkflowSaveResponse { workflow }))
 }
 
@@ -115,20 +167,45 @@ pub struct SetEnabledRequest {
 pub async fn set_enabled(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: ApprovedUser,
+    ApprovedUser(user): ApprovedUser,
     Json(req): Json<SetEnabledRequest>,
 ) -> AppResult<()> {
-    workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
+    let workflow = workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     workflow_queries::set_enabled(&state.db, &id, req.enabled).await?;
+
+    log_workflow_action(
+        &state,
+        &workflow.repo_id,
+        &user.id,
+        &user.github_login,
+        if req.enabled { "workflow.enabled" } else { "workflow.disabled" },
+        &workflow.id,
+        &format!("{} workflow \"{}\"", if req.enabled { "Enabled" } else { "Disabled" }, workflow.name),
+    )
+    .await;
+
     Ok(())
 }
 
 pub async fn delete(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: ApprovedUser,
+    ApprovedUser(user): ApprovedUser,
 ) -> AppResult<()> {
+    let workflow = workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     workflow_queries::delete(&state.db, &id).await?;
+
+    log_workflow_action(
+        &state,
+        &workflow.repo_id,
+        &user.id,
+        &user.github_login,
+        "workflow.deleted",
+        &workflow.id,
+        &format!("Deleted workflow \"{}\"", workflow.name),
+    )
+    .await;
+
     Ok(())
 }
 
@@ -219,7 +296,7 @@ pub async fn export_repo(
 pub async fn dispatch(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: ApprovedUser,
+    ApprovedUser(user): ApprovedUser,
 ) -> AppResult<Json<crate::db::models::WorkflowRun>> {
     let workflow_row = workflow_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     let repo = repo_queries::find_by_id(&state.db, &workflow_row.repo_id).await?.ok_or(AppError::NotFound)?;
@@ -236,6 +313,24 @@ pub async fn dispatch(
     )
     .await
     .map_err(AppError::Internal)?;
+
+    if let Err(e) = audit_log_queries::record(
+        &state.db,
+        NewAuditLogEntry {
+            repo_id: &repo.id,
+            actor_id: Some(&user.id),
+            actor_login: Some(&user.github_login),
+            action: "run.dispatched",
+            target_type: Some("run"),
+            target_id: Some(&run.id),
+            summary: &format!("Manually ran workflow \"{}\"", workflow_row.name),
+            metadata: None,
+        },
+    )
+    .await
+    {
+        tracing::warn!(error = %e, repo_id = %repo.id, "failed to record audit log entry");
+    }
 
     Ok(Json(run))
 }
