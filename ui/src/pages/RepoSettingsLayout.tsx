@@ -10,11 +10,13 @@ export default function RepoSettingsLayout() {
   if (!repo) return null;
 
   return (
-    <div className="max-w-6xl">
+    <div className="mx-auto max-w-5xl">
       <PageHeader title={`${repo.owner}/${repo.name} settings`} />
 
-      <div className="mt-5 grid grid-cols-1 gap-6 md:grid-cols-[200px_1fr]">
-        <SettingsSidebar repoId={repo.id} />
+      <div className="mt-6 grid grid-cols-1 gap-8 md:grid-cols-[240px_1fr]">
+        <div className="md:sticky md:top-6 md:self-start">
+          <SettingsSidebar repoId={repo.id} />
+        </div>
         <div className="min-w-0">
           <Outlet />
         </div>

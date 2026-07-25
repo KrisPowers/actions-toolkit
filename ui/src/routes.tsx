@@ -23,7 +23,10 @@ const RunInsightsPanel = lazy(() => import("./pages/runs/RunInsightsPanel"));
 const RunBackendPanel = lazy(() => import("./pages/runs/RunBackendPanel"));
 const BucketDetailPage = lazy(() => import("./pages/BucketDetailPage"));
 const AuditLogPage = lazy(() => import("./pages/AuditLogPage"));
-const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const SettingsLayout = lazy(() => import("./pages/SettingsLayout"));
+const GithubConnectionCard = lazy(() => import("./components/settings/GithubConnectionCard"));
+const RuntimeSettingsCard = lazy(() => import("./components/settings/RuntimeSettingsCard"));
+const BucketSettingsCard = lazy(() => import("./components/settings/BucketSettingsCard"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const AdminAccessPage = lazy(() => import("./pages/admin/AdminAccessPage"));
 const AdminLoginAttemptsPage = lazy(() => import("./pages/admin/AdminLoginAttemptsPage"));
@@ -67,7 +70,12 @@ export default function AppRoutes() {
         <Route path="/buckets/:bucketId" element={<BucketDetailPage />} />
         <Route path="/repos/:repoId/webhooks" element={<RepoWebhooksPage />} />
         <Route path="/repos/:repoId/audit-log" element={<AuditLogPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings" element={<SettingsLayout />}>
+          <Route index element={<Navigate to="github" replace />} />
+          <Route path="github" element={<GithubConnectionCard />} />
+          <Route path="runtime" element={<RuntimeSettingsCard />} />
+          <Route path="bucket" element={<BucketSettingsCard />} />
+        </Route>
         <Route path="/admin" element={<AdminPage />}>
           <Route index element={<Navigate to="access" replace />} />
           <Route path="access" element={<AdminAccessPage />} />
