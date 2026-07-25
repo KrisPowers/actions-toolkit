@@ -124,13 +124,12 @@ export interface NetworkInfo {
   webhook_path_template: string;
 }
 
-export type CloudflareTunnelState =
-  | { status: "idle" }
-  | { status: "starting" }
-  | { status: "running"; url: string }
-  | { status: "failed"; message: string };
+export type TunnelProvider = "cloudflare" | "tailscale";
 
-export type TailscaleTunnelState =
+/** Shared shape for every tunnel this instance runs -- a repo's own webhook tunnel or the
+ * dashboard tunnel. Each is tracked independently on the backend; this type is just the wire
+ * format they all report. */
+export type TunnelState =
   | { status: "idle" }
   | { status: "starting" }
   | { status: "running"; url: string }
@@ -147,6 +146,28 @@ export interface AccessibleRepo {
   full_name: string;
   private: boolean;
   default_branch: string;
+  /** Which GitHub account (personal or org) this repo was listed under, when known. */
+  account_login?: string | null;
+  account_type?: "User" | "Organization" | null;
+}
+
+export interface GithubInstallation {
+  id: number;
+  account_login: string;
+  account_type: "User" | "Organization";
+  app_slug: string | null;
+  connected_at: string;
+}
+
+export interface DashboardTunnelRequest {
+  id: string;
+  user_id: string | null;
+  ip_address: string | null;
+  method: string;
+  path: string;
+  status_code: number;
+  rate_limited: number;
+  created_at: string;
 }
 
 export interface WorkflowRow {

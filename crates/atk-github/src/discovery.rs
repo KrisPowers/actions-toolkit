@@ -36,6 +36,13 @@ pub struct AccessibleRepo {
     pub full_name: String,
     pub private: bool,
     pub default_branch: String,
+    /// Which GitHub account (personal or org) this repo was listed under, when known -- `None`
+    /// for the legacy account-wide `list_accessible_repos` fallback, which has no single
+    /// installation to attribute a repo to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_login: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_type: Option<String>,
 }
 
 /// List repos the configured token can access, for the "connect a repo" picker. Fetches up to
@@ -65,6 +72,8 @@ pub async fn list_accessible_repos(client: &Octocrab) -> Result<Vec<AccessibleRe
                 full_name: full_name.clone(),
                 private: repo.private.unwrap_or(false),
                 default_branch: repo.default_branch.unwrap_or_else(|| "main".to_string()),
+                account_login: None,
+                account_type: None,
             });
         }
 
@@ -81,25 +90,55 @@ struct InstallationRepositories {
 }
 
 #[derive(Debug, Deserialize)]
-struct Installation {
+struct InstallationAccount {
+    login: String,
+    #[serde(rename = "type")]
+    account_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawInstallation {
     id: i64,
     app_slug: Option<String>,
+    account: Option<InstallationAccount>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ListInstallationsResponse {
-    installations: Vec<Installation>,
+    installations: Vec<RawInstallation>,
 }
 
-/// Finds the installation of `app_slug` (the actions-toolkit App) among the ones the connected
-/// user administers. Device flow has no callback to carry an `installation_id` the way the
-/// redirect-based authorize flow did, so this is looked up explicitly right after connecting
-/// instead. Returns `None` if the user hasn't installed the App on any account yet, distinct from
-/// a request failure, so the caller can prompt "install the App" rather than surface an error.
-pub async fn find_installation_id(client: &Octocrab, app_slug: &str) -> Result<Option<i64>> {
+/// One installation of the actions-toolkit App the connected user administers -- a personal
+/// account or an org, each independently addable as a repo source (see `list_installations`).
+#[derive(Debug, Clone, Serialize)]
+pub struct Installation {
+    pub id: i64,
+    pub account_login: String,
+    pub account_type: String, // "User" | "Organization"
+}
+
+/// Lists every installation of `app_slug` (the actions-toolkit App) among the accounts the
+/// connected user administers -- their personal account and any org they've installed it on.
+/// Unlike the old `find_installation_id` (which returned just the first match), this is what
+/// makes repos from more than one org visible to the connect-repo picker.
+pub async fn list_installations(client: &Octocrab, app_slug: &str) -> Result<Vec<Installation>> {
     let resp: ListInstallationsResponse =
         client.get("/user/installations", None::<&()>).await.context("failed to list this user's installations")?;
-    Ok(resp.installations.into_iter().find(|i| i.app_slug.as_deref() == Some(app_slug)).map(|i| i.id))
+    Ok(resp
+        .installations
+        .into_iter()
+        .filter(|i| i.app_slug.as_deref() == Some(app_slug))
+        .filter_map(|i| i.account.map(|a| Installation { id: i.id, account_login: a.login, account_type: a.account_type }))
+        .collect())
+}
+
+/// Finds the first installation of `app_slug` among the ones the connected user administers.
+/// Device flow has no callback to carry an `installation_id` the way the redirect-based authorize
+/// flow did, so this is looked up explicitly right after connecting instead. Returns `None` if
+/// the user hasn't installed the App on any account yet, distinct from a request failure, so the
+/// caller can prompt "install the App" rather than surface an error.
+pub async fn find_installation_id(client: &Octocrab, app_slug: &str) -> Result<Option<i64>> {
+    Ok(list_installations(client, app_slug).await?.into_iter().next().map(|i| i.id))
 }
 
 /// List repos a GitHub App installation was actually granted, for a `github_app`-connected
@@ -125,6 +164,8 @@ pub async fn list_accessible_repos_for_installation(client: &Octocrab, installat
                 full_name: full_name.clone(),
                 private: repo.private.unwrap_or(false),
                 default_branch: repo.default_branch.unwrap_or_else(|| "main".to_string()),
+                account_login: None,
+                account_type: None,
             });
         }
 

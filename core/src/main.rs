@@ -8,7 +8,6 @@ mod github;
 mod net;
 mod runner;
 mod telemetry;
-mod tailscale;
 mod tunnel;
 mod ws;
 
@@ -184,13 +183,44 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             auth::login_flow::LOGIN_RATE_LIMIT_WINDOW,
         ),
         token_refresh_lock: tokio::sync::Mutex::new(()),
-        cloudflare_tunnel: Arc::new(tunnel::CloudflareTunnel::new()),
-        tailscale_tunnel: Arc::new(tailscale::TailscaleTunnel::new()),
+        repo_tunnels: Arc::new(tunnel::repo_manager::RepoTunnelManager::new()),
+        dashboard_tunnel: Arc::new(tunnel::dashboard_manager::DashboardTunnelManager::new()),
     }));
 
     // Repos GitHub can't reach with a real webhook still get their `on: release` workflows
     // dispatched, just on a poll instead of a push.
     tokio::spawn(runner::poll_sync::run_periodic_sync(state.clone(), std::time::Duration::from_secs(300)));
+
+    tokio::spawn(tunnel::dashboard_manager::DashboardTunnelManager::run_periodic_flush(
+        state.dashboard_tunnel.clone(),
+        state.db.clone(),
+    ));
+
+    // Bring back any per-repo tunnel that was running before the last restart, so the operator
+    // doesn't have to re-click "Start" once per repo.
+    for repo_tunnel in db::queries::repo_tunnels::list_enabled(&state.db).await.unwrap_or_default() {
+        if let Some(provider) = tunnel::TunnelProvider::parse(&repo_tunnel.provider) {
+            let state = state.clone();
+            let repo_id = repo_tunnel.repo_id.clone();
+            tokio::spawn(async move {
+                if let Err(e) = state.repo_tunnels.start(&state, &repo_id, provider).await {
+                    tracing::warn!(error = %e, repo_id, "failed to auto-start repo tunnel on boot");
+                }
+            });
+        }
+    }
+    if let Ok(dashboard_tunnel) = db::queries::dashboard_tunnel::get(&state.db).await {
+        if dashboard_tunnel.enabled != 0 {
+            if let Some(provider) = tunnel::TunnelProvider::parse(&dashboard_tunnel.provider) {
+                let state = state.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = state.dashboard_tunnel.start(&state, provider).await {
+                        tracing::warn!(error = %e, "failed to auto-start dashboard tunnel on boot");
+                    }
+                });
+            }
+        }
+    }
 
     let app = api::router(state);
 

@@ -1,9 +1,11 @@
 pub mod agents;
 pub mod analytics;
 pub mod artifacts;
+pub mod dashboard_tunnel;
 pub mod github_account;
 pub mod github_oauth;
 pub mod github_proxy;
+pub mod repo_tunnels;
 pub mod repos;
 pub mod runs;
 pub mod runstats;
@@ -43,7 +45,17 @@ pub(crate) fn webhook_base_url(headers: &axum::http::HeaderMap, settings: &crate
     }
 }
 
-pub fn router(state: AppState) -> Router {
+/// Builds the `/api` + SPA route table shared between the plain LAN-facing listener (`router`)
+/// and the hardened dashboard-tunnel listener (`tunnel::dashboard_manager`). Identical routes
+/// either way -- the dashboard-tunnel variant just layers the extra rate-limit/audit-log guard on
+/// top (see `tunnel::dashboard_guard::guard`). The webhook receiver is deliberately NOT part of
+/// this route table at all: it's mounted only on `router` (for the generic/manual-tunnel path)
+/// and per-repo on each repo's own listener (`tunnel::repo_listener`), so the dashboard tunnel can
+/// never reach a webhook endpoint and no webhook tunnel can ever reach `/api` or the SPA.
+/// Returns a `Router<AppState>` still open on its state, deliberately not calling `with_state`
+/// itself, so a caller can layer on more routes/middleware first and bind the concrete state
+/// exactly once, at the very end of whichever variant it's building.
+pub fn dashboard_routes() -> Router<AppState> {
     let api_routes = Router::new()
         .route("/auth/status", get(auth_handlers::status))
         .route("/auth/logout", post(auth_handlers::logout))
@@ -67,15 +79,14 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(settings::get).patch(settings::update))
         .route("/settings/runtime-status", get(settings::runtime_status))
         .route("/settings/network-info", get(settings::network_info))
-        .route(
-            "/settings/cloudflare-tunnel",
-            get(settings::cloudflare_tunnel_status).post(settings::start_cloudflare_tunnel).delete(settings::stop_cloudflare_tunnel),
-        )
-        .route(
-            "/settings/tailscale-tunnel",
-            get(settings::tailscale_tunnel_status).post(settings::start_tailscale_tunnel).delete(settings::stop_tailscale_tunnel),
-        )
         .route("/settings/tunnel-availability", get(settings::tunnel_availability))
+        .route(
+            "/settings/dashboard-tunnel",
+            get(dashboard_tunnel::status).post(dashboard_tunnel::start).delete(dashboard_tunnel::stop),
+        )
+        .route("/settings/dashboard-tunnel/requests", get(dashboard_tunnel::list_requests))
+        .route("/github/installations", get(github_account::list_installations))
+        .route("/github/installations/refresh", post(github_account::refresh_installations))
         .route("/repos", get(repos::list).post(repos::create))
         .route("/repos/{id}", get(repos::get).delete(repos::delete))
         .route("/repos/{id}/test-connection", post(repos::test_connection))
@@ -83,6 +94,10 @@ pub fn router(state: AppState) -> Router {
         .route("/repos/{id}/webhook-events", get(repos::webhook_events))
         .route("/webhook-events/{id}/runs", get(runs::list_for_webhook_event))
         .route("/repos/{id}/webhooks/recreate", post(repos::recreate_webhook))
+        .route(
+            "/repos/{id}/webhook-tunnel",
+            get(repo_tunnels::status).post(repo_tunnels::start).delete(repo_tunnels::stop),
+        )
         .route("/repos/{repo_id}/secrets", get(secrets::list_for_repo).post(secrets::create))
         .route("/repos/{repo_id}/secrets/{id}", delete(secrets::delete))
         .route("/repos/{repo_id}/workflows", get(workflows::list_for_repo).post(workflows::create))
@@ -140,11 +155,18 @@ pub fn router(state: AppState) -> Router {
         .route("/agents/{id}/shells/{shell_id}/started", post(agents::shell_started));
 
     Router::new()
-        .route("/health", get(|| async { "ok" }))
         .nest("/api", api_routes)
-        .route("/webhooks/github/{repo_id}", post(webhooks::receive))
         .fallback(static_files::spa_fallback)
         .route("/", get(static_files::spa_root))
+}
+
+/// The main LAN-facing listener: `dashboard_routes` plus the generic, still-`{repo_id}`-templated
+/// public webhook receiver (kept for manual port-forward / pasted "other tunnel" repos, which
+/// never get a per-repo tunnel listener of their own) and the health check.
+pub fn router(state: AppState) -> Router {
+    dashboard_routes()
+        .route("/health", get(|| async { "ok" }))
+        .route("/webhooks/github/{repo_id}", post(webhooks::receive))
         .layer(TraceLayer::new_for_http())
         // Permissive CORS: this server is meant to be reached only from the local network by
         // the operator's own frontend build; tighten this if ever exposed beyond that.

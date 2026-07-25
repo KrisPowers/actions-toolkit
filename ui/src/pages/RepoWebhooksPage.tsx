@@ -1,18 +1,15 @@
 import { useState } from "react";
 import type { ComponentType } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Cloud, Globe, Loader2, Network, Router, RotateCw, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Cloud, Globe, Network, Router, RotateCw, X } from "lucide-react";
 import { useRepo, useSyncRepo } from "../hooks/useRepos";
 import {
-  useCloudflareTunnelStatus,
   useNetworkInfo,
+  useRepoTunnelStatus,
   useSettings,
-  useStartCloudflareTunnel,
-  useStartTailscaleTunnel,
-  useTailscaleTunnelStatus,
+  useStartRepoTunnel,
   useTunnelAvailability,
 } from "../hooks/useSettings";
-import type { CloudflareTunnelState, TailscaleTunnelState } from "../api/types";
 import Button from "../components/common/Button";
 import Card from "../components/common/Card";
 import InfoTooltip from "../components/common/InfoTooltip";
@@ -20,6 +17,7 @@ import Modal from "../components/common/Modal";
 import PageHeader from "../components/common/PageHeader";
 import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
 import WebhookUrlField from "../components/webhooks/WebhookUrlField";
+import TunnelControl from "../components/webhooks/TunnelControl";
 
 type Method = "cloudflare" | "tailscale" | "tunnel" | "manual";
 
@@ -58,62 +56,6 @@ function ModalHeader({
   );
 }
 
-/**
- * Shared start/status block for the one-click tunnel modals (Cloudflare, Tailscale). Once the
- * tunnel is actually running there's no live button to show, a disabled "Tunnel running" button
- * sitting next to a redundant checkmark was the old, confusing layout, so this collapses running
- * state down to a single status line instead.
- */
-function TunnelControl({
-  status,
-  onStart,
-  starting,
-  installed,
-  binaryLabel,
-}: {
-  status: CloudflareTunnelState | TailscaleTunnelState | undefined;
-  onStart: () => void;
-  starting: boolean;
-  installed: boolean | undefined;
-  binaryLabel: string;
-}) {
-  if (installed === false) {
-    return (
-      <p className="mt-3 flex items-start gap-1.5 rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-neutral-500">
-        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-status-warning)]" strokeWidth={2} />
-        {binaryLabel} isn't installed on this machine, so this instance can't start the tunnel for you. Install it, then reopen this dialog.
-      </p>
-    );
-  }
-
-  if (status?.status === "running") {
-    return (
-      <div className="mt-3 flex items-center gap-1.5 text-xs text-[var(--color-status-success)]">
-        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-        Tunnel running
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-3">
-      <Button variant="primary" size="sm" onClick={onStart} disabled={starting || status?.status === "starting" || installed === undefined}>
-        {status?.status === "starting" && <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />}
-        {status?.status === "starting" ? "Starting…" : "Start tunnel"}
-      </Button>
-      {status?.status === "starting" && (
-        <p className="mt-2 text-xs text-neutral-500">Waiting to report a tunnel URL, usually a few seconds…</p>
-      )}
-      {status?.status === "failed" && (
-        <p className="mt-2 flex items-start gap-1.5 text-xs text-[var(--color-status-error)]">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-          {status.message}
-        </p>
-      )}
-    </div>
-  );
-}
-
 export default function RepoWebhooksPage() {
   const { repoId } = useParams();
   const { data: repo } = useRepo(repoId);
@@ -123,10 +65,12 @@ export default function RepoWebhooksPage() {
   const syncRepo = useSyncRepo();
   const [openMethod, setOpenMethod] = useState<Method | null>(null);
 
-  const { data: cloudflareStatus } = useCloudflareTunnelStatus();
-  const startCloudflareTunnel = useStartCloudflareTunnel();
-  const { data: tailscaleStatus } = useTailscaleTunnelStatus();
-  const startTailscaleTunnel = useStartTailscaleTunnel();
+  // This repo's own webhook tunnel: independent of every other repo's, tracked and mutated only
+  // under this repoId's cache key (see useRepoTunnelStatus/useStartRepoTunnel). A repo has at
+  // most one tunnel process running at a time, so the Cloudflare and Tailscale method cards
+  // below share this same status/mutation, just starting it with a different provider.
+  const { data: tunnelStatus } = useRepoTunnelStatus(repoId);
+  const startTunnel = useStartRepoTunnel(repoId);
 
   if (!repo) return null;
 
@@ -134,8 +78,7 @@ export default function RepoWebhooksPage() {
   const portForwardUrl = networkInfo?.public_ip
     ? `http://${networkInfo.public_ip}:${networkInfo.port}${networkInfo.webhook_path_template.replace("{repo_id}", repo.id)}`
     : undefined;
-  const cloudflareUrl = cloudflareStatus?.status === "running" ? cloudflareStatus.url : undefined;
-  const tailscaleUrl = tailscaleStatus?.status === "running" ? tailscaleStatus.url : undefined;
+  const tunnelUrl = tunnelStatus?.status === "running" ? tunnelStatus.url : undefined;
 
   function isAvailable(requiresBinary?: "cloudflared" | "tailscale") {
     if (!requiresBinary || !tunnelAvailability) return true;
@@ -203,6 +146,10 @@ export default function RepoWebhooksPage() {
           <div className="text-sm font-medium text-neutral-200">Point GitHub at this instance</div>
           <InfoTooltip text="GitHub needs a real public URL to call back into this instance. Pick whichever matches how you're exposing it. Nothing is applied until you confirm inside." />
         </div>
+        <p className="mb-3 text-xs text-neutral-600">
+          The Cloudflare Tunnel and Tailscale Funnel options below are independent per repo: starting or stopping this repo's
+          tunnel never affects any other connected repo's tunnel.
+        </p>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {METHODS.map(({ id, label, icon: Icon, blurb, requiresBinary }) => {
@@ -239,14 +186,14 @@ export default function RepoWebhooksPage() {
         </div>
 
         <TunnelControl
-          status={cloudflareStatus}
-          onStart={() => startCloudflareTunnel.mutate()}
-          starting={startCloudflareTunnel.isPending}
+          status={tunnelStatus}
+          onStart={() => startTunnel.mutate("cloudflare")}
+          starting={startTunnel.isPending}
           installed={tunnelAvailability?.cloudflared_available}
           binaryLabel="cloudflared"
         />
 
-        <WebhookUrlField repoId={repo.id} placeholder="https://random-words.trycloudflare.com" initialUrl={cloudflareUrl} className="mt-3" />
+        <WebhookUrlField repoId={repo.id} placeholder="https://random-words.trycloudflare.com" initialUrl={tunnelUrl} className="mt-3" />
       </Modal>
 
       <Modal open={openMethod === "tailscale"} onClose={() => setOpenMethod(null)} className="max-w-xl">
@@ -259,14 +206,14 @@ export default function RepoWebhooksPage() {
         </div>
 
         <TunnelControl
-          status={tailscaleStatus}
-          onStart={() => startTailscaleTunnel.mutate()}
-          starting={startTailscaleTunnel.isPending}
+          status={tunnelStatus}
+          onStart={() => startTunnel.mutate("tailscale")}
+          starting={startTunnel.isPending}
           installed={tunnelAvailability?.tailscale_available}
           binaryLabel="tailscale"
         />
 
-        <WebhookUrlField repoId={repo.id} placeholder="https://your-machine.your-tailnet.ts.net" initialUrl={tailscaleUrl} className="mt-3" />
+        <WebhookUrlField repoId={repo.id} placeholder="https://your-machine.your-tailnet.ts.net" initialUrl={tunnelUrl} className="mt-3" />
       </Modal>
 
       <Modal open={openMethod === "tunnel"} onClose={() => setOpenMethod(null)} className="max-w-xl">

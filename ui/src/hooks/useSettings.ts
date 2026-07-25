@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { settingsApi } from "../api/settings";
-import type { UpdateSettingsRequest } from "../api/types";
+import { repoTunnelApi, settingsApi } from "../api/settings";
+import type { TunnelProvider, UpdateSettingsRequest } from "../api/types";
 
 export function useSettings() {
   return useQuery({ queryKey: ["settings"], queryFn: settingsApi.get });
@@ -24,60 +24,68 @@ export function useNetworkInfo() {
   return useQuery({ queryKey: ["settings", "network-info"], queryFn: settingsApi.networkInfo });
 }
 
-// Polls quickly while cloudflared is starting up (it usually takes a few seconds to print its
-// assigned URL), then stops polling once the tunnel is running, failed, or was never started.
-export function useCloudflareTunnelStatus() {
-  return useQuery({
-    queryKey: ["settings", "cloudflare-tunnel"],
-    queryFn: settingsApi.cloudflareTunnelStatus,
-    refetchInterval: (query) => (query.state.data?.status === "starting" ? 1000 : false),
-  });
-}
-
-export function useStartCloudflareTunnel() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: settingsApi.startCloudflareTunnel,
-    onSuccess: (data) => qc.setQueryData(["settings", "cloudflare-tunnel"], data),
-  });
-}
-
-export function useStopCloudflareTunnel() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: settingsApi.stopCloudflareTunnel,
-    onSuccess: (data) => qc.setQueryData(["settings", "cloudflare-tunnel"], data),
-  });
-}
-
-// Polls quickly while `tailscale funnel` is starting up, then stops polling once the tunnel is
-// running, failed, or was never started. Mirrors useCloudflareTunnelStatus above.
-export function useTailscaleTunnelStatus() {
-  return useQuery({
-    queryKey: ["settings", "tailscale-tunnel"],
-    queryFn: settingsApi.tailscaleTunnelStatus,
-    refetchInterval: (query) => (query.state.data?.status === "starting" ? 1000 : false),
-  });
-}
-
-export function useStartTailscaleTunnel() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: settingsApi.startTailscaleTunnel,
-    onSuccess: (data) => qc.setQueryData(["settings", "tailscale-tunnel"], data),
-  });
-}
-
-export function useStopTailscaleTunnel() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: settingsApi.stopTailscaleTunnel,
-    onSuccess: (data) => qc.setQueryData(["settings", "tailscale-tunnel"], data),
-  });
-}
-
-// Whether cloudflared/tailscale are actually installed, so the Webhooks page can disable each
-// tunnel button up front instead of letting the operator click it and only then find out.
+// Whether cloudflared/tailscale are actually installed, so a tunnel option can be disabled up
+// front instead of letting the operator pick it and only then find out.
 export function useTunnelAvailability() {
   return useQuery({ queryKey: ["settings", "tunnel-availability"], queryFn: settingsApi.tunnelAvailability });
+}
+
+// Each repo's webhook tunnel is tracked independently on the backend (its own process, its own
+// listener); these hooks are keyed by repoId so one repo's status/mutations never touch
+// another's cached data.
+
+export function useRepoTunnelStatus(repoId: string | undefined) {
+  return useQuery({
+    queryKey: ["repo-tunnel", repoId],
+    queryFn: () => repoTunnelApi.status(repoId!),
+    enabled: !!repoId,
+    refetchInterval: (query) => (query.state.data?.status === "starting" ? 1000 : false),
+  });
+}
+
+export function useStartRepoTunnel(repoId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: TunnelProvider) => repoTunnelApi.start(repoId!, provider),
+    onSuccess: (data) => qc.setQueryData(["repo-tunnel", repoId], data),
+  });
+}
+
+export function useStopRepoTunnel(repoId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => repoTunnelApi.stop(repoId!),
+    onSuccess: (data) => qc.setQueryData(["repo-tunnel", repoId], data),
+  });
+}
+
+// The dashboard/API remote-access tunnel is a singleton, entirely separate from any repo's
+// webhook tunnel above.
+
+export function useDashboardTunnelStatus() {
+  return useQuery({
+    queryKey: ["settings", "dashboard-tunnel"],
+    queryFn: settingsApi.dashboardTunnelStatus,
+    refetchInterval: (query) => (query.state.data?.status === "starting" ? 1000 : false),
+  });
+}
+
+export function useStartDashboardTunnel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: TunnelProvider) => settingsApi.startDashboardTunnel(provider),
+    onSuccess: (data) => qc.setQueryData(["settings", "dashboard-tunnel"], data),
+  });
+}
+
+export function useStopDashboardTunnel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: settingsApi.stopDashboardTunnel,
+    onSuccess: (data) => qc.setQueryData(["settings", "dashboard-tunnel"], data),
+  });
+}
+
+export function useDashboardTunnelRequests() {
+  return useQuery({ queryKey: ["settings", "dashboard-tunnel", "requests"], queryFn: settingsApi.dashboardTunnelRequests });
 }

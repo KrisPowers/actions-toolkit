@@ -23,3 +23,20 @@ export function useAccessibleRepos(enabled: boolean) {
     enabled,
   });
 }
+
+export function useInstallations() {
+  return useQuery({ queryKey: ["github", "installations"], queryFn: githubAccountApi.listInstallations });
+}
+
+// Re-runs installation discovery against GitHub, so an org the App was just installed on (which
+// has no callback into this instance to pick up automatically) shows up without a full reconnect.
+export function useRefreshInstallations() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => githubAccountApi.refreshInstallations(),
+    onSuccess: (data) => {
+      qc.setQueryData(["github", "installations"], data);
+      qc.invalidateQueries({ queryKey: ["github", "accessible-repos"] });
+    },
+  });
+}

@@ -3,8 +3,9 @@ use axum::Json;
 
 use crate::app::AppState;
 use crate::auth::middleware::ApprovedUser;
-use crate::db::models::{GithubToken, GithubTokenStatus};
-use crate::db::queries::github_token as token_queries;
+use crate::config::GITHUB_APP_SLUG;
+use crate::db::models::{GithubInstallation, GithubToken, GithubTokenStatus};
+use crate::db::queries::{github_installations as installations_queries, github_token as token_queries};
 use crate::error::{AppError, AppResult};
 use crate::github::{client, discovery};
 
@@ -46,23 +47,52 @@ pub async fn delete_token(State(state): State<AppState>, _user: ApprovedUser) ->
     Ok(())
 }
 
+/// Lists repos across every installation this instance's account-wide connection currently has
+/// (personal account and any org), so repos from more than one org are all visible to the
+/// connect-repo picker in one go. Falls back to the legacy account-wide listing when there are no
+/// stored installations (a `pat` connection, or an App connection made before installation
+/// discovery existed).
 pub async fn accessible_repos(
     State(state): State<AppState>,
     _user: ApprovedUser,
 ) -> AppResult<Json<Vec<discovery::AccessibleRepo>>> {
     let client = client::shared(&state).await?;
 
-    // A `github_app` connection with an installation ID lists exactly what that installation
-    // was granted; everything else (a legacy PAT, or an App connection without one, e.g. an
-    // older install) falls back to the account-wide listing the token can see.
-    let row = token_queries::get(&state.db).await?;
-    let repos = match row.as_ref().and_then(|t| (t.token_type == "github_app").then_some(t.installation_id).flatten()) {
-        Some(installation_id) => discovery::list_accessible_repos_for_installation(&client, installation_id)
-            .await
-            .map_err(AppError::Internal)?,
-        None => discovery::list_accessible_repos(&client).await.map_err(AppError::Internal)?,
+    let installations = installations_queries::list(&state.db).await?;
+    let repos = if installations.is_empty() {
+        discovery::list_accessible_repos(&client).await.map_err(AppError::Internal)?
+    } else {
+        let mut merged = Vec::new();
+        for install in installations {
+            let mut repos = discovery::list_accessible_repos_for_installation(&client, install.id).await.map_err(AppError::Internal)?;
+            for repo in &mut repos {
+                repo.account_login = Some(install.account_login.clone());
+                repo.account_type = Some(install.account_type.clone());
+            }
+            merged.extend(repos);
+        }
+        merged
     };
     Ok(Json(repos))
+}
+
+pub async fn list_installations(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<Vec<GithubInstallation>>> {
+    Ok(Json(installations_queries::list(&state.db).await?))
+}
+
+/// Re-runs installation discovery against GitHub, picking up an installation on a newly-added
+/// org: unlike the initial connect flow, GitHub has no callback into this instance when the App
+/// is installed on another account afterward, so this is the explicit "I just did that, go
+/// notice it" action (the "Refresh" button next to "Install on another organization").
+pub async fn refresh_installations(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<Vec<GithubInstallation>>> {
+    let client = client::shared(&state).await?;
+    let installations = discovery::list_installations(&client, GITHUB_APP_SLUG).await.map_err(AppError::Internal)?;
+    let rows: Vec<_> = installations
+        .iter()
+        .map(|i| (i.id, i.account_login.clone(), i.account_type.clone(), Some(GITHUB_APP_SLUG.to_string())))
+        .collect();
+    installations_queries::upsert_all(&state.db, &rows).await?;
+    Ok(Json(installations_queries::list(&state.db).await?))
 }
 
 #[cfg(test)]

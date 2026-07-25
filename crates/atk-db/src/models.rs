@@ -417,6 +417,59 @@ pub struct ResourceSample {
     pub host_memory_percent: Option<f64>,
 }
 
+/// A repo's own one-click webhook tunnel config (Decision 1: independent per repo, never shared
+/// with another repo's tunnel). Absent entirely for a repo that has never used the one-click
+/// Cloudflare/Tailscale flow (manual port-forward or a pasted "other tunnel" URL never creates a
+/// row here). `local_port`/`last_url` are best-effort caches of the last known state, not a
+/// source of truth -- the live child process/listener are what actually matter at runtime.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct RepoTunnel {
+    pub repo_id: String,
+    pub provider: String,
+    pub enabled: i64,
+    pub local_port: Option<i64>,
+    pub last_url: Option<String>,
+    pub updated_at: String,
+}
+
+/// Singleton row (id is always 1) for the instance's own dashboard/API remote-access tunnel
+/// (Decision 3). Never shares a process, port, or listener with any repo webhook tunnel.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct DashboardTunnel {
+    pub id: i64,
+    pub provider: String,
+    pub enabled: i64,
+    pub local_port: Option<i64>,
+    pub last_url: Option<String>,
+    pub updated_at: String,
+}
+
+/// One GitHub App installation (personal account or org) this instance's account-wide connection
+/// currently has, so repos can be sourced from any of them (Decision 2). A discovery cache,
+/// refreshed wholesale on reconnect or an explicit refresh, not a credential itself.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct GithubInstallation {
+    pub id: i64,
+    pub account_login: String,
+    pub account_type: String,
+    pub app_slug: Option<String>,
+    pub connected_at: String,
+}
+
+/// One request that arrived over the dashboard tunnel (Decision 3's heavier auditing). Never
+/// recorded for LAN/local traffic -- only the hardened tunnel-facing listener writes these.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct DashboardTunnelRequest {
+    pub id: String,
+    pub user_id: Option<String>,
+    pub ip_address: Option<String>,
+    pub method: String,
+    pub path: String,
+    pub status_code: i64,
+    pub rate_limited: i64,
+    pub created_at: String,
+}
+
 pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
 }

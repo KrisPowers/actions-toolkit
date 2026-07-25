@@ -74,12 +74,14 @@ pub struct AppStateInner {
     /// loser's exchange rejected by GitHub, wrongly marking a connection that the winner just
     /// refreshed fine as needing reconnect.
     pub token_refresh_lock: tokio::sync::Mutex<()>,
-    /// The instance-wide "one click" Cloudflare Quick Tunnel started from the Webhooks page.
-    /// Shared (not per-repo): a tunnel exposes this instance's port, not any single repo.
-    pub cloudflare_tunnel: Arc<crate::tunnel::CloudflareTunnel>,
-    /// The instance-wide "one click" Tailscale Funnel started from the Webhooks page. Same
-    /// shared-not-per-repo reasoning as `cloudflare_tunnel`.
-    pub tailscale_tunnel: Arc<crate::tailscale::TailscaleTunnel>,
+    /// Per-repo webhook tunnels (one-click Cloudflare/Tailscale only -- manual port-forward or a
+    /// pasted "other tunnel" URL never touches this). Keyed by repo_id; each entry owns its own
+    /// child process and its own loopback listener serving only that repo's webhook route, so no
+    /// repo's tunnel is ever shared with another repo's.
+    pub repo_tunnels: Arc<crate::tunnel::repo_manager::RepoTunnelManager>,
+    /// The instance's own dashboard/API remote-access tunnel. Never shares a process, port, or
+    /// listener with any repo webhook tunnel.
+    pub dashboard_tunnel: Arc<crate::tunnel::dashboard_manager::DashboardTunnelManager>,
 }
 
 impl FromRef<AppState> for SqlitePool {

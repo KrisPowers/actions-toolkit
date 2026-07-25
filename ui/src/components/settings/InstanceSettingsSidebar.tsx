@@ -1,12 +1,13 @@
 import type { LucideIcon } from "lucide-react";
 import { NavLink } from "react-router-dom";
-import { History, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { History, ShieldCheck, SlidersHorizontal, Wifi } from "lucide-react";
 import { cn } from "../../lib/cn";
 
 const SECTIONS: { path: string; icon: LucideIcon; label: string }[] = [
   { path: "general", icon: SlidersHorizontal, label: "General" },
   { path: "access", icon: ShieldCheck, label: "Access" },
   { path: "login-attempts", icon: History, label: "Login attempts" },
+  { path: "dashboard-access", icon: Wifi, label: "Remote access" },
 ];
 
 export default function InstanceSettingsSidebar() {

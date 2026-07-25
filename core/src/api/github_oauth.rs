@@ -162,7 +162,17 @@ pub async fn device_poll(State(state): State<AppState>, ApprovedUser(_user): App
 async fn persist_connection(state: &AppState, exchanged: oauth::ExchangedToken) -> AppResult<DevicePollResponse> {
     let github_client = client::for_token(&exchanged.access_token).map_err(AppError::Internal)?;
     let login = discovery::validate_token(&github_client).await.map_err(AppError::Internal)?;
-    let installation_id = discovery::find_installation_id(&github_client, GITHUB_APP_SLUG).await.map_err(AppError::Internal)?;
+
+    // Every installation of the App the connected account administers (personal account or any
+    // org), not just the first one, so repos from more than one org are visible to the
+    // connect-repo picker (see `api::github_account::accessible_repos`).
+    let installations = discovery::list_installations(&github_client, GITHUB_APP_SLUG).await.map_err(AppError::Internal)?;
+    let rows: Vec<_> = installations
+        .iter()
+        .map(|i| (i.id, i.account_login.clone(), i.account_type.clone(), Some(GITHUB_APP_SLUG.to_string())))
+        .collect();
+    crate::db::queries::github_installations::upsert_all(&state.db, &rows).await?;
+    let installation_id = installations.first().map(|i| i.id);
 
     let (token_encrypted, token_nonce) = state.enc.encrypt_str(&exchanged.access_token).map_err(AppError::Internal)?;
     let (refresh_encrypted, refresh_nonce) = state.enc.encrypt_str(&exchanged.refresh_token).map_err(AppError::Internal)?;
@@ -225,8 +235,8 @@ mod tests {
                 crate::auth::login_flow::LOGIN_RATE_LIMIT_WINDOW,
             ),
             token_refresh_lock: tokio::sync::Mutex::new(()),
-            cloudflare_tunnel: std::sync::Arc::new(crate::tunnel::CloudflareTunnel::new()),
-            tailscale_tunnel: std::sync::Arc::new(crate::tailscale::TailscaleTunnel::new()),
+            repo_tunnels: std::sync::Arc::new(crate::tunnel::repo_manager::RepoTunnelManager::new()),
+            dashboard_tunnel: std::sync::Arc::new(crate::tunnel::dashboard_manager::DashboardTunnelManager::new()),
         }));
 
         (state, user)

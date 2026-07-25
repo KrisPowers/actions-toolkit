@@ -7,13 +7,23 @@ use crate::db::queries::{repos as repo_queries, webhook_events as event_queries,
 use crate::workflow::{trigger_match, yaml};
 
 /// Public webhook receiver. Not behind the auth middleware; protected instead by the per-repo
-/// HMAC signature on the raw request body.
+/// HMAC signature on the raw request body. Reachable both on the main listener's generic
+/// `/webhooks/github/{repo_id}` route (manual port-forward / pasted "other tunnel" repos) and,
+/// via `receive_for_repo`, on that one repo's own dedicated tunnel listener.
 pub async fn receive(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
     headers: HeaderMap,
     body: Bytes,
 ) -> StatusCode {
+    receive_for_repo(state, repo_id, headers, body).await
+}
+
+/// The actual receiver logic, callable with a `repo_id` that didn't come from the URL path --
+/// used by a per-repo tunnel listener (`tunnel::repo_listener`), whose route for a given repo is
+/// a literal path baked in at listener-construction time rather than a `{repo_id}` template, so
+/// that listener is structurally incapable of ever being asked to handle any repo but its own.
+pub(crate) async fn receive_for_repo(state: AppState, repo_id: String, headers: HeaderMap, body: Bytes) -> StatusCode {
     let Ok(Some(repo)) = repo_queries::find_by_id(&state.db, &repo_id).await else {
         return StatusCode::NOT_FOUND;
     };
