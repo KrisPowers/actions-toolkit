@@ -20,11 +20,11 @@ export default function RepoSwitcher() {
           type="button"
           onClick={toggle}
           aria-expanded={open}
-          className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-base font-semibold text-header-fg hover:bg-white/10"
+          className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-header-border bg-white/5 px-2.5 text-sm font-medium text-header-fg hover:bg-white/10"
         >
           {currentRepo ? (
             <>
-              <Avatar login={currentRepo.owner} size={20} />
+              <Avatar login={currentRepo.owner} size={16} />
               {currentRepo.owner}
               <span className="text-header-fg-muted">/</span>
               {currentRepo.name}
@@ -32,7 +32,7 @@ export default function RepoSwitcher() {
           ) : (
             "This repo"
           )}
-          <ChevronDown className="h-4 w-4 text-header-fg-muted" strokeWidth={2} />
+          <ChevronDown className="h-3.5 w-3.5 text-header-fg-muted" strokeWidth={2} />
         </button>
       )}
     >

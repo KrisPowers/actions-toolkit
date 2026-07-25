@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { LogOut, Settings as SettingsIcon } from "lucide-react";
 import GithubMark from "../common/GithubMark";
@@ -5,16 +6,21 @@ import Menu from "../common/Menu";
 import Avatar from "../common/Avatar";
 import ThemeToggle from "../common/ThemeToggle";
 import RepoSwitcher from "./RepoSwitcher";
+import HeaderSearch from "./HeaderSearch";
+import HeaderAddMenu from "./HeaderAddMenu";
+import AddWorkflowModal from "../workflows/AddWorkflowModal";
 import { useLogout } from "../../hooks/useAuth";
 import type { User } from "../../api/types";
 
 // GitHub's global nav stays this dark shade regardless of the site's light/dark theme setting,
 // so this header is styled directly off --color-header-* rather than the theme-flipping neutral
 // tokens the rest of the app uses.
-const headerIconButton = "text-header-fg-muted hover:bg-white/10 hover:text-header-fg";
+const headerBoxButton =
+  "flex h-8 w-8 items-center justify-center rounded-md border border-header-border bg-white/5 text-header-fg-muted hover:bg-white/10 hover:text-header-fg";
 
 export default function GlobalHeader({ user }: { user: User }) {
   const logout = useLogout();
+  const [addWorkflowRepoId, setAddWorkflowRepoId] = useState<string | null>(null);
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-4 border-b border-header-border bg-header-bg px-4 text-header-fg">
@@ -22,11 +28,15 @@ export default function GlobalHeader({ user }: { user: User }) {
         <GithubMark className="h-6 w-6 text-header-fg" />
       </Link>
 
-      <RepoSwitcher />
+      <HeaderSearch />
 
       <div className="flex-1" />
 
-      <ThemeToggle triggerClassName={headerIconButton} />
+      <RepoSwitcher />
+
+      <HeaderAddMenu triggerClassName={headerBoxButton} onAddWorkflow={setAddWorkflowRepoId} />
+
+      <ThemeToggle triggerClassName={headerBoxButton} />
 
       <Menu
         align="right"
@@ -53,6 +63,8 @@ export default function GlobalHeader({ user }: { user: User }) {
           Log out
         </button>
       </Menu>
+
+      {addWorkflowRepoId && <AddWorkflowModal repoId={addWorkflowRepoId} onClose={() => setAddWorkflowRepoId(null)} />}
     </header>
   );
 }
