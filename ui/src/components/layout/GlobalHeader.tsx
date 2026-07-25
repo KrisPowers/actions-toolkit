@@ -6,6 +6,7 @@ import Menu from "../common/Menu";
 import Avatar from "../common/Avatar";
 import ThemeToggle from "../common/ThemeToggle";
 import RepoSwitcher from "./RepoSwitcher";
+import HeaderNav from "./HeaderNav";
 import HeaderSearch from "./HeaderSearch";
 import HeaderAddMenu from "./HeaderAddMenu";
 import AddWorkflowModal from "../workflows/AddWorkflowModal";
@@ -24,13 +25,15 @@ export default function GlobalHeader({ user }: { user: User }) {
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-4 border-b border-header-border bg-header-bg px-4 text-header-fg">
-      <Link to="/" className="flex items-center rounded-md p-1.5 hover:bg-white/10" aria-label="Dashboard">
+      <Link to="/" className="flex items-center rounded-md p-1.5 hover:bg-white/10" aria-label="Home">
         <GithubMark className="h-6 w-6 text-header-fg" />
       </Link>
 
-      <HeaderSearch />
+      <HeaderNav user={user} />
 
       <div className="flex-1" />
+
+      <HeaderSearch />
 
       <RepoSwitcher />
 
