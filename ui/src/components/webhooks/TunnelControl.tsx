@@ -5,7 +5,7 @@ import type { TunnelState } from "../../api/types";
 /**
  * Shared start/status block for a one-click tunnel (Cloudflare or Tailscale) -- used both by a
  * repo's own webhook tunnel (RepoWebhooksPage) and the instance's dashboard tunnel
- * (DashboardTunnelSettingsPage). Once the tunnel is actually running there's no live button to
+ * (AdminRemoteAccessPage). Once the tunnel is actually running there's no live button to
  * show, a disabled "Tunnel running" button sitting next to a redundant checkmark was the old,
  * confusing layout, so this collapses running state down to a single status line instead.
  */
