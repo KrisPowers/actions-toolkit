@@ -159,7 +159,11 @@ pub async fn device_poll(State(state): State<AppState>, ApprovedUser(_user): App
     Ok(Json(if is_pending { DevicePollResponse::Pending } else { DevicePollResponse::NotStarted }))
 }
 
-async fn persist_connection(state: &AppState, exchanged: oauth::ExchangedToken) -> AppResult<DevicePollResponse> {
+/// `pub(crate)` so the setup wizard's admin-bootstrap login can reuse it directly: see
+/// `auth::handlers::resolve_login`, which persists the very first admin's login token as the
+/// instance's shared connection too, instead of making that one operator run the device-flow
+/// dance a second time back to back for what is unmistakably the same GitHub account.
+pub(crate) async fn persist_connection(state: &AppState, exchanged: oauth::ExchangedToken) -> AppResult<DevicePollResponse> {
     let github_client = client::for_token(&exchanged.access_token).map_err(AppError::Internal)?;
     let login = discovery::validate_token(&github_client).await.map_err(AppError::Internal)?;
 
