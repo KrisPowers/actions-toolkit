@@ -1,8 +1,15 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { authApi } from "../../api/auth";
+import { githubAccountApi } from "../../api/githubAccount";
 import GithubDeviceFlow from "../../components/auth/GithubDeviceFlow";
 
-export default function AdminStep({ onNext }: { onNext: () => void }) {
+/**
+ * The first person to connect becomes the admin, and that same authorization doubles as the
+ * instance's shared repo-access connection (see `resolve_login` on the backend) so this one
+ * device-flow "enter this code on GitHub" step is the only one most setups ever see. `onNeedsGithub`
+ * is only reached as a fallback, e.g. if that auto-connect failed server-side for some reason.
+ */
+export default function AdminStep({ onNext, onNeedsGithub }: { onNext: () => void; onNeedsGithub: () => void }) {
   const qc = useQueryClient();
 
   return (
@@ -26,9 +33,12 @@ export default function AdminStep({ onNext }: { onNext: () => void }) {
             if (res.status === "expired") return { kind: "expired" };
             return { kind: "done", data: res };
           }}
-          onDone={() => {
+          onDone={async () => {
             qc.invalidateQueries({ queryKey: ["auth"] });
-            onNext();
+            qc.invalidateQueries({ queryKey: ["github", "token-status"] });
+            const status = await githubAccountApi.status();
+            if (status.connected) onNext();
+            else onNeedsGithub();
           }}
         />
       </div>

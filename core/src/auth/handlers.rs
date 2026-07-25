@@ -237,6 +237,17 @@ async fn resolve_login(state: &AppState, exchanged: oauth::ExchangedToken, ip: &
     )
     .await?;
 
+    // Bootstrapping the very first admin account is inherently a single-operator moment: reuse
+    // this same device-flow token as the instance's shared repo-access connection too, so the
+    // setup wizard doesn't make that one person authorize on GitHub twice back to back for what
+    // is unmistakably the same account. Only applies when nothing is connected yet, so it never
+    // clobbers a connection an admin deliberately set up (or reconnected) since.
+    if is_first_user && token_queries::get(&state.db).await?.is_none() {
+        if let Err(e) = crate::api::github_oauth::persist_connection(state, exchanged).await {
+            tracing::warn!(error = %e, "failed to auto-connect the shared GitHub token during admin bootstrap");
+        }
+    }
+
     // A returning user keeps whatever status an admin has since set (upsert_from_github only
     // applies default_status on first insert), so the recorded outcome reflects the account's
     // actual current status, not the defaults computed above.

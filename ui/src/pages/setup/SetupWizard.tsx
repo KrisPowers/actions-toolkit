@@ -27,7 +27,7 @@ export default function SetupWizard({ initialStatus, onComplete }: { initialStat
   return (
     <StepShell step={STEP_INDEX[step]}>
       {step === "welcome" && <WelcomeStep onNext={() => setStep("admin")} />}
-      {step === "admin" && <AdminStep onNext={() => setStep("token")} />}
+      {step === "admin" && <AdminStep onNext={() => setStep("repos")} onNeedsGithub={() => setStep("token")} />}
       {step === "token" && <TokenStep onNext={() => setStep("repos")} onSkip={() => setStep("repos")} />}
       {step === "repos" && <ReposStep onNext={() => setStep("done")} />}
       {step === "done" && <DoneStep onFinish={onComplete} />}
