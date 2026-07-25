@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { FilePlus2, FolderPlus, Plus } from "lucide-react";
+import { ChevronDown, FilePlus2, FolderPlus, Plus } from "lucide-react";
 import Menu from "../common/Menu";
 import { useRepoIdFromLocation } from "../../hooks/useRepoIdFromLocation";
 import { cn } from "../../lib/cn";
@@ -17,8 +17,15 @@ export default function HeaderAddMenu({
     <Menu
       align="right"
       trigger={({ toggle, open }) => (
-        <button type="button" onClick={toggle} aria-expanded={open} aria-label="Create new" className={triggerClassName}>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-label="Create new"
+          className={cn(triggerClassName, "w-auto gap-0.5 px-2")}
+        >
           <Plus className="h-4 w-4" strokeWidth={2} />
+          <ChevronDown className="h-3 w-3" strokeWidth={2.5} />
         </button>
       )}
     >
