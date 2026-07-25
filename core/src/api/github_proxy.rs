@@ -6,6 +6,7 @@ use serde_json::Value;
 use crate::app::AppState;
 use crate::auth::middleware::ApprovedUser;
 use crate::db::models::Workflow as WorkflowRow;
+use crate::db::queries::audit_log::{self as audit_log_queries, NewAuditLogEntry};
 use crate::db::queries::repos as repo_queries;
 use crate::db::queries::workflows as workflow_queries;
 use crate::error::{AppError, AppResult};
@@ -204,7 +205,7 @@ pub struct ImportGithubWorkflowRequest {
 pub async fn import_github_workflow(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
-    _user: ApprovedUser,
+    ApprovedUser(user): ApprovedUser,
     Json(req): Json<ImportGithubWorkflowRequest>,
 ) -> AppResult<Json<WorkflowRow>> {
     let (client, repo) = client_for(&state, &repo_id).await?;
@@ -240,6 +241,24 @@ pub async fn import_github_workflow(
         }
         other => AppError::Database(other),
     })?;
+
+    if let Err(e) = audit_log_queries::record(
+        &state.db,
+        NewAuditLogEntry {
+            repo_id: &repo_id,
+            actor_id: Some(&user.id),
+            actor_login: Some(&user.github_login),
+            action: "workflow.imported",
+            target_type: Some("workflow"),
+            target_id: Some(&workflow.id),
+            summary: &format!("Imported workflow \"{}\" from {}", workflow.name, req.path),
+            metadata: None,
+        },
+    )
+    .await
+    {
+        tracing::warn!(error = %e, repo_id, "failed to record audit log entry");
+    }
 
     Ok(Json(workflow))
 }

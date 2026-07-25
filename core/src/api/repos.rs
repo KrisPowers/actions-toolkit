@@ -6,10 +6,31 @@ use serde::{Deserialize, Serialize};
 use crate::app::AppState;
 use crate::auth::middleware::ApprovedUser;
 use crate::db::models::{Repo, RepoPublic, WebhookEvent};
+use crate::db::queries::audit_log::{self as audit_log_queries, NewAuditLogEntry};
 use crate::db::queries::{repos as repo_queries, webhook_events as event_queries};
 use crate::error::{AppError, AppResult};
 use crate::github::webhook_verify::generate_secret;
 use crate::github::{client, hooks};
+
+async fn log_repo_action(state: &AppState, repo_id: &str, actor_id: &str, actor_login: &str, action: &str, summary: &str) {
+    if let Err(e) = audit_log_queries::record(
+        &state.db,
+        NewAuditLogEntry {
+            repo_id,
+            actor_id: Some(actor_id),
+            actor_login: Some(actor_login),
+            action,
+            target_type: Some("repo"),
+            target_id: Some(repo_id),
+            summary,
+            metadata: None,
+        },
+    )
+    .await
+    {
+        tracing::warn!(error = %e, repo_id, action, "failed to record audit log entry");
+    }
+}
 
 fn to_public(repo: &Repo) -> RepoPublic {
     RepoPublic {
@@ -97,6 +118,15 @@ pub async fn create(
     }
 
     let repo = repo_queries::find_by_id(&state.db, &repo.id).await?.ok_or(AppError::NotFound)?;
+    log_repo_action(
+        &state,
+        &repo.id,
+        &user.id,
+        &user.github_login,
+        "repo.connected",
+        &format!("Connected repo \"{}/{}\"", repo.owner, repo.name),
+    )
+    .await;
     Ok(Json(CreateRepoResponse { repo: to_public(&repo) }))
 }
 
@@ -175,9 +205,22 @@ pub struct SyncResponse {
 /// Manual trigger for the polling fallback (`runner::poll_sync`), lets an operator sync
 /// immediately instead of waiting for the periodic sweep, e.g. right after publishing a release
 /// on a repo without a working webhook.
-pub async fn sync(State(state): State<AppState>, Path(id): Path<String>, _user: ApprovedUser) -> AppResult<Json<SyncResponse>> {
+pub async fn sync(State(state): State<AppState>, Path(id): Path<String>, ApprovedUser(user): ApprovedUser) -> AppResult<Json<SyncResponse>> {
     let repo = repo_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     let dispatched = crate::runner::poll_sync::sync_repo_releases(&state, &repo).await.map_err(AppError::Internal)?;
+
+    if dispatched {
+        log_repo_action(
+            &state,
+            &repo.id,
+            &user.id,
+            &user.github_login,
+            "repo.synced",
+            "Manually synced repo, found a new release",
+        )
+        .await;
+    }
+
     Ok(Json(SyncResponse { dispatched }))
 }
 
@@ -190,7 +233,7 @@ pub async fn recreate_webhook(
     State(state): State<AppState>,
     Path(id): Path<String>,
     headers: HeaderMap,
-    _user: ApprovedUser,
+    ApprovedUser(user): ApprovedUser,
 ) -> AppResult<Json<RepoPublic>> {
     let repo = repo_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     let settings = crate::db::queries::settings::get(&state.db).await?;
@@ -210,6 +253,7 @@ pub async fn recreate_webhook(
     repo_queries::set_github_hook_id(&state.db, &repo.id, hook_id as i64).await?;
 
     let repo = repo_queries::find_by_id(&state.db, &repo.id).await?.ok_or(AppError::NotFound)?;
+    log_repo_action(&state, &repo.id, &user.id, &user.github_login, "repo.webhook_recreated", "Recreated the GitHub webhook").await;
     Ok(Json(to_public(&repo)))
 }
 
