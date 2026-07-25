@@ -1,10 +1,11 @@
-import { LayoutDashboard, SlidersHorizontal, Webhook } from "lucide-react";
+import { History, LayoutDashboard, SlidersHorizontal, Webhook } from "lucide-react";
 import { useRepoIdFromLocation } from "../../hooks/useRepoIdFromLocation";
 import { TabLink } from "../common/Tabs";
 
 const TABS = [
   { path: "overview", icon: LayoutDashboard, label: "Overview" },
   { path: "webhooks", icon: Webhook, label: "Webhooks" },
+  { path: "audit-log", icon: History, label: "Audit log" },
   { path: "settings", icon: SlidersHorizontal, label: "Settings" },
 ];
 

@@ -5,6 +5,7 @@ use serde::Deserialize;
 use crate::app::AppState;
 use crate::auth::middleware::ApprovedUser;
 use crate::db::models::{RunLog, RunTree, WorkflowRun};
+use crate::db::queries::audit_log::{self as audit_log_queries, NewAuditLogEntry};
 use crate::db::queries::{
     shards as shard_queries, repos as repo_queries, runs as run_queries, workflows as workflow_queries,
 };
@@ -101,7 +102,7 @@ pub async fn cancel(
 pub async fn rerun(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    _user: ApprovedUser,
+    ApprovedUser(user): ApprovedUser,
 ) -> AppResult<Json<WorkflowRun>> {
     let previous = run_queries::find_run(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     let workflow_row = workflow_queries::find_by_id(&state.db, &previous.workflow_id)
@@ -121,6 +122,24 @@ pub async fn rerun(
     )
     .await
     .map_err(AppError::Internal)?;
+
+    if let Err(e) = audit_log_queries::record(
+        &state.db,
+        NewAuditLogEntry {
+            repo_id: &repo.id,
+            actor_id: Some(&user.id),
+            actor_login: Some(&user.github_login),
+            action: "run.dispatched",
+            target_type: Some("run"),
+            target_id: Some(&run.id),
+            summary: &format!("Re-ran workflow \"{}\"", workflow_row.name),
+            metadata: None,
+        },
+    )
+    .await
+    {
+        tracing::warn!(error = %e, repo_id = %repo.id, "failed to record audit log entry");
+    }
 
     Ok(Json(run))
 }

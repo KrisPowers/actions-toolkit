@@ -1,6 +1,7 @@
 pub mod agent_join_tokens;
 pub mod agents;
 pub mod artifacts;
+pub mod audit_log;
 pub mod buckets;
 pub mod dashboard_tunnel;
 pub mod dashboard_tunnel_requests;

@@ -3,6 +3,7 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 
 use crate::app::AppState;
+use crate::db::queries::audit_log::{self as audit_log_queries, NewAuditLogEntry};
 use crate::db::queries::{repos as repo_queries, webhook_events as event_queries, workflows as workflow_queries};
 use crate::workflow::{trigger_match, yaml};
 
@@ -92,7 +93,7 @@ pub(crate) async fn receive_for_repo(state: AppState, repo_id: String, headers: 
     let event_id = event.as_ref().ok().map(|e| e.id.as_str());
 
     for (workflow_row, matched) in matches {
-        if let Err(e) = crate::runner::dispatch::spawn_run(
+        match crate::runner::dispatch::spawn_run(
             &state,
             &workflow_row,
             &repo,
@@ -104,7 +105,28 @@ pub(crate) async fn receive_for_repo(state: AppState, repo_id: String, headers: 
         )
         .await
         {
-            tracing::error!(error = %e, workflow_id = %workflow_row.id, "failed to spawn run for matched webhook");
+            Ok(run) => {
+                if let Err(e) = audit_log_queries::record(
+                    &state.db,
+                    NewAuditLogEntry {
+                        repo_id: &repo_id,
+                        actor_id: None,
+                        actor_login: None,
+                        action: "run.dispatched",
+                        target_type: Some("run"),
+                        target_id: Some(&run.id),
+                        summary: &format!("Workflow \"{}\" triggered by {github_event} webhook", workflow_row.name),
+                        metadata: None,
+                    },
+                )
+                .await
+                {
+                    tracing::warn!(error = %e, repo_id, "failed to record audit log entry");
+                }
+            }
+            Err(e) => {
+                tracing::error!(error = %e, workflow_id = %workflow_row.id, "failed to spawn run for matched webhook");
+            }
         }
     }
 

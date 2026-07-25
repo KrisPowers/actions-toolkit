@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod analytics;
 pub mod artifacts;
+pub mod audit_log;
 pub mod dashboard_tunnel;
 pub mod github_account;
 pub mod github_oauth;
@@ -108,6 +109,7 @@ pub fn dashboard_routes() -> Router<AppState> {
         .route("/workflows/{id}/export", get(workflows::export))
         .route("/workflows/validate", post(workflows::validate_workflow))
         .route("/repos/{repo_id}/runs", get(runs::list_for_repo))
+        .route("/repos/{repo_id}/audit-log", get(audit_log::list_for_repo))
         .route("/repos/{repo_id}/activity/ws", get(crate::ws::run_activity_ws))
         .route("/runs/{id}", get(runs::get))
         .route("/runs/{id}/cancel", post(runs::cancel))

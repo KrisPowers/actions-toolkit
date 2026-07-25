@@ -5,8 +5,29 @@ use serde::Deserialize;
 use crate::app::AppState;
 use crate::auth::middleware::ApprovedUser;
 use crate::db::models::Secret;
+use crate::db::queries::audit_log::{self as audit_log_queries, NewAuditLogEntry};
 use crate::db::queries::secrets as secret_queries;
 use crate::error::{AppError, AppResult};
+
+async fn log_secret_action(state: &AppState, repo_id: &str, actor_id: &str, actor_login: &str, action: &str, secret_id: &str, summary: &str) {
+    if let Err(e) = audit_log_queries::record(
+        &state.db,
+        NewAuditLogEntry {
+            repo_id,
+            actor_id: Some(actor_id),
+            actor_login: Some(actor_login),
+            action,
+            target_type: Some("secret"),
+            target_id: Some(secret_id),
+            summary,
+            metadata: None,
+        },
+    )
+    .await
+    {
+        tracing::warn!(error = %e, repo_id, action, "failed to record audit log entry");
+    }
+}
 
 fn validate_name(name: &str) -> AppResult<()> {
     let valid = !name.is_empty()
@@ -43,12 +64,40 @@ pub async fn create(
 
     let (value_encrypted, value_nonce) = state.enc.encrypt_str(&req.value).map_err(AppError::Internal)?;
     let secret = secret_queries::upsert(&state.db, &repo_id, &req.name, &value_encrypted, &value_nonce, &user.id).await?;
+
+    log_secret_action(
+        &state,
+        &repo_id,
+        &user.id,
+        &user.github_login,
+        "secret.set",
+        &secret.id,
+        &format!("Set secret \"{}\"", secret.name),
+    )
+    .await;
+
     Ok(Json(secret))
 }
 
-pub async fn delete(State(state): State<AppState>, Path((_repo_id, id)): Path<(String, String)>, _user: ApprovedUser) -> AppResult<()> {
-    secret_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
+pub async fn delete(
+    State(state): State<AppState>,
+    Path((repo_id, id)): Path<(String, String)>,
+    ApprovedUser(user): ApprovedUser,
+) -> AppResult<()> {
+    let secret = secret_queries::find_by_id(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     secret_queries::delete(&state.db, &id).await?;
+
+    log_secret_action(
+        &state,
+        &repo_id,
+        &user.id,
+        &user.github_login,
+        "secret.deleted",
+        &secret.id,
+        &format!("Deleted secret \"{}\"", secret.name),
+    )
+    .await;
+
     Ok(())
 }
 

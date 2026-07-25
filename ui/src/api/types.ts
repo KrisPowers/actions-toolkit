@@ -183,6 +183,19 @@ export interface WorkflowRow {
   updated_at: string;
 }
 
+export interface AuditLogEntry {
+  id: string;
+  repo_id: string;
+  actor_id: string | null;
+  actor_login: string | null;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  summary: string;
+  metadata: string | null;
+  created_at: string;
+}
+
 export interface GithubWorkflowFile {
   name: string;
   path: string;
