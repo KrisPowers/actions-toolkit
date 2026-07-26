@@ -180,16 +180,22 @@ pub async fn run_job(
             RunBackend::Docker { docker: docker.clone(), container_id }
         }
         None => {
-            // Bucket-level TTL/host-mount settings aren't resolved here anymore (that lived on
-            // `Settings`, which a shell has no direct access to) — `bucket::DEFAULT_TTL` and no
-            // extra mounts is the same conservative default a settings lookup failure already
-            // fell back to before, and per-bucket TTL/mount overrides are a follow-up once that
-            // configuration has an RCP-reachable home.
+            // Bucket-level TTL isn't resolved here (that's a separate follow-up once
+            // `bucket::DEFAULT_TTL` itself has an RCP-reachable override path); the host-mount
+            // allowlist below does have one, via `bucket_host_mounts`, since a shell has no
+            // direct `Settings` table access of its own.
+            let extra_ro_mounts = match run_client.bucket_host_mounts().await {
+                Ok(paths) => paths,
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to look up the configured bucket host-mount allowlist, continuing with none");
+                    Vec::new()
+                }
+            };
             let spec = bucket::ShardSpec {
                 workspace_host_path: &workspace_dir,
                 network_enabled: job.network,
                 ttl: bucket::DEFAULT_TTL,
-                extra_ro_mounts: &[],
+                extra_ro_mounts: &extra_ro_mounts,
             };
             match bucket::create_job_shard(buckets_dir, spec).await {
                 Ok(handle) => {

@@ -219,6 +219,7 @@ export interface WorkflowRun {
   finished_at: string | null;
   created_at: string;
   webhook_event_id: string | null;
+  github_report_error: string | null;
 }
 
 export interface JobRun {
