@@ -625,7 +625,12 @@ fn read_pipe_lines(handle: HANDLE, stream: &'static str, tx: tokio::sync::mpsc::
 /// inheriting, which is already known to work) rather than only the step's override vars, then
 /// applies `overrides` on top by key (case-insensitively, last write wins). This keeps essentials
 /// like `SystemRoot`/`ComSpec`/`TEMP` present even when a step only overrides one or two vars.
-fn build_environment_block(overrides: &[String]) -> Vec<u16> {
+///
+/// `extra_ro_mounts` (the operator-configured "Extra host paths", already granted read+execute
+/// ACL access by `grant_read_execute_access`) are appended to `PATH` here too: ACL access alone
+/// only makes a directory's files reachable, it doesn't make `cargo`/`nvm`/etc. resolvable by
+/// name, which needs the directory on `PATH` as well.
+fn build_environment_block(overrides: &[String], extra_ro_mounts: &[PathBuf]) -> Vec<u16> {
     let mut vars: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     for (key, value) in std::env::vars() {
         vars.insert(key.to_ascii_uppercase(), format!("{key}={value}"));
@@ -634,6 +639,17 @@ fn build_environment_block(overrides: &[String]) -> Vec<u16> {
         if let Some(eq) = entry.find('=') {
             vars.insert(entry[..eq].to_ascii_uppercase(), entry.clone());
         }
+    }
+
+    if !extra_ro_mounts.is_empty() {
+        let mut path_value = vars.get("PATH").and_then(|v| v.split_once('=')).map(|(_, v)| v.to_string()).unwrap_or_default();
+        for extra in extra_ro_mounts {
+            if !path_value.is_empty() {
+                path_value.push(';');
+            }
+            path_value.push_str(&extra.to_string_lossy());
+        }
+        vars.insert("PATH".to_string(), format!("PATH={path_value}"));
     }
 
     let mut block = Vec::new();
