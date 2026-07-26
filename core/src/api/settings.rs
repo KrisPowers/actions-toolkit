@@ -138,6 +138,21 @@ pub async fn tunnel_availability(_user: ApprovedUser) -> Json<TunnelAvailability
     Json(TunnelAvailability { cloudflared_available, tailscale_available })
 }
 
+/// Common toolchain install directories found under this host's home directory that aren't
+/// already in the configured "Extra host paths" allowlist, so the Bucket/sandbox settings page
+/// can offer them as one-click suggestions instead of requiring the operator to already know the
+/// exact path a step failed to find (see `runner::failure_diagnostics` for the complementary
+/// after-the-fact diagnosis). Detection only: nothing here changes the allowlist itself.
+pub async fn suggested_host_paths(State(state): State<AppState>, _user: ApprovedUser) -> AppResult<Json<Vec<crate::runner::host_toolchains::HostPathSuggestion>>> {
+    let settings = settings_queries::get(&state.db).await?;
+    let already_allowed: Vec<String> = serde_json::from_str(&settings.bucket_host_mounts_json).unwrap_or_default();
+    let suggestions = match dirs::home_dir() {
+        Some(home) => crate::runner::host_toolchains::detect(&home, &already_allowed),
+        None => Vec::new(),
+    };
+    Ok(Json(suggestions))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
