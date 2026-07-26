@@ -33,9 +33,9 @@ export default function GlobalHeader({ user }: { user: User }) {
 
       <div className="flex-1" />
 
-      <HeaderSearch />
-
       <RepoSwitcher />
+
+      <HeaderSearch />
 
       <HeaderAddMenu triggerClassName={headerBoxButton} onAddWorkflow={setAddWorkflowRepoId} />
 

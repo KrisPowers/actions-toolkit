@@ -12,6 +12,7 @@ export default function HeaderSearch() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { data: repos } = useRepos();
 
@@ -39,6 +40,21 @@ export default function HeaderSearch() {
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
+
+  // GitHub-style global "/" shortcut: jumps into the search box from anywhere on the page,
+  // unless the user is already typing somewhere else.
+  useEffect(() => {
+    function onSlash(e: KeyboardEvent) {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      e.preventDefault();
+      inputRef.current?.focus();
+      setOpen(true);
+    }
+    document.addEventListener("keydown", onSlash);
+    return () => document.removeEventListener("keydown", onSlash);
+  }, []);
 
   const q = query.trim().toLowerCase();
 
@@ -72,13 +88,25 @@ export default function HeaderSearch() {
     <div className="relative w-full max-w-md" ref={ref}>
       <div className="flex h-8 items-center gap-2 rounded-md border border-header-border bg-white/5 px-2.5 text-sm text-header-fg-muted focus-within:border-accent focus-within:bg-white/10">
         <Search className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => setOpen(true)}
-          placeholder="Search repos and workflows"
-          className="h-full w-full bg-transparent text-header-fg outline-none placeholder:text-header-fg-muted"
-        />
+        <div className="relative h-full flex-1">
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => setOpen(true)}
+            aria-label="Search repos and workflows"
+            className="h-full w-full bg-transparent text-header-fg outline-none"
+          />
+          {!open && !query && (
+            <div className="pointer-events-none absolute inset-0 flex items-center gap-1.5 text-header-fg-muted">
+              <span>Type</span>
+              <kbd className="flex h-[18px] min-w-[18px] items-center justify-center rounded border border-header-border px-1 font-sans text-xs leading-none text-header-fg-muted">
+                /
+              </kbd>
+              <span>to search</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {showResults && (
