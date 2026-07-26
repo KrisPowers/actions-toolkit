@@ -85,7 +85,7 @@ export default function HeaderSearch() {
   }
 
   return (
-    <div className="relative w-full max-w-md" ref={ref}>
+    <div className="relative w-full max-w-xs" ref={ref}>
       <div className="flex h-8 items-center gap-2 rounded-md border border-header-border bg-white/5 px-2.5 text-sm text-header-fg-muted focus-within:border-accent focus-within:bg-white/10">
         <Search className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
         <div className="relative h-full flex-1">
