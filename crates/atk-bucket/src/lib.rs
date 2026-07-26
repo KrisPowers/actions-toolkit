@@ -94,6 +94,10 @@ pub struct ShardInitSpec {
     pub workspace: PathBuf,
     pub root_skeleton: PathBuf,
     pub ro_mounts: Vec<PathBuf>,
+    /// The operator-configured subset of `ro_mounts` (excludes `DEFAULT_RO_MOUNTS`), appended to
+    /// `PATH` in `shard_init::exec_shell_command`: bind-mounting a path makes it reachable, but
+    /// doesn't make a binary inside it resolvable by name without also being on `PATH`.
+    pub extra_ro_mounts: Vec<PathBuf>,
     pub cgroup_path: PathBuf,
     pub shell_command: String,
     pub shell: Option<String>,
