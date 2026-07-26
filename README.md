@@ -70,7 +70,9 @@ below.
 2. Pick which repos to connect from the App installation's accessible-repos list (or extend the
    installation from GitHub's own settings if a repo you want isn't listed yet).
 3. Connecting a repo automatically creates its webhook on GitHub, there's no manual payload
-   URL/secret step.
+   URL/secret step. GitHub still needs a real public URL to reach the webhook, though, since
+   actions-toolkit runs on your own machine, so pick one of the exposure methods on the repo's
+   Webhooks page (a one-click Cloudflare Tunnel or Tailscale Funnel, or your own port forward).
 4. Define workflows (`on:` triggers, `jobs:`, `steps:`) either as YAML or visually.
 5. When a matching event arrives (or you click "Run now"), actions-toolkit checks out your repo,
    starts each job (a Docker container if it declares one, a Shard sandbox otherwise), runs each
