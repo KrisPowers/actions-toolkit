@@ -2,9 +2,10 @@ use anyhow::{Context, Result};
 use octocrab::Octocrab;
 use serde::{Deserialize, Serialize};
 
-/// The name GitHub Apps under; distinct from the "actions-toolkit" commit-status context so the
-/// two mechanisms (this and `status.rs`) never collide if both end up posted for the same commit.
-const CHECK_NAME: &str = "actions-toolkit";
+/// The name GitHub Apps under; distinct from the "Actions Toolkit - ATK" commit-status context so
+/// the two mechanisms (this and `status.rs`) never collide if both end up posted for the same
+/// commit.
+const CHECK_NAME: &str = "Actions Toolkit - ATK";
 
 #[derive(Serialize)]
 struct CreateCheckRunRequest<'a> {

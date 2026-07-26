@@ -262,10 +262,21 @@ pub async fn run_job(
         } else if let Some(command) = &step.run {
             let run_client_for_lines = run_client.clone();
             let step_run_id_for_lines = step_run_id.clone();
+            // Mirrors what's already being persisted via `insert_log_line`, kept separately so a
+            // failed step's stderr can be diagnosed (see `failure_diagnostics`) without a second
+            // database round trip back through it.
+            let stderr_buf = Arc::new(std::sync::Mutex::new(String::new()));
+            let stderr_buf_for_lines = stderr_buf.clone();
             let on_line = move |stream: &str, message: String| {
                 let run_client = run_client_for_lines.clone();
                 let step_run_id = step_run_id_for_lines.clone();
                 let stream = stream.to_string();
+                if stream == "stderr" {
+                    if let Ok(mut buf) = stderr_buf_for_lines.lock() {
+                        buf.push_str(&message);
+                        buf.push('\n');
+                    }
+                }
                 tokio::spawn(async move {
                     let _ = run_client.insert_log_line(&step_run_id, &now_iso(), &stream, &message).await;
                 });
@@ -281,13 +292,24 @@ pub async fn run_job(
                     bucket::exec_step(handle, command, step.shell.as_deref(), None, &step_env, on_line).await.map(|r| r.exit_code)
                 }
             };
-            match result {
+            let exit_code = match result {
                 Ok(exit_code) => exit_code,
                 Err(e) => {
                     emit_system_line(run_client, job_run_id, &format!("step '{:?}' failed: {e}", step.name)).await;
                     -1
                 }
+            };
+
+            if exit_code != 0 {
+                let stderr = stderr_buf.lock().map(|b| b.clone()).unwrap_or_default();
+                if let Some(hint) = crate::runner::failure_diagnostics::diagnose(&stderr) {
+                    if let Err(e) = run_client.set_step_failure_hint(&step_run_id, &hint).await {
+                        tracing::warn!(error = %e, step_run_id = %step_run_id, "failed to persist step failure hint");
+                    }
+                }
             }
+
+            exit_code
         } else if let Some(uses) = &step.uses {
             if let Some(image) = uses.strip_prefix("docker://") {
                 exec_docker_action_step(

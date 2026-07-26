@@ -81,6 +81,7 @@ pub fn dashboard_routes() -> Router<AppState> {
         .route("/settings/runtime-status", get(settings::runtime_status))
         .route("/settings/network-info", get(settings::network_info))
         .route("/settings/tunnel-availability", get(settings::tunnel_availability))
+        .route("/settings/suggested-host-paths", get(settings::suggested_host_paths))
         .route(
             "/settings/dashboard-tunnel",
             get(dashboard_tunnel::status).post(dashboard_tunnel::start).delete(dashboard_tunnel::stop),

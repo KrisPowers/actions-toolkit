@@ -30,6 +30,13 @@ export function useTunnelAvailability() {
   return useQuery({ queryKey: ["settings", "tunnel-availability"], queryFn: settingsApi.tunnelAvailability });
 }
 
+// Common toolchain directories (cargo, nvm, pyenv, ...) detected on the host but not yet in the
+// "Extra host paths" allowlist. Re-fetched after a save (see BucketSettingsCard) so an added path
+// drops off the suggestion list immediately instead of staying listed until a reload.
+export function useSuggestedHostPaths() {
+  return useQuery({ queryKey: ["settings", "suggested-host-paths"], queryFn: settingsApi.suggestedHostPaths });
+}
+
 // Each repo's webhook tunnel is tracked independently on the backend (its own process, its own
 // listener); these hooks are keyed by repoId so one repo's status/mutations never touch
 // another's cached data.
