@@ -10,7 +10,7 @@ export default function RepoSettingsLayout() {
   if (!repo) return null;
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader title={`${repo.owner}/${repo.name} settings`} />
 
       <div className="mt-6 grid grid-cols-1 gap-8 md:grid-cols-[240px_1fr]">

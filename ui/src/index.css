@@ -115,3 +115,15 @@ body {
 ::-webkit-scrollbar-track {
   background-color: transparent;
 }
+
+/* Tailwind's preflight stops setting cursor: pointer on buttons, which leaves every button in
+   the app showing the plain arrow cursor on hover. Restore it app-wide here instead of adding
+   cursor-pointer to every button className individually. */
+@layer base {
+  button:not(:disabled),
+  [type="button"]:not(:disabled),
+  [type="submit"]:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}
