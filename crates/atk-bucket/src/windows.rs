@@ -1082,6 +1082,37 @@ mod tests {
         );
     }
 
+    fn decode_environment_block(block: &[u16]) -> Vec<String> {
+        block
+            .split(|&c| c == 0)
+            .filter(|s| !s.is_empty())
+            .map(String::from_utf16_lossy)
+            .collect()
+    }
+
+    /// A configured "Extra host paths" entry only grants filesystem ACL access
+    /// (`grant_read_execute_access`); without also landing on `PATH` here, a step's `run:`
+    /// command still can't resolve a binary in it by name, which was the actual bug behind
+    /// "'cargo' isn't visible inside the sandbox" persisting even after configuring the path.
+    #[test]
+    fn build_environment_block_appends_extra_ro_mounts_to_path() {
+        let extra = vec![PathBuf::from(r"C:\Users\me\.cargo\bin"), PathBuf::from(r"C:\Users\me\.rustup\bin")];
+        let block = build_environment_block(&[], &extra);
+        let entries = decode_environment_block(&block);
+        let path_entry = entries.iter().find(|e| e.to_ascii_uppercase().starts_with("PATH=")).expect("PATH should be set");
+        assert!(path_entry.contains(r"C:\Users\me\.cargo\bin"), "expected extra path in PATH: {path_entry}");
+        assert!(path_entry.contains(r"C:\Users\me\.rustup\bin"), "expected extra path in PATH: {path_entry}");
+    }
+
+    #[test]
+    fn build_environment_block_leaves_path_untouched_without_extra_mounts() {
+        let block = build_environment_block(&[], &[]);
+        let entries = decode_environment_block(&block);
+        let inherited_path = std::env::var("PATH").unwrap_or_default();
+        let path_entry = entries.iter().find(|e| e.to_ascii_uppercase().starts_with("PATH=")).expect("PATH should be set");
+        assert_eq!(path_entry["PATH=".len()..], inherited_path);
+    }
+
     /// Confirms `network: true` actually grants network capability, not just that it's threaded
     /// through without erroring. Deliberately targets a real external host, not loopback: Windows
     /// blocks AppContainer loopback access unconditionally via a separate mechanism
