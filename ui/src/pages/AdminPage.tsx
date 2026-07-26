@@ -13,11 +13,13 @@ export default function AdminPage() {
   if (me?.role !== "admin") return <Navigate to="/" replace />;
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader title="Admin" subtitle="Instance-wide access, login history, and tunnel visibility." />
 
-      <div className="mt-5 grid grid-cols-1 gap-6 md:grid-cols-[200px_1fr]">
-        <AdminSidebar />
+      <div className="mt-5 grid grid-cols-1 gap-6 md:grid-cols-[240px_1fr]">
+        <div className="md:sticky md:top-6 md:self-start">
+          <AdminSidebar />
+        </div>
         <div className="min-w-0">
           <Outlet />
         </div>

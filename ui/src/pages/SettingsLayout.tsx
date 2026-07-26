@@ -4,7 +4,7 @@ import AccountSettingsSidebar from "../components/settings/AccountSettingsSideba
 
 export default function SettingsLayout() {
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader title="Settings" subtitle="Manage your GitHub connection and this instance's runtime configuration." />
 
       <div className="mt-6 grid grid-cols-1 gap-8 md:grid-cols-[240px_1fr]">
