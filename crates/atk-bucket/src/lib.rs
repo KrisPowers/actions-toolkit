@@ -66,10 +66,11 @@ pub struct ShardHandle {
     pub(crate) root_skeleton: PathBuf,
     pub(crate) network_enabled: bool,
     /// Filtered to paths that actually exist on the host at creation time, same convention as
-    /// `DEFAULT_RO_MOUNTS`. Read by Linux's `exec_step` on every step (mounts don't persist
-    /// across processes the way an ACL grant does); Windows only needs this at creation time to
-    /// grant the ACL once, so it's write-only there, hence the cfg_attr below.
-    #[cfg_attr(target_os = "windows", allow(dead_code))]
+    /// `DEFAULT_RO_MOUNTS`. Read by `exec_step` on every step on both backends: Linux re-mounts
+    /// them (mounts don't persist across processes the way an ACL grant does) and appends them to
+    /// the step's `PATH`; Windows grants the ACL once at creation time but still needs this on
+    /// every step to append the same paths to `PATH`, since the ACL grant alone only makes the
+    /// directory's files reachable, not resolvable by name.
     pub(crate) extra_ro_mounts: Vec<PathBuf>,
     #[cfg(target_os = "linux")]
     pub(crate) cgroup_path: PathBuf,
@@ -93,6 +94,10 @@ pub struct ShardInitSpec {
     pub workspace: PathBuf,
     pub root_skeleton: PathBuf,
     pub ro_mounts: Vec<PathBuf>,
+    /// The operator-configured subset of `ro_mounts` (excludes `DEFAULT_RO_MOUNTS`), appended to
+    /// `PATH` in `shard_init::exec_shell_command`: bind-mounting a path makes it reachable, but
+    /// doesn't make a binary inside it resolvable by name without also being on `PATH`.
+    pub extra_ro_mounts: Vec<PathBuf>,
     pub cgroup_path: PathBuf,
     pub shell_command: String,
     pub shell: Option<String>,

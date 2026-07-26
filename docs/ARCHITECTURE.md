@@ -12,11 +12,13 @@ core (bin: actions-toolkit)
  ├── atk-crypto
  ├── atk-db ── atk-crypto
  ├── atk-github
+ ├── atk-rcp
  └── atk-workflow
 ```
 
 None of the `crates/atk-*` crates depend on `core`, and none of them depend on each other except
-where drawn above. `atk-crypto` and `atk-workflow` have no internal dependencies at all.
+where drawn above. `atk-crypto`, `atk-rcp`, and `atk-workflow` have no internal dependencies at
+all.
 
 ## Why the split is where it is
 

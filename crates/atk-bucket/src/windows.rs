@@ -144,6 +144,7 @@ where
     let id = handle.id.clone();
     let workspace = handle.workspace.clone();
     let network_enabled = handle.network_enabled;
+    let extra_ro_mounts = handle.extra_ro_mounts.clone();
     let shell_command = shell_command.to_string();
     let shell = shell.map(str::to_string);
     let working_dir = working_dir.map(str::to_string);
@@ -159,6 +160,7 @@ where
             shell: shell.as_deref(),
             working_dir: working_dir.as_deref(),
             env: &env,
+            extra_ro_mounts: &extra_ro_mounts,
         };
         run_step_blocking(&id, &workspace, network_enabled, invocation, (stdout_tx, stderr_tx))
     });
@@ -425,6 +427,7 @@ struct StepInvocation<'a> {
     shell: Option<&'a str>,
     working_dir: Option<&'a str>,
     env: &'a [String],
+    extra_ro_mounts: &'a [PathBuf],
 }
 
 type OutputLineSender = tokio::sync::mpsc::UnboundedSender<(&'static str, String)>;
@@ -436,7 +439,7 @@ fn run_step_blocking(
     invocation: StepInvocation<'_>,
     (stdout_tx, stderr_tx): (OutputLineSender, OutputLineSender),
 ) -> Result<ExecResult> {
-    let StepInvocation { shell_command, shell, working_dir, env } = invocation;
+    let StepInvocation { shell_command, shell, working_dir, env, extra_ro_mounts } = invocation;
     let profile_name = appcontainer_profile_name(id);
     let name_wide = to_wide(&profile_name);
     let sid = unsafe {
@@ -502,7 +505,7 @@ fn run_step_blocking(
 
         let mut cmdline = to_wide(&resolve_shell_cmdline(shell, shell_command));
         let cwd = working_dir.map(to_wide).unwrap_or_else(|| to_wide(&workspace.to_string_lossy()));
-        let env_block = build_environment_block(env);
+        let env_block = build_environment_block(env, extra_ro_mounts);
 
         let mut process_info = PROCESS_INFORMATION::default();
         let create_result = unsafe {
@@ -622,7 +625,12 @@ fn read_pipe_lines(handle: HANDLE, stream: &'static str, tx: tokio::sync::mpsc::
 /// inheriting, which is already known to work) rather than only the step's override vars, then
 /// applies `overrides` on top by key (case-insensitively, last write wins). This keeps essentials
 /// like `SystemRoot`/`ComSpec`/`TEMP` present even when a step only overrides one or two vars.
-fn build_environment_block(overrides: &[String]) -> Vec<u16> {
+///
+/// `extra_ro_mounts` (the operator-configured "Extra host paths", already granted read+execute
+/// ACL access by `grant_read_execute_access`) are appended to `PATH` here too: ACL access alone
+/// only makes a directory's files reachable, it doesn't make `cargo`/`nvm`/etc. resolvable by
+/// name, which needs the directory on `PATH` as well.
+fn build_environment_block(overrides: &[String], extra_ro_mounts: &[PathBuf]) -> Vec<u16> {
     let mut vars: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     for (key, value) in std::env::vars() {
         vars.insert(key.to_ascii_uppercase(), format!("{key}={value}"));
@@ -631,6 +639,17 @@ fn build_environment_block(overrides: &[String]) -> Vec<u16> {
         if let Some(eq) = entry.find('=') {
             vars.insert(entry[..eq].to_ascii_uppercase(), entry.clone());
         }
+    }
+
+    if !extra_ro_mounts.is_empty() {
+        let mut path_value = vars.get("PATH").and_then(|v| v.split_once('=')).map(|(_, v)| v.to_string()).unwrap_or_default();
+        for extra in extra_ro_mounts {
+            if !path_value.is_empty() {
+                path_value.push(';');
+            }
+            path_value.push_str(&extra.to_string_lossy());
+        }
+        vars.insert("PATH".to_string(), format!("PATH={path_value}"));
     }
 
     let mut block = Vec::new();
@@ -1061,6 +1080,37 @@ mod tests {
             cmdline.starts_with("pwsh.exe") || cmdline.starts_with("powershell.exe"),
             "expected the default shell to be pwsh or powershell: {cmdline}"
         );
+    }
+
+    fn decode_environment_block(block: &[u16]) -> Vec<String> {
+        block
+            .split(|&c| c == 0)
+            .filter(|s| !s.is_empty())
+            .map(String::from_utf16_lossy)
+            .collect()
+    }
+
+    /// A configured "Extra host paths" entry only grants filesystem ACL access
+    /// (`grant_read_execute_access`); without also landing on `PATH` here, a step's `run:`
+    /// command still can't resolve a binary in it by name, which was the actual bug behind
+    /// "'cargo' isn't visible inside the sandbox" persisting even after configuring the path.
+    #[test]
+    fn build_environment_block_appends_extra_ro_mounts_to_path() {
+        let extra = vec![PathBuf::from(r"C:\Users\me\.cargo\bin"), PathBuf::from(r"C:\Users\me\.rustup\bin")];
+        let block = build_environment_block(&[], &extra);
+        let entries = decode_environment_block(&block);
+        let path_entry = entries.iter().find(|e| e.to_ascii_uppercase().starts_with("PATH=")).expect("PATH should be set");
+        assert!(path_entry.contains(r"C:\Users\me\.cargo\bin"), "expected extra path in PATH: {path_entry}");
+        assert!(path_entry.contains(r"C:\Users\me\.rustup\bin"), "expected extra path in PATH: {path_entry}");
+    }
+
+    #[test]
+    fn build_environment_block_leaves_path_untouched_without_extra_mounts() {
+        let block = build_environment_block(&[], &[]);
+        let entries = decode_environment_block(&block);
+        let inherited_path = std::env::var("PATH").unwrap_or_default();
+        let path_entry = entries.iter().find(|e| e.to_ascii_uppercase().starts_with("PATH=")).expect("PATH should be set");
+        assert_eq!(path_entry["PATH=".len()..], inherited_path);
     }
 
     /// Confirms `network: true` actually grants network capability, not just that it's threaded
