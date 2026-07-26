@@ -1,6 +1,5 @@
 pub mod actions;
 pub mod checkout;
-pub mod checks;
 pub mod discovery;
 pub mod hooks;
 pub mod issues;

@@ -29,20 +29,7 @@ pub async fn report_failure(state: &AppState, owner: &str, repo: &str, sha: &str
     crate::github::status::mark_failure(&client, owner, repo, sha, target_url).await
 }
 
-/// Starts a GitHub check run (the check mark/X/yellow-spinner UI next to a commit, in a PR's
-/// checks list, and in branch protection) for a commit-triggered run, returning its id so the
-/// caller can mark it completed once the run finishes.
-pub async fn start_check(state: &AppState, owner: &str, repo: &str, sha: &str, target_url: Option<String>) -> Result<u64> {
-    let client = client::shared(state).await.map_err(|e| anyhow::anyhow!(e))?;
-    crate::github::checks::start(&client, owner, repo, sha, target_url).await
-}
-
-pub async fn complete_check(state: &AppState, owner: &str, repo: &str, check_run_id: u64, succeeded: bool) -> Result<()> {
-    let client = client::shared(state).await.map_err(|e| anyhow::anyhow!(e))?;
-    crate::github::checks::complete(&client, owner, repo, check_run_id, succeeded).await
-}
-
-/// Logs and persists a GitHub status/check-run reporting failure onto the run itself (see
+/// Logs and persists a GitHub status reporting failure onto the run itself (see
 /// `WorkflowRun::github_report_error`), so it's visible on the run detail page instead of only
 /// discoverable from the server's own console output. Best-effort: if even the persist fails,
 /// that's logged too and swallowed, since the run's real outcome was already decided independent
