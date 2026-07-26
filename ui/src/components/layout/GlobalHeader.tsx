@@ -24,7 +24,7 @@ export default function GlobalHeader({ user }: { user: User }) {
   const [addWorkflowRepoId, setAddWorkflowRepoId] = useState<string | null>(null);
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-4 border-b border-header-border bg-header-bg px-4 text-header-fg">
+    <header className="flex h-14 shrink-0 items-center gap-2 border-b border-header-border bg-header-bg px-4 text-header-fg">
       <Link to="/" className="flex items-center rounded-md p-1.5 hover:bg-white/10" aria-label="Home">
         <GithubMark className="h-6 w-6 text-header-fg" />
       </Link>
