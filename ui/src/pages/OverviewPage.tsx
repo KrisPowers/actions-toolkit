@@ -4,6 +4,8 @@ import type { LucideIcon } from "lucide-react";
 import {
   AlertCircle,
   Boxes,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   GitCommitHorizontal,
   GitPullRequest,
@@ -25,11 +27,14 @@ import AddWorkflowModal from "../components/workflows/AddWorkflowModal";
 import GithubWorkflowRows from "../components/workflows/GithubWorkflowRows";
 import Button, { buttonClass } from "../components/common/Button";
 import PageHeader from "../components/common/PageHeader";
+import Select from "../components/common/Select";
 import StatusBadge from "../components/common/StatusBadge";
 import { listCardClass } from "../components/common/Card";
 import EmptyState from "../components/common/EmptyState";
 import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
 import type { WorkflowRow, WorkflowRun } from "../api/types";
+
+const PAGE_SIZE_OPTIONS = [20, 50, 75, 100];
 
 const TRIGGER_ICONS: Record<string, LucideIcon> = {
   push: GitCommitHorizontal,
@@ -130,9 +135,21 @@ export default function OverviewPage() {
   const { data: workflows } = useWorkflows(repoId);
   const { data: githubFiles, isLoading: githubLoading } = useGithubWorkflows(repoId);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
-  const { data: allRuns, isLoading: runsLoading } = useRuns(repoId, 100);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
+  const { data: allRuns, isLoading: runsLoading } = useRuns(repoId, pageSize, page * pageSize);
   useLiveRunActivity(repoId);
   const runs = selectedWorkflowId ? (allRuns ?? []).filter((r) => r.workflow_id === selectedWorkflowId) : allRuns;
+
+  function selectWorkflow(id: string | null) {
+    setSelectedWorkflowId(id);
+    setPage(0);
+  }
+
+  function changePageSize(size: number) {
+    setPageSize(size);
+    setPage(0);
+  }
 
   const deleteWorkflow = useDeleteWorkflow(repoId as string);
   const dispatch = useDispatchWorkflow();
@@ -166,7 +183,7 @@ export default function OverviewPage() {
           <div className="divide-y divide-neutral-800">
             <button
               type="button"
-              onClick={() => setSelectedWorkflowId(null)}
+              onClick={() => selectWorkflow(null)}
               className={`w-full px-4 py-2.5 text-left text-sm ${
                 selectedWorkflowId === null ? "bg-accent/10 font-medium text-neutral-100" : "text-neutral-400 hover:text-neutral-200"
               }`}
@@ -178,7 +195,7 @@ export default function OverviewPage() {
                 <WorkflowCatalogRow
                   workflow={w}
                   selected={selectedWorkflowId === w.id}
-                  onSelect={() => setSelectedWorkflowId(w.id)}
+                  onSelect={() => selectWorkflow(w.id)}
                   onDispatch={() => dispatch.mutate(w.id)}
                   onDelete={() => setPendingDelete(w.id)}
                 />
@@ -197,7 +214,7 @@ export default function OverviewPage() {
             {selectedWorkflow && (
               <button
                 type="button"
-                onClick={() => setSelectedWorkflowId(null)}
+                onClick={() => selectWorkflow(null)}
                 className={buttonClass("invisible", "sm")}
               >
                 <X className="h-3 w-3" strokeWidth={2} />
@@ -211,6 +228,44 @@ export default function OverviewPage() {
               <RunRow key={run.id} run={run} />
             ))}
             {(runs ?? []).length === 0 && !runsLoading && <EmptyState icon={Boxes} message="No runs yet." />}
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <label className="flex items-center gap-2 text-xs text-neutral-500">
+              Rows per page
+              <Select
+                value={pageSize}
+                onChange={(e) => changePageSize(Number(e.target.value))}
+                className="w-auto"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
+                Newer
+              </Button>
+              <span className="text-xs text-neutral-500">Page {page + 1}</span>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={(allRuns?.length ?? 0) < pageSize}
+              >
+                Older
+                <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+              </Button>
+            </div>
           </div>
         </section>
       </div>
