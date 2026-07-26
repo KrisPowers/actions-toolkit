@@ -4,7 +4,7 @@ use serde::Serialize;
 
 /// The context string GitHub groups this instance's statuses under on a commit, distinct from
 /// GitHub's own `github-actions` context so the two never collide on the same commit.
-const STATUS_CONTEXT: &str = "actions-toolkit";
+const STATUS_CONTEXT: &str = "Actions Toolkit - ATK";
 
 #[derive(Serialize)]
 struct CreateStatusRequest {
@@ -74,7 +74,7 @@ mod tests {
         let requests = mock_server.received_requests().await.unwrap();
         let body: serde_json::Value = requests[0].body_json().unwrap();
         assert_eq!(body["state"], "pending");
-        assert_eq!(body["context"], "actions-toolkit");
+        assert_eq!(body["context"], "Actions Toolkit - ATK");
         assert_eq!(body["target_url"], "https://example.com/runs/1");
     }
 

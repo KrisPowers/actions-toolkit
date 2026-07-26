@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Box } from "lucide-react";
-import { useRuntimeStatus, useSettings, useUpdateSettings } from "../../hooks/useSettings";
+import { Box, Plus } from "lucide-react";
+import { useRuntimeStatus, useSettings, useSuggestedHostPaths, useUpdateSettings } from "../../hooks/useSettings";
 import StatusBadge from "../common/StatusBadge";
 import Input from "../common/Input";
 import Button from "../common/Button";
@@ -11,6 +11,7 @@ import { cn } from "../../lib/cn";
 export default function BucketSettingsCard() {
   const { data: settings } = useSettings();
   const { data: runtimeStatus } = useRuntimeStatus();
+  const { data: suggestedHostPaths } = useSuggestedHostPaths();
   const update = useUpdateSettings();
 
   const [ttlSeconds, setTtlSeconds] = useState("");
@@ -37,6 +38,12 @@ export default function BucketSettingsCard() {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+
+  // Appends to the textarea only, same as typing it by hand -- still requires the explicit Save
+  // below before the sandbox actually grants it anything, one click doesn't skip that approval.
+  function addSuggestedPath(path: string) {
+    setHostMountsText((current) => (current.trim().length > 0 ? `${current}\n${path}` : path));
+  }
 
   return (
     <Card className="p-5">
@@ -127,6 +134,25 @@ export default function BucketSettingsCard() {
           lives in, e.g. <code>.cargo\bin</code> for cargo, not just its parent, since only the listed directory (not
           its subdirectories) is added to <code>PATH</code>.
         </p>
+        {suggestedHostPaths && suggestedHostPaths.length > 0 && (
+          <div className="mt-2">
+            <p className="text-xs text-neutral-600">Detected on this host, not yet allowlisted:</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {suggestedHostPaths.map((suggestion) => (
+                <button
+                  key={suggestion.path}
+                  type="button"
+                  onClick={() => addSuggestedPath(suggestion.path)}
+                  className="flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-900 px-2.5 py-1 text-xs text-neutral-300 hover:border-accent hover:text-neutral-100"
+                  title={suggestion.path}
+                >
+                  <Plus className="h-3 w-3 shrink-0" strokeWidth={2} />
+                  {suggestion.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 border-t border-neutral-800 pt-4">

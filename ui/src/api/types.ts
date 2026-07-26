@@ -140,6 +140,11 @@ export interface TunnelAvailability {
   tailscale_available: boolean;
 }
 
+export interface HostPathSuggestion {
+  path: string;
+  label: string;
+}
+
 export interface AccessibleRepo {
   owner: string;
   name: string;
@@ -245,6 +250,7 @@ export interface StepRun {
   started_at: string | null;
   finished_at: string | null;
   exit_code: number | null;
+  failure_hint: string | null;
 }
 
 export interface JobRunTree {

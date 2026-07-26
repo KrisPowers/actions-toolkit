@@ -1,6 +1,7 @@
 import { api } from "./client";
 import type {
   DashboardTunnelRequest,
+  HostPathSuggestion,
   NetworkInfo,
   RuntimeStatus,
   Settings,
@@ -16,6 +17,7 @@ export const settingsApi = {
   runtimeStatus: () => api.get<RuntimeStatus>("/settings/runtime-status"),
   networkInfo: () => api.get<NetworkInfo>("/settings/network-info"),
   tunnelAvailability: () => api.get<TunnelAvailability>("/settings/tunnel-availability"),
+  suggestedHostPaths: () => api.get<HostPathSuggestion[]>("/settings/suggested-host-paths"),
 
   // Dashboard/API remote-access tunnel: a singleton, entirely separate from any repo's webhook
   // tunnel (see repoTunnelApi below).

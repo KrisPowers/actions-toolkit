@@ -233,6 +233,7 @@ pub struct StepRun {
     pub started_at: Option<String>,
     pub finished_at: Option<String>,
     pub exit_code: Option<i64>,
+    pub failure_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]

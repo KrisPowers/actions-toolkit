@@ -39,3 +39,16 @@ pub async fn set_enabled(pool: &SqlitePool, repo_id: &str, enabled: bool) -> sql
         .await?;
     Ok(())
 }
+
+/// Records the URL a tunnel actually came up on, so the next time it restarts (see
+/// `repo_manager::reconcile_webhook_on_url_change`) there's something to diff the new URL against
+/// instead of unconditionally re-pointing the webhook every single start.
+pub async fn set_last_url(pool: &SqlitePool, repo_id: &str, last_url: &str) -> sqlx::Result<()> {
+    sqlx::query("UPDATE repo_tunnels SET last_url = ?, updated_at = ? WHERE repo_id = ?")
+        .bind(last_url)
+        .bind(now_iso())
+        .bind(repo_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
