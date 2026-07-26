@@ -115,15 +115,17 @@ export default function BucketSettingsCard() {
         <textarea
           id="bucket-host-mounts"
           rows={3}
-          placeholder={"C:\\Users\\me\\.cargo\nC:\\Users\\me\\.rustup"}
+          placeholder={"C:\\Users\\me\\.cargo\\bin\nC:\\Users\\me\\.rustup"}
           value={hostMountsText}
           onChange={(e) => setHostMountsText(e.target.value)}
           className={cn(fieldClass(), "mt-1.5 w-full font-mono text-xs")}
         />
         <p className="mt-1 text-xs text-neutral-600">
-          One path per line. Granted read-only (Linux: bind mount; Windows: ACL) to every job sandbox, on top of the
-          built-in OS defaults, so it needs to cover any toolchain a step's <code>run:</code> command relies on that
-          isn't already reachable, e.g. cargo, nvm, or pyenv installed under a user profile.
+          One path per line. Granted read-only (Linux: bind mount; Windows: ACL) to every job sandbox and added to
+          <code>PATH</code>, on top of the built-in OS defaults, so it needs to cover any toolchain a step's{" "}
+          <code>run:</code> command relies on that isn't already reachable. List the directory the binary itself
+          lives in, e.g. <code>.cargo\bin</code> for cargo, not just its parent, since only the listed directory (not
+          its subdirectories) is added to <code>PATH</code>.
         </p>
       </div>
 
