@@ -225,6 +225,14 @@ pub async fn set_step_status(
     Ok(())
 }
 
+/// Records the plain-language diagnosis of a failed step's "command not found"-style output (see
+/// `runner::failure_diagnostics`). Called once, right after `set_step_status` marks the step
+/// failed, so it never overwrites a real status transition.
+pub async fn set_step_failure_hint(pool: &SqlitePool, id: &str, hint: &str) -> sqlx::Result<()> {
+    sqlx::query("UPDATE step_runs SET failure_hint = ? WHERE id = ?").bind(hint).bind(id).execute(pool).await?;
+    Ok(())
+}
+
 pub async fn insert_log_lines(
     pool: &SqlitePool,
     lines: &[(String, String, String, String)], // (step_run_id, ts, stream, message)

@@ -131,6 +131,10 @@ async fn handle(request: &RcpRequest, run_client: &dyn RunClient, db: &SqlitePoo
             run_client.set_step_status(step_run_id, status, *exit_code, *terminal).await?;
             RcpResponse::Ok
         }
+        RcpRequest::SetStepFailureHint { step_run_id, hint } => {
+            run_client.set_step_failure_hint(step_run_id, hint).await?;
+            RcpResponse::Ok
+        }
         RcpRequest::InsertLogLine { step_run_id, ts, stream, message } => {
             run_client.insert_log_line(step_run_id, ts, stream, message).await?;
             RcpResponse::Ok

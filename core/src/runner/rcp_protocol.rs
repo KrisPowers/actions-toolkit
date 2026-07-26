@@ -22,6 +22,9 @@ pub enum RcpRequest {
     SetJobContainer { job_run_id: String, container_id: String },
     CreateStepRun { job_run_id: String, step_index: i64, name: Option<String>, kind: String },
     SetStepStatus { step_run_id: String, status: String, exit_code: Option<i64>, terminal: bool },
+    /// Set once, right after `SetStepStatus` marks a step failed, when its output matched a known
+    /// "command not found" shape (see `runner::failure_diagnostics`).
+    SetStepFailureHint { step_run_id: String, hint: String },
     InsertLogLine { step_run_id: String, ts: String, stream: String, message: String },
     FindArtifactByRunAndName { workflow_run_id: String, name: String },
     RecordArtifact { workflow_run_id: String, job_run_id: Option<String>, name: String, path_on_disk: String, size_bytes: i64 },

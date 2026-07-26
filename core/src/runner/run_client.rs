@@ -32,6 +32,10 @@ pub trait RunClient: Send + Sync {
     async fn set_job_container(&self, job_run_id: &str, container_id: &str) -> Result<()>;
     async fn create_step_run(&self, job_run_id: &str, step_index: i64, name: Option<&str>, kind: &str) -> Result<String>;
     async fn set_step_status(&self, step_run_id: &str, status: &str, exit_code: Option<i64>, terminal: bool) -> Result<()>;
+    /// Persists a plain-language diagnosis of why a step failed, when its output matched a known
+    /// "command not found" shape (see `runner::failure_diagnostics`). Called at most once per
+    /// step, right after `set_step_status` marks it failed.
+    async fn set_step_failure_hint(&self, step_run_id: &str, hint: &str) -> Result<()>;
     async fn insert_log_line(&self, step_run_id: &str, ts: &str, stream: &str, message: &str) -> Result<()>;
     async fn find_artifact_by_run_and_name(&self, workflow_run_id: &str, name: &str) -> Result<Option<String>>;
     async fn record_artifact(
@@ -150,6 +154,10 @@ impl RunClient for LocalRunClient {
 
     async fn set_step_status(&self, step_run_id: &str, status: &str, exit_code: Option<i64>, terminal: bool) -> Result<()> {
         run_queries::set_step_status(&self.db, step_run_id, status, exit_code, terminal).await.map_err(Into::into)
+    }
+
+    async fn set_step_failure_hint(&self, step_run_id: &str, hint: &str) -> Result<()> {
+        run_queries::set_step_failure_hint(&self.db, step_run_id, hint).await.map_err(Into::into)
     }
 
     async fn insert_log_line(&self, step_run_id: &str, ts: &str, stream: &str, message: &str) -> Result<()> {
@@ -351,6 +359,14 @@ where
             RcpResponse::Ok => Ok(()),
             RcpResponse::Error(message) => anyhow::bail!(message),
             other => anyhow::bail!("unexpected response to SetStepStatus: {other:?}"),
+        }
+    }
+
+    async fn set_step_failure_hint(&self, step_run_id: &str, hint: &str) -> Result<()> {
+        match self.call(RcpRequest::SetStepFailureHint { step_run_id: step_run_id.to_string(), hint: hint.to_string() }).await? {
+            RcpResponse::Ok => Ok(()),
+            RcpResponse::Error(message) => anyhow::bail!(message),
+            other => anyhow::bail!("unexpected response to SetStepFailureHint: {other:?}"),
         }
     }
 
