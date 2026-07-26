@@ -34,6 +34,12 @@ pub enum RcpRequest {
     ResourceCacheFail { entry_id: String },
     RecordJobShard { id: String, job_run_id: String, workflow_run_id: String, workspace_path: String, network_enabled: bool, ttl_expires_at: String },
     MarkShardReaped { shard_id: String },
+    /// The operator-configured extra host paths a Shard should grant a job's sandbox read
+    /// access to on top of the built-in defaults (see `atk_bucket::ShardSpec::extra_ro_mounts`),
+    /// e.g. `~/.cargo` for a toolchain installed under a user profile. A shell has no direct
+    /// settings-table access, so it asks its bucket for this once per job right before spec'ing
+    /// the sandbox.
+    GetBucketHostMounts,
     ReportShellExit { shell_id: String, exit_code: i64, cache_hits: i64, cache_misses: i64 },
     ReportResourceSample {
         subject_type: String,
@@ -76,5 +82,6 @@ pub enum RcpResponse {
     SecretNames(Vec<String>),
     Secret(Option<String>),
     ResourceCache(ResourceCacheState),
+    BucketHostMounts(Vec<String>),
     Error(String),
 }
