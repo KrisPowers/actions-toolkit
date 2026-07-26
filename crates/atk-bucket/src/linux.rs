@@ -223,6 +223,7 @@ where
         workspace: workspace.to_path_buf(),
         root_skeleton: root_skeleton.to_path_buf(),
         ro_mounts,
+        extra_ro_mounts: extra_ro_mounts.to_vec(),
         cgroup_path: cgroup_path.to_path_buf(),
         shell_command: shell_command.to_string(),
         shell: shell.map(str::to_string),
@@ -522,6 +523,7 @@ mod tests {
             workspace: PathBuf::from("/data/workspaces/run-1"),
             root_skeleton: PathBuf::from("/data/buckets/bucket-1/root"),
             ro_mounts: vec![PathBuf::from("/usr"), PathBuf::from("/bin")],
+            extra_ro_mounts: vec![PathBuf::from("/home/me/.cargo/bin")],
             cgroup_path: PathBuf::from("/sys/fs/cgroup/actions-toolkit/bucket-1"),
             shell_command: "echo hello".to_string(),
             shell: Some("bash".to_string()),
@@ -534,6 +536,7 @@ mod tests {
 
         assert_eq!(round_tripped.workspace, spec.workspace);
         assert_eq!(round_tripped.ro_mounts, spec.ro_mounts);
+        assert_eq!(round_tripped.extra_ro_mounts, spec.extra_ro_mounts);
         assert_eq!(round_tripped.shell_command, spec.shell_command);
         assert_eq!(round_tripped.env, spec.env);
     }
