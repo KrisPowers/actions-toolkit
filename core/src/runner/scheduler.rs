@@ -101,12 +101,12 @@ async fn report_run_outcome(
             crate::runner::github_status::report_failure(state, repo_owner, repo_name, &sha, target_url).await
         };
         if let Err(e) = report {
-            tracing::warn!(error = format!("{e:#}"), workflow_run_id, sha, "failed to post the final GitHub commit status");
+            crate::runner::github_status::record_report_failure(state, workflow_run_id, "failed to post the final GitHub commit status", &e).await;
         }
 
         if let Some(check_run_id) = check_run_id {
             if let Err(e) = crate::runner::github_status::complete_check(state, repo_owner, repo_name, check_run_id, succeeded).await {
-                tracing::warn!(error = format!("{e:#}"), workflow_run_id, check_run_id, "failed to complete the GitHub check run");
+                crate::runner::github_status::record_report_failure(state, workflow_run_id, "failed to complete the GitHub check run", &e).await;
             }
         }
     }

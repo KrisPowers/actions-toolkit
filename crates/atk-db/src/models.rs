@@ -201,6 +201,11 @@ pub struct WorkflowRun {
     pub finished_at: Option<String>,
     pub created_at: String,
     pub webhook_event_id: Option<String>,
+    /// The last error from reporting this run's status back to GitHub (start_check,
+    /// report_pending, report_success/failure, complete_check), if any. `None` doesn't
+    /// necessarily mean reporting succeeded, it may also mean there was no commit_sha to report
+    /// against at all (e.g. a manual "Run now").
+    pub github_report_error: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]

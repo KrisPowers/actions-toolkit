@@ -80,6 +80,14 @@ pub async fn set_run_status(pool: &SqlitePool, id: &str, status: &str, terminal:
     Ok(())
 }
 
+/// Records the last GitHub status-reporting failure for this run (see
+/// `WorkflowRun::github_report_error`'s doc comment). Overwrites any previous value: only the
+/// most recent failure matters, since it's a diagnostic surface, not a log.
+pub async fn set_github_report_error(pool: &SqlitePool, id: &str, message: &str) -> sqlx::Result<()> {
+    sqlx::query("UPDATE workflow_runs SET github_report_error = ? WHERE id = ?").bind(message).bind(id).execute(pool).await?;
+    Ok(())
+}
+
 pub async fn create_job_run(
     pool: &SqlitePool,
     workflow_run_id: &str,

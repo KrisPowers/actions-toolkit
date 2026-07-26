@@ -73,10 +73,10 @@ pub async fn spawn_run(
         let target_url = crate::runner::github_status::run_target_url(state, &run.id).await;
         match crate::runner::github_status::start_check(state, &repo.owner, &repo.name, sha, target_url.clone()).await {
             Ok(id) => check_run_id = Some(id),
-            Err(e) => tracing::warn!(error = format!("{e:#}"), repo = %repo.id, sha, "failed to start the GitHub check run"),
+            Err(e) => crate::runner::github_status::record_report_failure(state, &run.id, "failed to start the GitHub check run", &e).await,
         }
         if let Err(e) = crate::runner::github_status::report_pending(state, &repo.owner, &repo.name, sha, target_url).await {
-            tracing::warn!(error = format!("{e:#}"), repo = %repo.id, sha, "failed to post the pending GitHub commit status");
+            crate::runner::github_status::record_report_failure(state, &run.id, "failed to post the pending GitHub commit status", &e).await;
         }
     }
 
