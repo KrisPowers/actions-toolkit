@@ -29,7 +29,7 @@ doesn't.
 
 - **`core::auth`** re-exports `atk_auth::{jwt, password}` (pure primitives, no app state) and adds
   its own `handlers` and `middleware` modules (axum extractors that take `State<AppState>`).
-- **`core::github`** re-exports `atk_github::{actions, checkout, checks, discovery, hooks, issues,
+- **`core::github`** re-exports `atk_github::{actions, checkout, discovery, hooks, issues,
   oauth, releases, status, webhook_verify}` (plain GitHub REST calls against a caller-supplied
   client) and adds
   its own `client` module (builds an authenticated `Octocrab` from `AppState`, including token
