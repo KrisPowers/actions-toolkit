@@ -5,6 +5,8 @@ import StatusBadge from "../common/StatusBadge";
 import Input from "../common/Input";
 import Button from "../common/Button";
 import Card from "../common/Card";
+import { fieldClass } from "../../lib/fieldClass";
+import { cn } from "../../lib/cn";
 
 export default function BucketSettingsCard() {
   const { data: settings } = useSettings();
@@ -14,16 +16,27 @@ export default function BucketSettingsCard() {
   const [ttlSeconds, setTtlSeconds] = useState("");
   const [cpuLimitMillis, setCpuLimitMillis] = useState("");
   const [memoryLimitMb, setMemoryLimitMb] = useState("");
+  const [hostMountsText, setHostMountsText] = useState("");
 
   useEffect(() => {
     if (!settings) return;
     setTtlSeconds(String(settings.bucket_default_ttl_seconds));
     setCpuLimitMillis(settings.bucket_cpu_limit_millis != null ? String(settings.bucket_cpu_limit_millis) : "");
     setMemoryLimitMb(settings.bucket_memory_limit_mb != null ? String(settings.bucket_memory_limit_mb) : "");
+    try {
+      const paths: unknown = JSON.parse(settings.bucket_host_mounts_json);
+      setHostMountsText(Array.isArray(paths) ? paths.join("\n") : "");
+    } catch {
+      setHostMountsText("");
+    }
   }, [settings]);
 
   const ttlValue = Number(ttlSeconds);
   const ttlValid = Number.isInteger(ttlValue) && ttlValue > 0;
+  const hostMountPaths = hostMountsText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 
   return (
     <Card className="p-5">
@@ -95,6 +108,25 @@ export default function BucketSettingsCard() {
         unlimited.
       </p>
 
+      <div className="mt-4">
+        <label className="text-xs font-medium text-neutral-400" htmlFor="bucket-host-mounts">
+          Extra host paths
+        </label>
+        <textarea
+          id="bucket-host-mounts"
+          rows={3}
+          placeholder={"C:\\Users\\me\\.cargo\nC:\\Users\\me\\.rustup"}
+          value={hostMountsText}
+          onChange={(e) => setHostMountsText(e.target.value)}
+          className={cn(fieldClass(), "mt-1.5 w-full font-mono text-xs")}
+        />
+        <p className="mt-1 text-xs text-neutral-600">
+          One path per line. Granted read-only (Linux: bind mount; Windows: ACL) to every job sandbox, on top of the
+          built-in OS defaults, so it needs to cover any toolchain a step's <code>run:</code> command relies on that
+          isn't already reachable, e.g. cargo, nvm, or pyenv installed under a user profile.
+        </p>
+      </div>
+
       <div className="mt-4 border-t border-neutral-800 pt-4">
         <Button
           variant="primary"
@@ -104,6 +136,7 @@ export default function BucketSettingsCard() {
               bucket_default_ttl_seconds: ttlValue,
               bucket_cpu_limit_millis: cpuLimitMillis === "" ? 0 : Number(cpuLimitMillis),
               bucket_memory_limit_mb: memoryLimitMb === "" ? 0 : Number(memoryLimitMb),
+              bucket_host_mounts_json: JSON.stringify(hostMountPaths),
             })
           }
         >
