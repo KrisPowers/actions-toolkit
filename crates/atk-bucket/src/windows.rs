@@ -144,6 +144,7 @@ where
     let id = handle.id.clone();
     let workspace = handle.workspace.clone();
     let network_enabled = handle.network_enabled;
+    let extra_ro_mounts = handle.extra_ro_mounts.clone();
     let shell_command = shell_command.to_string();
     let shell = shell.map(str::to_string);
     let working_dir = working_dir.map(str::to_string);
@@ -159,6 +160,7 @@ where
             shell: shell.as_deref(),
             working_dir: working_dir.as_deref(),
             env: &env,
+            extra_ro_mounts: &extra_ro_mounts,
         };
         run_step_blocking(&id, &workspace, network_enabled, invocation, (stdout_tx, stderr_tx))
     });
@@ -425,6 +427,7 @@ struct StepInvocation<'a> {
     shell: Option<&'a str>,
     working_dir: Option<&'a str>,
     env: &'a [String],
+    extra_ro_mounts: &'a [PathBuf],
 }
 
 type OutputLineSender = tokio::sync::mpsc::UnboundedSender<(&'static str, String)>;
@@ -436,7 +439,7 @@ fn run_step_blocking(
     invocation: StepInvocation<'_>,
     (stdout_tx, stderr_tx): (OutputLineSender, OutputLineSender),
 ) -> Result<ExecResult> {
-    let StepInvocation { shell_command, shell, working_dir, env } = invocation;
+    let StepInvocation { shell_command, shell, working_dir, env, extra_ro_mounts } = invocation;
     let profile_name = appcontainer_profile_name(id);
     let name_wide = to_wide(&profile_name);
     let sid = unsafe {
@@ -502,7 +505,7 @@ fn run_step_blocking(
 
         let mut cmdline = to_wide(&resolve_shell_cmdline(shell, shell_command));
         let cwd = working_dir.map(to_wide).unwrap_or_else(|| to_wide(&workspace.to_string_lossy()));
-        let env_block = build_environment_block(env);
+        let env_block = build_environment_block(env, extra_ro_mounts);
 
         let mut process_info = PROCESS_INFORMATION::default();
         let create_result = unsafe {
