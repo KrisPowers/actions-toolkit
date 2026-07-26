@@ -146,7 +146,7 @@ fn run_pid1(spec: &ShardInitSpec) -> Result<()> {
     let working_dir = spec.working_dir.as_deref().unwrap_or("/workspace");
     chdir(working_dir).with_context(|| format!("failed to chdir into '{working_dir}'"))?;
 
-    exec_shell_command(spec.shell.as_deref(), &spec.shell_command, &spec.env)
+    exec_shell_command(spec.shell.as_deref(), &spec.shell_command, &spec.env, &spec.extra_ro_mounts)
 }
 
 /// Resolves a step's `shell:` override into the absolute path `execve` needs (unlike `execvp`,
@@ -172,14 +172,23 @@ fn drop_all_capabilities() -> Result<()> {
     Ok(())
 }
 
-fn exec_shell_command(shell: Option<&str>, shell_command: &str, env: &[String]) -> Result<()> {
+fn exec_shell_command(shell: Option<&str>, shell_command: &str, env: &[String], extra_ro_mounts: &[std::path::PathBuf]) -> Result<()> {
     let (program, flag) = resolve_shell(shell);
     let args = [CString::new(program.as_str())?, CString::new(flag)?, CString::new(shell_command)?];
 
     let mut env_vars: Vec<String> = env.to_vec();
-    if !env_vars.iter().any(|e| e.starts_with("PATH=")) {
-        env_vars.push("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string());
+    let path_idx = env_vars.iter().position(|e| e.starts_with("PATH="));
+    let mut path_value = match path_idx {
+        Some(i) => env_vars.remove(i)["PATH=".len()..].to_string(),
+        None => "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string(),
+    };
+    // Bind-mounting a configured extra host path (see `build_sandbox_root`) makes it reachable
+    // but doesn't make a binary inside it resolvable by name; it also has to land on PATH.
+    for extra in extra_ro_mounts {
+        path_value.push(':');
+        path_value.push_str(&extra.to_string_lossy());
     }
+    env_vars.push(format!("PATH={path_value}"));
     let env_cstrings: Vec<CString> = env_vars.iter().map(|e| CString::new(e.as_str())).collect::<Result<_, _>>()?;
 
     nix::unistd::execve(&args[0], &args, &env_cstrings).context("failed to exec step command")?;
