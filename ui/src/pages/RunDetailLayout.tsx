@@ -1,5 +1,5 @@
 import { Outlet, useParams } from "react-router-dom";
-import { RotateCcw, XCircle } from "lucide-react";
+import { AlertTriangle, RotateCcw, XCircle } from "lucide-react";
 import { useCancelRun, useRerun, useRun } from "../hooks/useRuns";
 import StatusBadge from "../components/common/StatusBadge";
 import Button from "../components/common/Button";
@@ -54,6 +54,15 @@ export default function RunDetailLayout() {
           }
         />
       </div>
+
+      {tree.run.github_report_error && (
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-[var(--color-status-warning)]/30 bg-[var(--color-status-warning)]/5 px-3 py-2.5 text-sm text-[var(--color-status-warning)]">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={2} />
+          <p>
+            This run's status couldn't be reported back to GitHub: <span className="font-mono text-xs">{tree.run.github_report_error}</span>
+          </p>
+        </div>
+      )}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 md:grid-cols-[200px_1fr]">
         <RunDetailSidebar repoId={repoId as string} runId={tree.run.id} />
