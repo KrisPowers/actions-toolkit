@@ -3,18 +3,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { runsApi } from "../api/runs";
 import type { WorkflowRun } from "../api/types";
 
-export function useRuns(repoId: string | undefined, limit?: number) {
+export function useRuns(repoId: string | undefined, limit?: number, offset?: number) {
   return useQuery({
-    queryKey: ["runs", "repo", repoId, limit],
-    queryFn: () => runsApi.listForRepo(repoId as string, limit),
+    queryKey: ["runs", "repo", repoId, limit, offset ?? 0],
+    queryFn: () => runsApi.listForRepo(repoId as string, limit, offset),
     enabled: !!repoId,
     refetchInterval: 5000,
   });
 }
 
 /**
- * Live push for new runs: prepends a run to every cached `useRuns` list for this repo the moment
- * it's created, instead of waiting on the next 5s poll. Mirrors `useLiveLogs`/`useLiveStats`.
+ * Live push for new runs: prepends a run to every cached first-page `useRuns` list for this repo
+ * the moment it's created, instead of waiting on the next 5s poll. Mirrors `useLiveLogs`/`useLiveStats`.
+ * Only the first page (offset 0) is patched since a new run always sorts to the top of that page;
+ * patching later pages would misrepresent what's actually at that offset.
  */
 export function useLiveRunActivity(repoId: string | undefined) {
   const qc = useQueryClient();
@@ -25,11 +27,17 @@ export function useLiveRunActivity(repoId: string | undefined) {
     ws.onmessage = (event) => {
       try {
         const run = JSON.parse(event.data) as WorkflowRun;
-        qc.setQueriesData<WorkflowRun[]>({ queryKey: ["runs", "repo", repoId] }, (old) => {
-          if (!old) return old;
-          if (old.some((r) => r.id === run.id)) return old;
-          return [run, ...old];
-        });
+        qc.setQueriesData<WorkflowRun[]>(
+          {
+            queryKey: ["runs", "repo", repoId],
+            predicate: (query) => query.queryKey[4] === 0,
+          },
+          (old) => {
+            if (!old) return old;
+            if (old.some((r) => r.id === run.id)) return old;
+            return [run, ...old];
+          },
+        );
       } catch {
         // ignore malformed frames
       }

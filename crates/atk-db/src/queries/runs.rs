@@ -42,12 +42,13 @@ pub async fn find_run(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<Workfl
         .await
 }
 
-pub async fn list_runs_for_repo(pool: &SqlitePool, repo_id: &str, limit: i64) -> sqlx::Result<Vec<WorkflowRun>> {
+pub async fn list_runs_for_repo(pool: &SqlitePool, repo_id: &str, limit: i64, offset: i64) -> sqlx::Result<Vec<WorkflowRun>> {
     sqlx::query_as::<_, WorkflowRun>(
-        "SELECT * FROM workflow_runs WHERE repo_id = ? ORDER BY created_at DESC LIMIT ?",
+        "SELECT * FROM workflow_runs WHERE repo_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
     )
     .bind(repo_id)
     .bind(limit)
+    .bind(offset)
     .fetch_all(pool)
     .await
 }
@@ -286,4 +287,94 @@ pub async fn run_tree(pool: &SqlitePool, workflow_run_id: &str) -> sqlx::Result<
         job_trees.push(JobRunTree { job, steps });
     }
     Ok(Some(RunTree { run, jobs: job_trees }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn test_pool() -> SqlitePool {
+        let dir = std::env::temp_dir().join(format!("atk-runs-queries-test-{}", Uuid::new_v4()));
+        crate::connect(&dir.join("test.db")).await.expect("db connect should succeed")
+    }
+
+    async fn seed_repo_and_workflow(pool: &SqlitePool) -> (String, String) {
+        let now = now_iso();
+        let user_id = "user-1";
+        sqlx::query(
+            "INSERT INTO users (id, github_id, github_login, role, status, created_at, updated_at) VALUES (?, 1, 'test-user', 'admin', 'approved', ?, ?)",
+        )
+        .bind(user_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let repo_id = "repo-1".to_string();
+        sqlx::query(
+            "INSERT INTO repos (id, owner, name, default_branch, webhook_secret_encrypted, \
+             webhook_secret_nonce, created_by, created_at, updated_at) VALUES (?, 'test-owner', 'test-repo', 'main', \
+             x'00', x'00', ?, ?, ?)",
+        )
+        .bind(&repo_id)
+        .bind(user_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let workflow_id = "workflow-1".to_string();
+        sqlx::query(
+            "INSERT INTO workflows (id, repo_id, name, file_path, yaml_source, parsed_json, enabled, created_at, updated_at) \
+             VALUES (?, ?, 'test-workflow', 'ci.yml', '', '{}', 1, ?, ?)",
+        )
+        .bind(&workflow_id)
+        .bind(&repo_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        (repo_id, workflow_id)
+    }
+
+    async fn seed_run(pool: &SqlitePool, id: &str, workflow_id: &str, repo_id: &str, created_at: &str) {
+        sqlx::query(
+            "INSERT INTO workflow_runs (id, workflow_id, repo_id, trigger_event, status, created_at) \
+             VALUES (?, ?, ?, 'manual', 'succeeded', ?)",
+        )
+        .bind(id)
+        .bind(workflow_id)
+        .bind(repo_id)
+        .bind(created_at)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_runs_for_repo_paginates_newest_first_with_offset() {
+        let pool = test_pool().await;
+        let (repo_id, workflow_id) = seed_repo_and_workflow(&pool).await;
+
+        // Seed 5 runs with strictly increasing timestamps: run-0 oldest, run-4 newest.
+        for i in 0..5 {
+            seed_run(&pool, &format!("run-{i}"), &workflow_id, &repo_id, &format!("2026-01-0{}T00:00:00Z", i + 1)).await;
+        }
+
+        let page1 = list_runs_for_repo(&pool, &repo_id, 2, 0).await.expect("query should succeed");
+        assert_eq!(page1.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["run-4", "run-3"]);
+
+        let page2 = list_runs_for_repo(&pool, &repo_id, 2, 2).await.expect("query should succeed");
+        assert_eq!(page2.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["run-2", "run-1"]);
+
+        let page3 = list_runs_for_repo(&pool, &repo_id, 2, 4).await.expect("query should succeed");
+        assert_eq!(page3.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["run-0"]);
+
+        let page4 = list_runs_for_repo(&pool, &repo_id, 2, 6).await.expect("query should succeed");
+        assert!(page4.is_empty());
+    }
 }
