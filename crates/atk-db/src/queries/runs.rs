@@ -42,12 +42,13 @@ pub async fn find_run(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<Workfl
         .await
 }
 
-pub async fn list_runs_for_repo(pool: &SqlitePool, repo_id: &str, limit: i64) -> sqlx::Result<Vec<WorkflowRun>> {
+pub async fn list_runs_for_repo(pool: &SqlitePool, repo_id: &str, limit: i64, offset: i64) -> sqlx::Result<Vec<WorkflowRun>> {
     sqlx::query_as::<_, WorkflowRun>(
-        "SELECT * FROM workflow_runs WHERE repo_id = ? ORDER BY created_at DESC LIMIT ?",
+        "SELECT * FROM workflow_runs WHERE repo_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
     )
     .bind(repo_id)
     .bind(limit)
+    .bind(offset)
     .fetch_all(pool)
     .await
 }
