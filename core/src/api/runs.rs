@@ -14,6 +14,7 @@ use crate::error::{AppError, AppResult};
 #[derive(Deserialize)]
 pub struct ListRunsQuery {
     limit: Option<i64>,
+    offset: Option<i64>,
 }
 
 pub async fn list_for_repo(
@@ -22,7 +23,9 @@ pub async fn list_for_repo(
     Query(q): Query<ListRunsQuery>,
     _user: ApprovedUser,
 ) -> AppResult<Json<Vec<WorkflowRun>>> {
-    let runs = run_queries::list_runs_for_repo(&state.db, &repo_id, q.limit.unwrap_or(50)).await?;
+    let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    let offset = q.offset.unwrap_or(0).max(0);
+    let runs = run_queries::list_runs_for_repo(&state.db, &repo_id, limit, offset).await?;
     Ok(Json(runs))
 }
 
