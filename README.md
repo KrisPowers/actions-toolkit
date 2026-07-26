@@ -119,7 +119,7 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. On first run the setup wizard walks you through creating an admin
-account and connecting your GitHub token.
+account and connecting GitHub via the App.
 
 ### Production build
 
