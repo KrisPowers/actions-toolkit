@@ -196,7 +196,10 @@ actions-toolkit builds that natively out of three layered pieces:
 - **Shard** — one ephemeral OS sandbox per `run:` step, created and torn down by the Shell that
   owns it. Linux namespaces/cgroups/seccomp on Linux, an AppContainer + Job Object on Windows,
   same effect either way: the step can't see or touch anything outside its workspace and a
-  curated, read-only slice of the host toolchain.
+  curated, read-only slice of the host toolchain. That slice only covers base OS directories by
+  default; a toolchain installed under a user profile (cargo, nvm, pyenv, etc.) needs its path
+  added explicitly under Settings → Bucket / sandbox → Extra host paths, or `run:` steps that
+  invoke it will fail with a "not recognized"/"command not found" error.
 
 <p align="center">
   <img src="docs/diagrams/bucket-architecture.svg" alt="Diagram: a Bucket owns the database pool, encryption key, resource cache, and RCP server; it spawns one Shell per workflow run, either locally or on a remote Agent over TCP; each Shell runs its jobs as Docker containers or Shard sandboxes; the Shard sandbox is backed by Linux namespaces/cgroups/seccomp or Windows AppContainer/Job Objects depending on the host OS; a periodic reaper cleans up anything a crash left behind." width="100%">

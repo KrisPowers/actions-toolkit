@@ -18,6 +18,7 @@ use atk_crypto::EncryptionKey;
 use atk_db::queries::{
     artifacts as artifact_queries, shards as shard_queries, resource_cache as cache_queries,
     resource_samples as sample_queries, runs as run_queries, secrets as secret_queries,
+    settings as settings_queries,
 };
 
 use crate::runner::log_stream::{LogHub, LogLine};
@@ -59,6 +60,12 @@ pub trait RunClient: Send + Sync {
     /// `ShardHandle` back.
     async fn record_job_shard(&self, id: &str, job_run_id: &str, workflow_run_id: &str, workspace_path: &str, network_enabled: bool, ttl_expires_at: &str) -> Result<()>;
     async fn mark_shard_reaped(&self, shard_id: &str) -> Result<()>;
+    /// The operator-configured extra read-only host paths (`settings.bucket_host_mounts_json`)
+    /// a job's sandbox should be granted, on top of the built-in defaults. Malformed JSON in the
+    /// setting is swallowed here and treated as an empty list rather than an error, so a bad
+    /// value an operator typed doesn't fail every job; a genuine `Err` here means the settings
+    /// row itself couldn't be read, which the caller should log and fall back from.
+    async fn bucket_host_mounts(&self) -> Result<Vec<String>>;
     /// Reports one periodic runtime-resource sample for a shell or a shard it's driving. Fire-
     /// and-forget from the caller's perspective (the sampler loops keep going regardless of a
     /// single failed report), see `runner::sampler`.
@@ -214,6 +221,11 @@ impl RunClient for LocalRunClient {
 
     async fn mark_shard_reaped(&self, shard_id: &str) -> Result<()> {
         shard_queries::mark_reaped(&self.db, shard_id).await.map_err(Into::into)
+    }
+
+    async fn bucket_host_mounts(&self) -> Result<Vec<String>> {
+        let settings = settings_queries::get(&self.db).await?;
+        Ok(serde_json::from_str(&settings.bucket_host_mounts_json).unwrap_or_default())
     }
 
     async fn report_resource_sample(
@@ -472,6 +484,14 @@ where
             RcpResponse::Ok => Ok(()),
             RcpResponse::Error(message) => anyhow::bail!(message),
             other => anyhow::bail!("unexpected response to MarkShardReaped: {other:?}"),
+        }
+    }
+
+    async fn bucket_host_mounts(&self) -> Result<Vec<String>> {
+        match self.call(RcpRequest::GetBucketHostMounts).await? {
+            RcpResponse::BucketHostMounts(paths) => Ok(paths),
+            RcpResponse::Error(message) => anyhow::bail!(message),
+            other => anyhow::bail!("unexpected response to GetBucketHostMounts: {other:?}"),
         }
     }
 
