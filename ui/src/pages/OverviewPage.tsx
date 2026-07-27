@@ -164,6 +164,25 @@ export default function OverviewPage() {
 
   const selectedWorkflow = (workflows ?? []).find((w) => w.id === selectedWorkflowId);
 
+  const paginationControls = (
+    <div className="flex items-center gap-2">
+      <Button variant="default" size="sm" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>
+        <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
+        Newer
+      </Button>
+      <span className="text-xs text-neutral-500">Page {page + 1}</span>
+      <Button
+        variant="default"
+        size="sm"
+        onClick={() => setPage((p) => p + 1)}
+        disabled={(allRuns?.length ?? 0) < pageSize}
+      >
+        Older
+        <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+      </Button>
+    </div>
+  );
+
   return (
     <div>
       <PageHeader
@@ -215,18 +234,37 @@ export default function OverviewPage() {
         </section>
 
         <section className="min-w-0">
-          <div className="mb-2 flex min-h-7 items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-neutral-200">Recent activity</h2>
-            {selectedWorkflow && (
-              <button
-                type="button"
-                onClick={() => selectWorkflow(null)}
-                className={buttonClass("invisible", "sm")}
-              >
-                <X className="h-3 w-3" strokeWidth={2} />
-                {selectedWorkflow.name}
-              </button>
-            )}
+          <div className="mb-2 flex min-h-7 flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-neutral-200">Recent activity</h2>
+              {selectedWorkflow && (
+                <button
+                  type="button"
+                  onClick={() => selectWorkflow(null)}
+                  className={buttonClass("invisible", "sm")}
+                >
+                  <X className="h-3 w-3" strokeWidth={2} />
+                  {selectedWorkflow.name}
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-xs text-neutral-500">
+                Rows per page
+                <Select
+                  value={pageSize}
+                  onChange={(e) => changePageSize(Number(e.target.value))}
+                  className="w-auto"
+                >
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              {paginationControls}
+            </div>
           </div>
           <div className={listCardClass()}>
             {runsLoading && <p className="px-4 py-3 text-sm text-neutral-500">Loading…</p>}
@@ -236,43 +274,7 @@ export default function OverviewPage() {
             {(runs ?? []).length === 0 && !runsLoading && <EmptyState icon={Boxes} message="No runs yet." />}
           </div>
 
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <label className="flex items-center gap-2 text-xs text-neutral-500">
-              Rows per page
-              <Select
-                value={pageSize}
-                onChange={(e) => changePageSize(Number(e.target.value))}
-                className="w-auto"
-              >
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-              >
-                <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
-                Newer
-              </Button>
-              <span className="text-xs text-neutral-500">Page {page + 1}</span>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setPage((p) => p + 1)}
-                disabled={(allRuns?.length ?? 0) < pageSize}
-              >
-                Older
-                <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
-              </Button>
-            </div>
-          </div>
+          <div className="mt-3 flex items-center justify-end gap-2">{paginationControls}</div>
         </section>
       </div>
 
