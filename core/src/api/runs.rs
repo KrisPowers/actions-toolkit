@@ -98,6 +98,21 @@ pub async fn cancel(
         }
     }
 
+    // Mirrors GitHub Actions' own cancellation behavior: any job/step that hadn't already reached
+    // a terminal state (succeeded/failed/skipped) when the cancel came in shows as cancelled
+    // rather than being left stuck at "running"/"pending" forever, since nothing else is going to
+    // move it off that status now that its sandbox is gone.
+    for job in run_queries::list_job_runs(&state.db, &id).await? {
+        if !matches!(job.status.as_str(), "succeeded" | "failed" | "skipped" | "cancelled") {
+            run_queries::set_job_status(&state.db, &job.id, "cancelled", None, true).await?;
+        }
+        for step in run_queries::list_step_runs(&state.db, &job.id).await? {
+            if !matches!(step.status.as_str(), "succeeded" | "failed" | "skipped" | "cancelled") {
+                run_queries::set_step_status(&state.db, &step.id, "cancelled", None, true).await?;
+            }
+        }
+    }
+
     run_queries::set_run_status(&state.db, &id, "cancelled", true).await?;
     Ok(())
 }
