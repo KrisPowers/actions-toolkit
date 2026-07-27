@@ -29,10 +29,12 @@ import Button, { buttonClass } from "../components/common/Button";
 import PageHeader from "../components/common/PageHeader";
 import Select from "../components/common/Select";
 import StatusBadge from "../components/common/StatusBadge";
+import RefBadge from "../components/common/RefBadge";
 import { listCardClass } from "../components/common/Card";
 import EmptyState from "../components/common/EmptyState";
 import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
-import type { WorkflowRow, WorkflowRun } from "../api/types";
+import { parseRunRef } from "../lib/runRef";
+import type { RepoPublic, WorkflowRow, WorkflowRun } from "../api/types";
 
 const PAGE_SIZE_OPTIONS = [20, 50, 75, 100];
 
@@ -110,22 +112,26 @@ function WorkflowCatalogRow({
   );
 }
 
-function RunRow({ run }: { run: WorkflowRun }) {
+function RunRow({ run, repo }: { run: WorkflowRun; repo?: RepoPublic }) {
   const Icon = triggerIcon(run.trigger_event);
+  const runRef = parseRunRef(run.ref_name);
   return (
-    <Link to={`/repos/${run.repo_id}/runs/${run.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-neutral-800/50">
-      <div className="flex min-w-0 items-center gap-2.5">
+    <div className="relative flex items-center justify-between gap-3 px-4 py-3 hover:bg-neutral-800/50">
+      <Link
+        to={`/repos/${run.repo_id}/runs/${run.id}`}
+        className="flex min-w-0 items-center gap-2.5 before:absolute before:inset-0 before:content-['']"
+      >
         <Icon className="h-4 w-4 shrink-0 text-neutral-500" strokeWidth={2} />
         <div className="min-w-0">
-          <div className="truncate text-sm capitalize text-neutral-200">
-            {triggerLabel(run.trigger_event)}
-            {run.ref_name ? <span className="normal-case text-neutral-500"> · {run.ref_name}</span> : null}
-          </div>
+          <div className="truncate text-sm capitalize text-neutral-200">{triggerLabel(run.trigger_event)}</div>
           <div className="mt-0.5 text-xs text-neutral-500">{new Date(run.created_at).toLocaleString()}</div>
         </div>
+      </Link>
+      <div className="relative z-10 flex shrink-0 items-center gap-2">
+        {runRef && repo && <RefBadge runRef={runRef} owner={repo.owner} name={repo.name} />}
+        <StatusBadge status={run.status} />
       </div>
-      <StatusBadge status={run.status} />
-    </Link>
+    </div>
   );
 }
 
@@ -157,6 +163,25 @@ export default function OverviewPage() {
   const [showAddModal, setShowAddModal] = useState(false);
 
   const selectedWorkflow = (workflows ?? []).find((w) => w.id === selectedWorkflowId);
+
+  const paginationControls = (
+    <div className="flex items-center gap-2">
+      <Button variant="default" size="sm" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>
+        <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
+        Newer
+      </Button>
+      <span className="text-xs text-neutral-500">Page {page + 1}</span>
+      <Button
+        variant="default"
+        size="sm"
+        onClick={() => setPage((p) => p + 1)}
+        disabled={(allRuns?.length ?? 0) < pageSize}
+      >
+        Older
+        <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+      </Button>
+    </div>
+  );
 
   return (
     <div>
@@ -209,64 +234,47 @@ export default function OverviewPage() {
         </section>
 
         <section className="min-w-0">
-          <div className="mb-2 flex min-h-7 items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-neutral-200">Recent activity</h2>
-            {selectedWorkflow && (
-              <button
-                type="button"
-                onClick={() => selectWorkflow(null)}
-                className={buttonClass("invisible", "sm")}
-              >
-                <X className="h-3 w-3" strokeWidth={2} />
-                {selectedWorkflow.name}
-              </button>
-            )}
+          <div className="mb-2 flex min-h-7 flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-neutral-200">Recent activity</h2>
+              {selectedWorkflow && (
+                <button
+                  type="button"
+                  onClick={() => selectWorkflow(null)}
+                  className={buttonClass("invisible", "sm")}
+                >
+                  <X className="h-3 w-3" strokeWidth={2} />
+                  {selectedWorkflow.name}
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-xs text-neutral-500">
+                Rows per page
+                <Select
+                  value={pageSize}
+                  onChange={(e) => changePageSize(Number(e.target.value))}
+                  className="w-auto"
+                >
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              {paginationControls}
+            </div>
           </div>
           <div className={listCardClass()}>
             {runsLoading && <p className="px-4 py-3 text-sm text-neutral-500">Loading…</p>}
             {(runs ?? []).map((run) => (
-              <RunRow key={run.id} run={run} />
+              <RunRow key={run.id} run={run} repo={repo} />
             ))}
             {(runs ?? []).length === 0 && !runsLoading && <EmptyState icon={Boxes} message="No runs yet." />}
           </div>
 
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <label className="flex items-center gap-2 text-xs text-neutral-500">
-              Rows per page
-              <Select
-                value={pageSize}
-                onChange={(e) => changePageSize(Number(e.target.value))}
-                className="w-auto"
-              >
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-              >
-                <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
-                Newer
-              </Button>
-              <span className="text-xs text-neutral-500">Page {page + 1}</span>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setPage((p) => p + 1)}
-                disabled={(allRuns?.length ?? 0) < pageSize}
-              >
-                Older
-                <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
-              </Button>
-            </div>
-          </div>
+          <div className="mt-3 flex items-center justify-end gap-2">{paginationControls}</div>
         </section>
       </div>
 
