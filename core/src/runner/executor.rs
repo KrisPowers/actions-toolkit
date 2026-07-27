@@ -200,7 +200,19 @@ pub async fn run_job(
                         .record_job_shard(&handle.id, job_run_id, workflow_run_id, &handle.workspace.to_string_lossy(), job.network, &ttl_expires_at)
                         .await
                     {
-                        tracing::warn!(error = %e, shard_id = %handle.id, "failed to record job sandbox bookkeeping row");
+                        // Without this row the shard is invisible for the rest of the job's life:
+                        // it never shows up in the run's topology, and it's never a candidate for
+                        // `list_expired`/`list_unreaped` (the TTL reaper) or cancel's teardown
+                        // sweep, since all three list from this table. The sandbox already exists
+                        // and would go on to actually execute the job's steps untracked, which is
+                        // worse than failing loudly here: better to abort before anything runs and
+                        // let the job be retried than to let it finish with results nothing can
+                        // account for.
+                        if let Err(remove_err) = bucket::remove_shard(&handle).await {
+                            tracing::warn!(error = %remove_err, shard_id = %handle.id, "failed to remove orphaned job sandbox after a failed bookkeeping insert");
+                        }
+                        fail_job(run_client, job_run_id, &format!("failed to record job sandbox: {e}")).await;
+                        return Ok(false);
                     }
                     RunBackend::Shard { handle }
                 }
