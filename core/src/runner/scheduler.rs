@@ -199,7 +199,7 @@ pub async fn run_inner(
 
             let handle = tokio::spawn(async move {
                 let _permit = permit;
-                let outcome = executor::run_job(
+                let outcome = match executor::run_job(
                     &run_client,
                     &docker,
                     &workspaces_dir,
@@ -214,7 +214,19 @@ pub async fn run_inner(
                     &cache_counters,
                 )
                 .await
-                .unwrap_or(false);
+                {
+                    Ok(outcome) => outcome,
+                    Err(e) => {
+                        // Every failure `run_job` itself anticipates already terminalizes the job
+                        // before returning `Ok(false)`; reaching here means something propagated
+                        // out via `?` instead (an RCP round-trip, `spawn_blocking` join, etc.),
+                        // which used to leave the job stuck at whatever non-terminal status
+                        // `run_job` last set ("running") forever, with no record anywhere of why.
+                        tracing::error!(error = %e, job_run_id = %job_run_id, "job execution failed with an unhandled error");
+                        executor::fail_job(&run_client, &job_run_id, &format!("job failed: {e:#}")).await;
+                        false
+                    }
+                };
                 (job_key_owned, outcome)
             });
             handles.push(handle);
