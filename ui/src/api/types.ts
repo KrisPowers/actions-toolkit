@@ -356,9 +356,23 @@ export interface ShellNode {
   shards: Shard[];
 }
 
+export interface LifecycleEvent {
+  id: string;
+  phase: string;
+  subject_type: string;
+  subject_id: string;
+  workflow_run_id: string | null;
+  detail: string | null;
+  started_at: string;
+  finished_at: string | null;
+  ok: number | null;
+  finish_detail: string | null;
+}
+
 export interface RunTopology {
   bucket: BucketSummary | null;
   shell: ShellNode | null;
+  phases: LifecycleEvent[];
 }
 
 export interface BucketTopology {

@@ -62,21 +62,30 @@ pub async fn list_for_webhook_event(pool: &SqlitePool, webhook_event_id: &str) -
     .await
 }
 
+/// A run already at one of these has run to its real conclusion (or was explicitly cancelled);
+/// nothing arriving afterward — a background job process finishing its own work unaware the run
+/// was cancelled out from under it, a stray late status update — should be able to clobber that.
+const TERMINAL_RUN_STATUSES: &str = "('succeeded', 'failed', 'cancelled')";
+
 pub async fn set_run_status(pool: &SqlitePool, id: &str, status: &str, terminal: bool) -> sqlx::Result<()> {
     if terminal {
-        sqlx::query("UPDATE workflow_runs SET status = ?, finished_at = ? WHERE id = ?")
-            .bind(status)
-            .bind(now_iso())
-            .bind(id)
-            .execute(pool)
-            .await?;
+        sqlx::query(&format!(
+            "UPDATE workflow_runs SET status = ?, finished_at = ? WHERE id = ? AND status NOT IN {TERMINAL_RUN_STATUSES}"
+        ))
+        .bind(status)
+        .bind(now_iso())
+        .bind(id)
+        .execute(pool)
+        .await?;
     } else {
-        sqlx::query("UPDATE workflow_runs SET status = ?, started_at = COALESCE(started_at, ?) WHERE id = ?")
-            .bind(status)
-            .bind(now_iso())
-            .bind(id)
-            .execute(pool)
-            .await?;
+        sqlx::query(&format!(
+            "UPDATE workflow_runs SET status = ?, started_at = COALESCE(started_at, ?) WHERE id = ? AND status NOT IN {TERMINAL_RUN_STATUSES}"
+        ))
+        .bind(status)
+        .bind(now_iso())
+        .bind(id)
+        .execute(pool)
+        .await?;
     }
     Ok(())
 }
@@ -126,6 +135,10 @@ pub async fn list_job_runs(pool: &SqlitePool, workflow_run_id: &str) -> sqlx::Re
         .await
 }
 
+/// Mirrors `TERMINAL_RUN_STATUSES` for `job_runs`/`step_runs`, which also have `skipped` as a
+/// terminal outcome (a job whose `if:` didn't match, or a step downstream of a cancellation).
+const TERMINAL_JOB_STATUSES: &str = "('succeeded', 'failed', 'cancelled', 'skipped')";
+
 pub async fn set_job_status(
     pool: &SqlitePool,
     id: &str,
@@ -134,9 +147,9 @@ pub async fn set_job_status(
     terminal: bool,
 ) -> sqlx::Result<()> {
     if terminal {
-        sqlx::query(
-            "UPDATE job_runs SET status = ?, exit_code = ?, finished_at = ? WHERE id = ?",
-        )
+        sqlx::query(&format!(
+            "UPDATE job_runs SET status = ?, exit_code = ?, finished_at = ? WHERE id = ? AND status NOT IN {TERMINAL_JOB_STATUSES}"
+        ))
         .bind(status)
         .bind(exit_code)
         .bind(now_iso())
@@ -144,12 +157,14 @@ pub async fn set_job_status(
         .execute(pool)
         .await?;
     } else {
-        sqlx::query("UPDATE job_runs SET status = ?, started_at = COALESCE(started_at, ?) WHERE id = ?")
-            .bind(status)
-            .bind(now_iso())
-            .bind(id)
-            .execute(pool)
-            .await?;
+        sqlx::query(&format!(
+            "UPDATE job_runs SET status = ?, started_at = COALESCE(started_at, ?) WHERE id = ? AND status NOT IN {TERMINAL_JOB_STATUSES}"
+        ))
+        .bind(status)
+        .bind(now_iso())
+        .bind(id)
+        .execute(pool)
+        .await?;
     }
     Ok(())
 }
@@ -208,20 +223,24 @@ pub async fn set_step_status(
     terminal: bool,
 ) -> sqlx::Result<()> {
     if terminal {
-        sqlx::query("UPDATE step_runs SET status = ?, exit_code = ?, finished_at = ? WHERE id = ?")
-            .bind(status)
-            .bind(exit_code)
-            .bind(now_iso())
-            .bind(id)
-            .execute(pool)
-            .await?;
+        sqlx::query(&format!(
+            "UPDATE step_runs SET status = ?, exit_code = ?, finished_at = ? WHERE id = ? AND status NOT IN {TERMINAL_JOB_STATUSES}"
+        ))
+        .bind(status)
+        .bind(exit_code)
+        .bind(now_iso())
+        .bind(id)
+        .execute(pool)
+        .await?;
     } else {
-        sqlx::query("UPDATE step_runs SET status = ?, started_at = COALESCE(started_at, ?) WHERE id = ?")
-            .bind(status)
-            .bind(now_iso())
-            .bind(id)
-            .execute(pool)
-            .await?;
+        sqlx::query(&format!(
+            "UPDATE step_runs SET status = ?, started_at = COALESCE(started_at, ?) WHERE id = ? AND status NOT IN {TERMINAL_JOB_STATUSES}"
+        ))
+        .bind(status)
+        .bind(now_iso())
+        .bind(id)
+        .execute(pool)
+        .await?;
     }
     Ok(())
 }

@@ -174,6 +174,14 @@ async fn handle(request: &RcpRequest, run_client: &dyn RunClient, db: &SqlitePoo
             RcpResponse::Ok
         }
         RcpRequest::GetBucketHostMounts => RcpResponse::BucketHostMounts(run_client.bucket_host_mounts().await?),
+        RcpRequest::StartPhase { id, phase, subject_type, subject_id, workflow_run_id, detail, started_at } => {
+            run_client.start_phase(id, phase, subject_type, subject_id, workflow_run_id.as_deref(), detail.as_deref(), started_at).await?;
+            RcpResponse::Ok
+        }
+        RcpRequest::FinishPhase { event_id, ok, detail } => {
+            run_client.finish_phase(event_id, *ok, detail.as_deref()).await?;
+            RcpResponse::Ok
+        }
         // Shell-lifecycle, not job-data, so it goes straight to the DB rather than through
         // `RunClient`: Janga's cleanup path (see `reaper.rs`) waits specifically on
         // `outcome_persisted_at`, which `mark_exited` only sets once every job/step status update

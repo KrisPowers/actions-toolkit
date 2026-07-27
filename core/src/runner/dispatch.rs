@@ -3,8 +3,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 
 use crate::app::AppState;
-use crate::db::models::{Repo, WorkflowRun, Workflow as WorkflowRow};
-use crate::db::queries::{agents as agent_queries, buckets as bucket_queries, runs as run_queries, shells as shell_queries};
+use crate::db::models::{now_iso, Repo, WorkflowRun, Workflow as WorkflowRow};
+use crate::db::queries::{agents as agent_queries, buckets as bucket_queries, lifecycle_events as lifecycle_queries, runs as run_queries, shells as shell_queries};
 use crate::runner::executor::CheckoutContext;
 use crate::runner::shell_run::ShellRunSpec;
 use crate::workflow::{model::Workflow, yaml};
@@ -229,9 +229,24 @@ async fn ensure_bucket(state: &AppState, trigger_kind: &str, webhook_event_id: O
     let auth_token_hash = atk_auth::password::hash(&auth_token).context("failed to hash bucket auth token")?;
     let local_endpoint = atk_rcp::endpoint_for_bucket(&uuid::Uuid::new_v4().to_string());
 
+    // A single INSERT can't meaningfully hang, so this phase is recorded after the fact (both
+    // start and finish together) rather than opened before the bucket's id even exists — unlike
+    // `rcp_listener_bind` below, which really can stall (port exhaustion, a slow bind) and is
+    // worth seeing as "started, not yet finished" in real time.
+    let create_phase_id = uuid::Uuid::new_v4().to_string();
+    let create_started_at = now_iso();
     let bucket = bucket_queries::create(&state.db, trigger_kind, webhook_event_id, repo_id, &auth_token_hash, &local_endpoint).await?;
+    if lifecycle_queries::start(&state.db, &create_phase_id, "bucket_create", "bucket", &bucket.id, None, Some(repo_id), &create_started_at)
+        .await
+        .is_ok()
+    {
+        let _ = lifecycle_queries::finish(&state.db, &create_phase_id, Some(true), None).await;
+    }
 
-    let tcp_addr = crate::runner::bucket_server::spawn(
+    let bind_phase_id = uuid::Uuid::new_v4().to_string();
+    let bind_phase_opened =
+        lifecycle_queries::start(&state.db, &bind_phase_id, "rcp_listener_bind", "bucket", &bucket.id, None, None, &now_iso()).await.is_ok();
+    let tcp_addr = match crate::runner::bucket_server::spawn(
         state.db.clone(),
         state.log_hub.clone(),
         state.stats_hub.clone(),
@@ -242,7 +257,21 @@ async fn ensure_bucket(state: &AppState, trigger_kind: &str, webhook_event_id: O
         state.enc.clone(),
     )
     .await
-    .context("failed to start this bucket's RCP server")?;
+    .context("failed to start this bucket's RCP server")
+    {
+        Ok(addr) => {
+            if bind_phase_opened {
+                let _ = lifecycle_queries::finish(&state.db, &bind_phase_id, Some(true), None).await;
+            }
+            addr
+        }
+        Err(e) => {
+            if bind_phase_opened {
+                let _ = lifecycle_queries::finish(&state.db, &bind_phase_id, Some(false), Some(&format!("{e:#}"))).await;
+            }
+            return Err(e);
+        }
+    };
 
     // `0.0.0.0:<port>` is what a listener bound to all interfaces reports for itself; a remote
     // agent needs an actually-reachable address, not the wildcard one.

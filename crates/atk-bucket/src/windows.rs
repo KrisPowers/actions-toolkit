@@ -21,6 +21,7 @@ use std::io::{BufRead, BufReader};
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::FromRawHandle;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 use uuid::Uuid;
@@ -90,7 +91,7 @@ fn probe_capability_blocking() -> BucketCapability {
     BucketCapability { ok: true, reason: None }
 }
 
-pub async fn create_job_shard(buckets_root: &Path, spec: ShardSpec<'_>) -> Result<ShardHandle> {
+pub async fn create_job_shard(buckets_root: &Path, spec: ShardSpec<'_>, recorder: Arc<dyn crate::PhaseRecorder>) -> Result<ShardHandle> {
     let id = Uuid::new_v4().to_string();
     let root_skeleton = buckets_root.join(&id);
     std::fs::create_dir_all(&root_skeleton).context("failed to create bucket scratch directory")?;
@@ -107,19 +108,32 @@ pub async fn create_job_shard(buckets_root: &Path, spec: ShardSpec<'_>) -> Resul
     // alive) the job right before assigning the step's process to it, which is the earliest
     // point a handle can usefully be kept open.
     tokio::task::spawn_blocking(move || -> Result<()> {
-        let sid = create_appcontainer(&profile_name, "actions-toolkit workflow step sandbox")
-            .context("failed to create AppContainer profile")?;
+        let recorder = recorder.as_ref();
+        recorder.start("appcontainer_profile_create", None);
+        let sid = create_appcontainer(&profile_name, "actions-toolkit workflow step sandbox");
+        recorder.finish("appcontainer_profile_create", sid.is_ok(), sid.as_ref().err().map(|e| format!("{e:#}")).as_deref());
+        let sid = sid.context("failed to create AppContainer profile")?;
         let sid_string = sid_to_string(sid);
         unsafe {
             let _ = FreeSid(sid);
         }
         let sid_string = sid_string.context("failed to stringify AppContainer SID")?;
 
-        grant_full_control(&workspace_for_setup, &sid_string).context("failed to grant AppContainer access to workspace")?;
-        grant_ancestor_traverse_access(&workspace_for_setup);
+        recorder.start("grant_full_control", None);
+        let grant_result = grant_full_control(&workspace_for_setup, &sid_string);
+        recorder.finish("grant_full_control", grant_result.is_ok(), grant_result.as_ref().err().map(|e| format!("{e:#}")).as_deref());
+        grant_result.context("failed to grant AppContainer access to workspace")?;
+
+        grant_ancestor_traverse_access(&workspace_for_setup, recorder);
         for extra_path in &extra_ro_mounts_for_setup {
-            if let Err(e) = grant_read_execute_access(extra_path, &sid_string) {
-                tracing::warn!(error = %e, path = %extra_path.display(), "failed to grant configured extra host-mount access");
+            let phase = format!("grant_extra_ro_mount:{}", extra_path.display());
+            recorder.start(&phase, None);
+            match grant_read_execute_access(extra_path, &sid_string) {
+                Ok(()) => recorder.finish(&phase, true, None),
+                Err(e) => {
+                    recorder.finish(&phase, false, Some(&format!("{e:#}")));
+                    tracing::warn!(error = %e, path = %extra_path.display(), "failed to grant configured extra host-mount access");
+                }
             }
         }
         Ok(())
@@ -137,6 +151,7 @@ pub async fn exec_step<F>(
     working_dir: Option<&str>,
     env: &[String],
     mut on_line: F,
+    recorder: Arc<dyn crate::PhaseRecorder>,
 ) -> Result<ExecResult>
 where
     F: FnMut(&str, String) + Send,
@@ -162,7 +177,7 @@ where
             env: &env,
             extra_ro_mounts: &extra_ro_mounts,
         };
-        run_step_blocking(&id, &workspace, network_enabled, invocation, (stdout_tx, stderr_tx))
+        run_step_blocking(&id, &workspace, network_enabled, invocation, (stdout_tx, stderr_tx), recorder.as_ref())
     });
 
     while let Some((stream, line)) = rx.recv().await {
@@ -342,7 +357,7 @@ fn grant_read_execute_access(path: &Path, sid_string: &str) -> Result<()> {
 /// the actual cause.
 static GRANTED_ANCESTORS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> = std::sync::OnceLock::new();
 
-fn grant_ancestor_traverse_access(path: &Path) {
+fn grant_ancestor_traverse_access(path: &Path, recorder: &dyn crate::PhaseRecorder) {
     const ALL_APPLICATION_PACKAGES_SID: &str = "S-1-15-2-1";
     const ALL_RESTRICTED_APPLICATION_PACKAGES_SID: &str = "S-1-15-2-2";
 
@@ -353,6 +368,12 @@ fn grant_ancestor_traverse_access(path: &Path) {
 
         let newly_seen = seen.lock().unwrap().insert(ancestor.to_path_buf());
         if newly_seen {
+            // Disambiguated by path, not just the phase name: this loop runs once per ancestor
+            // directory, and a single missing grant anywhere in the chain is exactly the failure
+            // mode this whole function exists to fix (see the doc comment above), so knowing
+            // *which* ancestor was slow or failed matters as much as knowing the phase did.
+            let phase = format!("grant_ancestor_traverse:{}", ancestor.display());
+            recorder.start(&phase, None);
             match std::process::Command::new("icacls")
                 .arg(ancestor)
                 .arg("/grant")
@@ -362,9 +383,11 @@ fn grant_ancestor_traverse_access(path: &Path) {
                 .output()
             {
                 Ok(output) if !output.status.success() => {
+                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                    recorder.finish(&phase, false, Some(&stderr));
                     tracing::error!(
                         path = %ancestor.display(),
-                        stderr = %String::from_utf8_lossy(&output.stderr),
+                        stderr = %stderr,
                         manual_fix = %format!(
                             "icacls \"{}\" /grant *{ALL_APPLICATION_PACKAGES_SID}:(X) /grant *{ALL_RESTRICTED_APPLICATION_PACKAGES_SID}:(X)",
                             ancestor.display()
@@ -375,9 +398,10 @@ fn grant_ancestor_traverse_access(path: &Path) {
                     );
                 }
                 Err(e) => {
+                    recorder.finish(&phase, false, Some(&format!("{e:#}")));
                     tracing::error!(error = %e, path = %ancestor.display(), "failed to invoke icacls for ancestor traverse grant");
                 }
-                _ => {}
+                Ok(_) => recorder.finish(&phase, true, None),
             }
         }
 
@@ -475,6 +499,7 @@ fn run_step_blocking(
     network_enabled: bool,
     invocation: StepInvocation<'_>,
     (stdout_tx, stderr_tx): (OutputLineSender, OutputLineSender),
+    recorder: &dyn crate::PhaseRecorder,
 ) -> Result<ExecResult> {
     let StepInvocation { shell_command, shell, working_dir, env, extra_ro_mounts } = invocation;
     let profile_name = appcontainer_profile_name(id);
@@ -544,6 +569,7 @@ fn run_step_blocking(
         let cwd = working_dir.map(to_wide).unwrap_or_else(|| to_wide(&workspace.to_string_lossy()));
         let env_block = build_environment_block(env, extra_ro_mounts);
 
+        recorder.start("process_spawn", None);
         let mut process_info = PROCESS_INFORMATION::default();
         let create_result = unsafe {
             CreateProcessW(
@@ -572,13 +598,22 @@ fn run_step_blocking(
             DeleteProcThreadAttributeList(attr_list);
         }
 
-        create_result.context("CreateProcessW failed")?;
+        if let Err(e) = create_result {
+            recorder.finish("process_spawn", false, Some(&format!("{e:#}")));
+            return Err(e).context("CreateProcessW failed");
+        }
 
         let job_name = job_object_name(id);
         // Creates the job on the first step, or reopens the same named object if a previous
         // step's job handle is (unusually) still alive; either way `create_job_object` also
         // (re-)applies JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, which is idempotent.
-        let job = create_job_object(&job_name).context("failed to create or open job object for this bucket")?;
+        let job = match create_job_object(&job_name).context("failed to create or open job object for this bucket") {
+            Ok(job) => job,
+            Err(e) => {
+                recorder.finish("process_spawn", false, Some(&format!("{e:#}")));
+                return Err(e);
+            }
+        };
         let assign_result = unsafe { AssignProcessToJobObject(job, process_info.hProcess) };
         if let Err(e) = assign_result {
             unsafe {
@@ -587,12 +622,14 @@ fn run_step_blocking(
                 let _ = CloseHandle(process_info.hProcess);
                 let _ = CloseHandle(process_info.hThread);
             }
+            recorder.finish("process_spawn", false, Some(&format!("{e:#}")));
             return Err(e).context("AssignProcessToJobObject failed");
         }
 
         unsafe {
             ResumeThread(process_info.hThread);
         }
+        recorder.finish("process_spawn", true, None);
 
         let stdout_handle = process_info.hProcess;
         // HANDLE wraps a raw pointer, so it isn't `Send`; the numeric value itself is a plain OS
@@ -605,6 +642,7 @@ fn run_step_blocking(
         let stderr_reader =
             std::thread::spawn(move || read_pipe_lines(HANDLE(stderr_reader_handle as *mut _), "stderr", stderr_tx));
 
+        recorder.start("process_wait", None);
         unsafe {
             WaitForSingleObject(stdout_handle, INFINITE);
         }
@@ -618,6 +656,7 @@ fn run_step_blocking(
             let _ = CloseHandle(process_info.hThread);
             let _ = CloseHandle(job);
         }
+        recorder.finish("process_wait", true, Some(&format!("exit_code={exit_code}")));
 
         Ok(ExecResult { exit_code: exit_code as i64 })
     })();
@@ -811,7 +850,7 @@ mod tests {
             ttl: std::time::Duration::from_secs(3600),
             extra_ro_mounts: &[],
         };
-        let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
+        let handle = create_job_shard(&buckets_root, spec, Arc::new(crate::NoopPhaseRecorder)).await.expect("create_job_shard should succeed");
 
         let mut stdout_lines = Vec::new();
         let command = "echo WORKSPACE_WRITE_TEST & echo hello> step_output.txt & type step_output.txt & \
@@ -821,11 +860,19 @@ mod tests {
         let env = vec!["ATK_TEST_VAR=sandboxed_value".to_string()];
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(20),
-            exec_step(&handle, command, Some("cmd"), None, &env, |stream, line| {
-                if stream == "stdout" {
-                    stdout_lines.push(line);
-                }
-            }),
+            exec_step(
+                &handle,
+                command,
+                Some("cmd"),
+                None,
+                &env,
+                |stream, line| {
+                    if stream == "stdout" {
+                        stdout_lines.push(line);
+                    }
+                },
+                Arc::new(crate::NoopPhaseRecorder),
+            ),
         )
         .await
         .expect("exec_step timed out")
@@ -889,7 +936,7 @@ mod tests {
             ttl: std::time::Duration::from_secs(3600),
             extra_ro_mounts: &[],
         };
-        let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
+        let handle = create_job_shard(&buckets_root, spec, Arc::new(crate::NoopPhaseRecorder)).await.expect("create_job_shard should succeed");
 
         let mut stdout_lines = Vec::new();
         // `1..3 | ForEach-Object` only parses as PowerShell; cmd.exe would fail to run this at
@@ -898,11 +945,19 @@ mod tests {
         let command = "1..3 | ForEach-Object { 'count-' + $_ }";
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(20),
-            exec_step(&handle, command, None, None, &[], |stream, line| {
-                if stream == "stdout" {
-                    stdout_lines.push(line);
-                }
-            }),
+            exec_step(
+                &handle,
+                command,
+                None,
+                None,
+                &[],
+                |stream, line| {
+                    if stream == "stdout" {
+                        stdout_lines.push(line);
+                    }
+                },
+                Arc::new(crate::NoopPhaseRecorder),
+            ),
         )
         .await
         .expect("exec_step timed out")
@@ -947,7 +1002,7 @@ mod tests {
             ttl: std::time::Duration::from_secs(3600),
             extra_ro_mounts: &[],
         };
-        let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
+        let handle = create_job_shard(&buckets_root, spec, Arc::new(crate::NoopPhaseRecorder)).await.expect("create_job_shard should succeed");
 
         // A non-terminating cmdlet error against a path the AppContainer genuinely has no access
         // to: real failure, not a contrived exit call, exercising the same failure class found in
@@ -955,7 +1010,7 @@ mod tests {
         let command = "Out-File -FilePath C:\\atk_erroraction_test.txt -InputObject 'should not succeed'";
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(20),
-            exec_step(&handle, command, None, None, &[], |_, _| {}),
+            exec_step(&handle, command, None, None, &[], |_, _| {}, Arc::new(crate::NoopPhaseRecorder)),
         )
         .await
         .expect("exec_step timed out")
@@ -999,7 +1054,7 @@ mod tests {
             ttl: std::time::Duration::from_secs(3600),
             extra_ro_mounts: &[],
         };
-        let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
+        let handle = create_job_shard(&buckets_root, spec, Arc::new(crate::NoopPhaseRecorder)).await.expect("create_job_shard should succeed");
 
         // Deliberately no relative-path file I/O here: that path currently runs into a separate,
         // already-tracked bug (#16) with PowerShell's own cwd initialization against this host's
@@ -1011,7 +1066,7 @@ mod tests {
         let command = format!("'ok' | Out-File -FilePath '{}'", out_path.display());
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(20),
-            exec_step(&handle, &command, None, None, &[], |_, _| {}),
+            exec_step(&handle, &command, None, None, &[], |_, _| {}, Arc::new(crate::NoopPhaseRecorder)),
         )
         .await
         .expect("exec_step timed out")
@@ -1056,7 +1111,7 @@ mod tests {
                 ttl: std::time::Duration::from_secs(3600),
                 extra_ro_mounts: &[],
             };
-            let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
+            let handle = create_job_shard(&buckets_root, spec, Arc::new(crate::NoopPhaseRecorder)).await.expect("create_job_shard should succeed");
             remove_shard(&handle).await.expect("remove_shard should succeed");
         }
 
@@ -1182,7 +1237,7 @@ mod tests {
             ttl: std::time::Duration::from_secs(3600),
             extra_ro_mounts: &[],
         };
-        let handle = create_job_shard(&buckets_root, spec).await.expect("create_job_shard should succeed");
+        let handle = create_job_shard(&buckets_root, spec, Arc::new(crate::NoopPhaseRecorder)).await.expect("create_job_shard should succeed");
 
         let mut stdout_lines = Vec::new();
         // A real TCP/HTTPS request via curl.exe (built into Windows 10 1803+/Windows 11), not
@@ -1193,11 +1248,19 @@ mod tests {
         let command = "(curl.exe -s -o nul --max-time 5 https://www.google.com && echo NETWORK_SUCCEEDED || echo NETWORK_BLOCKED)";
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(20),
-            exec_step(&handle, command, Some("cmd"), None, &[], |stream, line| {
-                if stream == "stdout" {
-                    stdout_lines.push(line);
-                }
-            }),
+            exec_step(
+                &handle,
+                command,
+                Some("cmd"),
+                None,
+                &[],
+                |stream, line| {
+                    if stream == "stdout" {
+                        stdout_lines.push(line);
+                    }
+                },
+                Arc::new(crate::NoopPhaseRecorder),
+            ),
         )
         .await
         .expect("exec_step timed out")

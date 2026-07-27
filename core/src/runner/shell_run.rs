@@ -40,6 +40,14 @@ pub async fn run(spec_path: PathBuf) -> Result<i32> {
     let spec: ShellRunSpec = serde_json::from_slice(&spec_bytes).context("failed to parse shell run spec")?;
     let _ = std::fs::remove_file(&spec_path);
 
+    // Neither of the next two phases can be reported through `run_client` in real time -- there's
+    // no RCP connection yet to report through, that's what they're setting up -- so both are
+    // timed locally and reported retroactively (both start and finish together) right after the
+    // connection exists, using the timestamp each one actually began rather than when it happened
+    // to be reported. A hang in either of these still shows up eventually: the shell process
+    // itself never gets far enough to report anything at all, which is what a shell stuck at
+    // "running" forever with zero phases recorded for it should be read as.
+    let probe_started_at = crate::db::models::now_iso();
     let capability = atk_bucket::probe_capability().await;
     if !capability.ok {
         anyhow::bail!(
@@ -48,10 +56,28 @@ pub async fn run(spec_path: PathBuf) -> Result<i32> {
         );
     }
 
+    let rcp_started_at = crate::db::models::now_iso();
     let stream = atk_rcp::connect(&spec.rcp_endpoint).await.context("failed to connect to this shell's owning bucket")?;
     let rcp_client =
         Arc::new(RcpRunClient::handshake(stream, &spec.bucket_id, &spec.auth_token).await.context("RCP handshake with the owning bucket failed")?);
     let run_client: Arc<dyn RunClient> = rcp_client.clone();
+
+    let probe_phase_id = uuid::Uuid::new_v4().to_string();
+    if run_client
+        .start_phase(&probe_phase_id, "shell_capability_probe", "shell", &spec.shell_id, Some(&spec.workflow_run_id), None, &probe_started_at)
+        .await
+        .is_ok()
+    {
+        let _ = run_client.finish_phase(&probe_phase_id, Some(true), None).await;
+    }
+    let rcp_phase_id = uuid::Uuid::new_v4().to_string();
+    if run_client
+        .start_phase(&rcp_phase_id, "rcp_connect_handshake", "shell", &spec.shell_id, Some(&spec.workflow_run_id), None, &rcp_started_at)
+        .await
+        .is_ok()
+    {
+        let _ = run_client.finish_phase(&rcp_phase_id, Some(true), None).await;
+    }
 
     let docker = crate::runner::docker::connect(None).ok();
 

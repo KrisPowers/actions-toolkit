@@ -331,6 +331,27 @@ pub struct Shard {
     pub reaped_at: Option<String>,
 }
 
+/// A trip-wire timing for one phase of the runner's own event pipeline (bucket creation, RCP
+/// listener bind, shell RCP handshake, checkout, shard/sandbox setup down to the individual ACL
+/// grant, step process spawn/wait, ...). Written at the start of the phase with `finished_at`
+/// still `NULL`, updated once it ends -- a row whose `finished_at` stays `NULL` long after
+/// `started_at` is a phase that's still running or genuinely hung, not merely slow-but-finished.
+/// `subject_type`/`subject_id` are polymorphic (`"bucket"`/`"shell"`/`"shard"`/`"job"`/`"step"`
+/// paired with that row's id), matching `AuditLog`'s `target_type`/`target_id`.
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct LifecycleEvent {
+    pub id: String,
+    pub phase: String,
+    pub subject_type: String,
+    pub subject_id: String,
+    pub workflow_run_id: Option<String>,
+    pub detail: Option<String>,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+    pub ok: Option<i64>,
+    pub finish_detail: Option<String>,
+}
+
 /// The container for one triggering event (e.g. one push), which may fan out to N matched
 /// workflow runs, each executing as its own `Shell` subprocess inside this bucket. Sibling shells
 /// can reuse resources cached under `bucket_resource_cache` instead of regenerating them, and

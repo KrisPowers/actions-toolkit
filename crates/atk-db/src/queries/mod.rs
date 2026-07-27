@@ -8,6 +8,7 @@ pub mod dashboard_tunnel_requests;
 pub mod shards;
 pub mod github_installations;
 pub mod github_token;
+pub mod lifecycle_events;
 pub mod login_events;
 pub mod repo_tunnels;
 pub mod repos;
