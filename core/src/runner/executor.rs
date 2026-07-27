@@ -116,8 +116,7 @@ pub async fn run_job(
             tokio::task::spawn_blocking(move || crate::github::checkout::checkout(&owner, &repo, &pat, &git_ref, &dir))
                 .await?;
         if let Err(e) = checkout_result {
-            emit_system_line(run_client, job_run_id, &format!("checkout failed: {e}")).await;
-            run_client.set_job_status(job_run_id, "failed", Some(-1), true).await?;
+            fail_job(run_client, job_run_id, &format!("checkout failed: {e}")).await;
             return Ok(false);
         }
     }
@@ -142,8 +141,7 @@ pub async fn run_job(
     let backend = match &job.container {
         Some(container_spec) => {
             let Some(docker) = docker else {
-                emit_system_line(run_client, job_run_id, "job declares a container: but Docker is not available on this host").await;
-                run_client.set_job_status(job_run_id, "failed", Some(-1), true).await?;
+                fail_job(run_client, job_run_id, "job declares a container: but Docker is not available on this host").await;
                 return Ok(false);
             };
 
@@ -154,8 +152,7 @@ pub async fn run_job(
                 .unwrap_or_default();
 
             if let Err(e) = docker_ops::pull_image(docker, &container_spec.image).await {
-                emit_system_line(run_client, job_run_id, &format!("failed to pull image '{}': {e}", container_spec.image)).await;
-                run_client.set_job_status(job_run_id, "failed", Some(-1), true).await?;
+                fail_job(run_client, job_run_id, &format!("failed to pull image '{}': {e}", container_spec.image)).await;
                 return Ok(false);
             }
 
@@ -171,8 +168,7 @@ pub async fn run_job(
             {
                 Ok(id) => id,
                 Err(e) => {
-                    emit_system_line(run_client, job_run_id, &format!("failed to start job container: {e}")).await;
-                    run_client.set_job_status(job_run_id, "failed", Some(-1), true).await?;
+                    fail_job(run_client, job_run_id, &format!("failed to start job container: {e}")).await;
                     return Ok(false);
                 }
             };
@@ -204,13 +200,24 @@ pub async fn run_job(
                         .record_job_shard(&handle.id, job_run_id, workflow_run_id, &handle.workspace.to_string_lossy(), job.network, &ttl_expires_at)
                         .await
                     {
-                        tracing::warn!(error = %e, shard_id = %handle.id, "failed to record job sandbox bookkeeping row");
+                        // Without this row the shard is invisible for the rest of the job's life:
+                        // it never shows up in the run's topology, and it's never a candidate for
+                        // `list_expired`/`list_unreaped` (the TTL reaper) or cancel's teardown
+                        // sweep, since all three list from this table. The sandbox already exists
+                        // and would go on to actually execute the job's steps untracked, which is
+                        // worse than failing loudly here: better to abort before anything runs and
+                        // let the job be retried than to let it finish with results nothing can
+                        // account for.
+                        if let Err(remove_err) = bucket::remove_shard(&handle).await {
+                            tracing::warn!(error = %remove_err, shard_id = %handle.id, "failed to remove orphaned job sandbox after a failed bookkeeping insert");
+                        }
+                        fail_job(run_client, job_run_id, &format!("failed to record job sandbox: {e}")).await;
+                        return Ok(false);
                     }
                     RunBackend::Shard { handle }
                 }
                 Err(e) => {
-                    emit_system_line(run_client, job_run_id, &format!("failed to create sandbox: {e}")).await;
-                    run_client.set_job_status(job_run_id, "failed", Some(-1), true).await?;
+                    fail_job(run_client, job_run_id, &format!("failed to create sandbox: {e}")).await;
                     return Ok(false);
                 }
             }
@@ -460,11 +467,39 @@ async fn exec_docker_action_step(
     }
 }
 
-async fn emit_system_line(_run_client: &Arc<dyn RunClient>, job_run_id: &str, message: &str) {
-    // System-level messages (image pull failure, checkout failure) aren't tied to a specific
-    // step_run row, so they're logged via tracing only; per-step failures are captured
-    // through the normal exec_step/run_container_action streaming path above.
+async fn emit_system_line(run_client: &Arc<dyn RunClient>, job_run_id: &str, message: &str) {
     tracing::warn!(job_run_id, message);
+    // System-level messages (image pull failure, checkout failure) aren't tied to a step the
+    // workflow itself declared, so they get a synthetic step of their own here, at index -1 so
+    // it always sorts ahead of the real steps. This is what makes them visible anywhere the UI
+    // reads a job's step list (the run detail page, the log console's step picker) instead of
+    // only reaching whoever happens to be tailing this process's own tracing output.
+    match run_client.create_step_run(job_run_id, -1, Some("system"), "system").await {
+        Ok(step_run_id) => {
+            if let Err(e) = run_client.insert_log_line(&step_run_id, &now_iso(), "stderr", message).await {
+                tracing::warn!(error = %e, job_run_id, "failed to persist system failure message");
+            }
+            if let Err(e) = run_client.set_step_status(&step_run_id, "failed", Some(-1), true).await {
+                tracing::warn!(error = %e, job_run_id, "failed to mark system failure step as failed");
+            }
+        }
+        Err(e) => {
+            tracing::error!(error = %e, job_run_id, message, "failed to persist system failure message as a step");
+        }
+    }
+}
+
+/// Surfaces a job-level failure (sandbox/container setup, or an unhandled error propagating out
+/// of `run_job` itself) and terminalizes the job as failed. Every existing job-setup failure
+/// branch below funnels through this, and `scheduler::run_inner` calls it for the one case that
+/// used to slip past all of them: an `Err` bubbling out of `run_job` via `?`, which previously
+/// left the job's status exactly as `run_client.set_job_status(.., "running", .., false)` set it
+/// at the top of this function, forever, with nothing anywhere recording why.
+pub async fn fail_job(run_client: &Arc<dyn RunClient>, job_run_id: &str, message: &str) {
+    emit_system_line(run_client, job_run_id, message).await;
+    if let Err(e) = run_client.set_job_status(job_run_id, "failed", Some(-1), true).await {
+        tracing::error!(error = %e, job_run_id, "failed to mark job as failed after a job-level error");
+    }
 }
 
 /// Handles a `uses: cache` step: `with: { key, path }`, optionally `cross_platform: true` to
