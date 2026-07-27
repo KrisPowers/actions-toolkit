@@ -33,7 +33,7 @@ import RefBadge from "../components/common/RefBadge";
 import { listCardClass } from "../components/common/Card";
 import EmptyState from "../components/common/EmptyState";
 import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
-import { parseRunRef } from "../lib/runRef";
+import { parseRunRefs } from "../lib/runRef";
 import type { RepoPublic, WorkflowRow, WorkflowRun } from "../api/types";
 
 const PAGE_SIZE_OPTIONS = [20, 50, 75, 100];
@@ -114,7 +114,7 @@ function WorkflowCatalogRow({
 
 function RunRow({ run, repo }: { run: WorkflowRun; repo?: RepoPublic }) {
   const Icon = triggerIcon(run.trigger_event);
-  const runRef = parseRunRef(run.ref_name);
+  const runRefs = parseRunRefs(run);
   return (
     <div className="relative flex items-center justify-between gap-3 px-4 py-3 hover:bg-neutral-800/50">
       <Link
@@ -128,7 +128,15 @@ function RunRow({ run, repo }: { run: WorkflowRun; repo?: RepoPublic }) {
         </div>
       </Link>
       <div className="relative z-10 flex shrink-0 items-center gap-2">
-        {runRef && repo && <RefBadge runRef={runRef} owner={repo.owner} name={repo.name} />}
+        {repo &&
+          runRefs.map((runRef) => (
+            <RefBadge
+              key={runRef.kind === "pr" ? `pr-${runRef.number}` : `branch-${runRef.name}`}
+              runRef={runRef}
+              owner={repo.owner}
+              name={repo.name}
+            />
+          ))}
         <StatusBadge status={run.status} />
       </div>
     </div>
