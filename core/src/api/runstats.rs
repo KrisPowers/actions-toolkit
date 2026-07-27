@@ -9,10 +9,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
 use crate::auth::middleware::ApprovedUser;
-use crate::db::models::{Bucket, ResourceSample, Shard, Shell};
+use crate::db::models::{Bucket, LifecycleEvent, ResourceSample, Shard, Shell};
 use crate::db::queries::{
-    buckets as bucket_queries, resource_cache as cache_queries, resource_samples as sample_queries,
-    runs as run_queries, shards as shard_queries, shells as shell_queries,
+    buckets as bucket_queries, lifecycle_events as lifecycle_queries, resource_cache as cache_queries,
+    resource_samples as sample_queries, runs as run_queries, shards as shard_queries, shells as shell_queries,
 };
 use crate::error::{AppError, AppResult};
 
@@ -38,6 +38,12 @@ pub struct RunTopology {
     pub bucket: Option<BucketSummary>,
     /// `None` for a run still queued, before its shell has been spawned.
     pub shell: Option<ShellNode>,
+    /// Trip-wire timings for every phase of this run's event pipeline recorded so far (see
+    /// `atk_db::queries::lifecycle_events`), oldest first. A phase with `finished_at: null` is
+    /// either still running or, if `started_at` is well in the past, hung -- this is what turns a
+    /// gap like "job started, first step didn't start for 9 minutes" into something read directly
+    /// off phase boundaries instead of reconstructed by hand after the fact.
+    pub phases: Vec<LifecycleEvent>,
 }
 
 async fn summarize_bucket(state: &AppState, bucket: Bucket) -> AppResult<BucketSummary> {
@@ -79,14 +85,15 @@ pub async fn topology_for_run(
     _user: ApprovedUser,
 ) -> AppResult<Json<RunTopology>> {
     run_queries::find_run(&state.db, &run_id).await?.ok_or(AppError::NotFound)?;
+    let phases = lifecycle_queries::list_for_run(&state.db, &run_id).await?;
 
     let Some(shell) = shell_queries::find_by_workflow_run(&state.db, &run_id).await? else {
-        return Ok(Json(RunTopology { bucket: None, shell: None }));
+        return Ok(Json(RunTopology { bucket: None, shell: None, phases }));
     };
     let shards = shard_queries::list_for_workflow_run(&state.db, &run_id).await?;
     let bucket = bucket_summary(&state, &shell.bucket_id).await?;
 
-    Ok(Json(RunTopology { bucket, shell: Some(ShellNode { shell, shards }) }))
+    Ok(Json(RunTopology { bucket, shell: Some(ShellNode { shell, shards }), phases }))
 }
 
 #[derive(Serialize)]
