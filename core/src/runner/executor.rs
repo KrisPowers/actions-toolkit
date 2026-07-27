@@ -112,6 +112,7 @@ pub async fn run_job(
         let pat = ctx.pat.clone();
         let git_ref = ctx.git_ref.clone();
         let dir = workspace_dir.clone();
+        let checkout_started = std::time::Instant::now();
         let checkout_result =
             tokio::task::spawn_blocking(move || crate::github::checkout::checkout(&owner, &repo, &pat, &git_ref, &dir))
                 .await?;
@@ -119,6 +120,12 @@ pub async fn run_job(
             fail_job(run_client, job_run_id, &format!("checkout failed: {e}")).await;
             return Ok(false);
         }
+        // Cheap and always-on: without this, a checkout that stalls (network, a huge history, a
+        // slow host) is indistinguishable from "the job just hasn't started yet" until the whole
+        // job's duration is picked apart after the fact -- see the investigation behind this line
+        // for a run whose first step didn't start until minutes after the job did, with nothing in
+        // between to say why.
+        emit_system_line(run_client, job_run_id, &format!("checked out {} in {:.1}s", ctx.git_ref, checkout_started.elapsed().as_secs_f64())).await;
     }
 
     for name in &job.download_artifacts {
@@ -193,8 +200,13 @@ pub async fn run_job(
                 ttl: bucket::DEFAULT_TTL,
                 extra_ro_mounts: &extra_ro_mounts,
             };
+            let shard_started = std::time::Instant::now();
             match bucket::create_job_shard(buckets_dir, spec).await {
                 Ok(handle) => {
+                    // Same rationale as the checkout timing line above: sandbox setup (AppContainer
+                    // profile creation, ancestor ACL grants) has no other visible trace, and has
+                    // been the unexplained bulk of a job's runtime before its first step even starts.
+                    emit_system_line(run_client, job_run_id, &format!("sandbox ready in {:.1}s", shard_started.elapsed().as_secs_f64())).await;
                     let ttl_expires_at = (chrono::Utc::now() + chrono::Duration::seconds(bucket::DEFAULT_TTL.as_secs() as i64)).to_rfc3339();
                     if let Err(e) = run_client
                         .record_job_shard(&handle.id, job_run_id, workflow_run_id, &handle.workspace.to_string_lossy(), job.network, &ttl_expires_at)
