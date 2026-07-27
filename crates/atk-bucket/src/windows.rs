@@ -287,10 +287,9 @@ fn grant_read_execute_access(path: &Path, sid_string: &str) -> Result<()> {
 }
 
 /// Grants the two well-known "any AppContainer" SIDs traverse-only access (`(X)`, not full
-/// control, and not inherited by each ancestor's other children) to `path`'s two immediate
-/// ancestors, for a workspace at `<data_dir>/workspaces/<run_id>`, that's
-/// `<data_dir>/workspaces` and `<data_dir>` itself, on top of `grant_full_control`'s full-control
-/// grant (scoped to this specific bucket's own SID) on `path` itself.
+/// control, and not inherited by each ancestor's other children) to every ancestor of `path` up
+/// to and including the volume root, on top of `grant_full_control`'s full-control grant (scoped
+/// to this specific bucket's own SID) on `path` itself.
 ///
 /// AppContainer tokens don't hold the "bypass traverse checking" privilege normal user tokens get
 /// by default (confirmed: AppContainer tokens do inherit `SeChangeNotifyPrivilege` from the base
@@ -312,40 +311,78 @@ fn grant_read_execute_access(path: &Path, sid_string: &str) -> Result<()> {
 /// a no-op once already granted (verified: `icacls` on the *same* trustee repeatedly stays at one
 /// ACE and takes ~15ms per call, not growing or slowing down).
 ///
-/// Still bounded to 2 levels, unchanged from before. A separate investigation tried widening this
-/// to cover the OS-standard default data dir's full ancestor chain (6 levels) in the hope of also
-/// fixing the deeper-nesting cwd-fallback problem tracked in a linked issue, but that was
-/// empirically disproven: even with the well-known SIDs verified present (via `icacls`) on every
-/// ancestor up to and including `%LOCALAPPDATA%`, the underlying PowerShell cwd-initialization
-/// failure still reproduced. Ancestor ACL grants are necessary but evidently not sufficient for
-/// that problem, whose real root cause is still unknown, not fixed here, left to that issue.
+/// This used to stop after 2 ancestors, then after an attempted widening to 6 (covering the
+/// OS-standard default data dir depth), both on the theory that the filesystem driver only needed
+/// grants near the leaf. Both were wrong, and the earlier "even 6 levels didn't fix it" finding
+/// was a measurement error, not evidence the mechanism doesn't work: the driver checks traverse
+/// access on *every* directory in the path, and a single missing grant anywhere above the ones
+/// that were being widened breaks the whole chain regardless of how correct everything below it
+/// is. Confirmed directly against a real, live-broken install: everything from the workspace up
+/// through the user's own profile folder already had the grant from an earlier partial attempt,
+/// but `C:\Users` and `C:\` itself did not, and that alone was enough to keep reproducing the
+/// failure. Walking to the actual volume root, rather than any fixed depth, is the only bound
+/// that's guaranteed correct no matter how deep `data_dir` is configured.
+///
+/// Granting `C:\` and `C:\Users` (directories this app doesn't own) is more invasive than the
+/// previous narrower version, but the grant itself is still traverse-only, not a broadening of
+/// what it exposes. Doing the full walk on every single bucket creation would reintroduce the
+/// icacls-call-volume problem #73/#74 fixed, so each individual ancestor directory is only ever
+/// granted once per process (see `GRANTED_ANCESTORS`), not re-walked and re-granted on every job.
+/// This is a per-directory memo rather than a single "done that ever" flag because production has
+/// one fixed `data_dir` for the process's whole life (so it degenerates to "once ever" there
+/// anyway), but the test suite creates a fresh temp `data_dir` per test within the same process;
+/// a single global flag would let whichever test runs first claim the grant and silently starve
+/// every other test's own distinct workspace tree of it.
+///
+/// Best-effort: `C:\` and `C:\Users` are owned by Administrators/TrustedInstaller, so granting on
+/// them requires an elevated token, even for an account that's a member of Administrators. If
+/// this process isn't running elevated, those two grants will fail; logged loudly (`error`, not
+/// `warn`) with the exact failing path and an equivalent manual `icacls` command, since a step
+/// failing later with PowerShell's opaque "Cannot find drive" error gives no hint that this is
+/// the actual cause.
+static GRANTED_ANCESTORS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> = std::sync::OnceLock::new();
+
 fn grant_ancestor_traverse_access(path: &Path) {
     const ALL_APPLICATION_PACKAGES_SID: &str = "S-1-15-2-1";
     const ALL_RESTRICTED_APPLICATION_PACKAGES_SID: &str = "S-1-15-2-2";
 
-    for ancestor in path.ancestors().skip(1).take(2) {
-        if ancestor.parent().is_none() {
-            break;
+    let seen = GRANTED_ANCESTORS.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+    for ancestor in path.ancestors().skip(1) {
+        let is_volume_root = ancestor.parent().is_none();
+
+        let newly_seen = seen.lock().unwrap().insert(ancestor.to_path_buf());
+        if newly_seen {
+            match std::process::Command::new("icacls")
+                .arg(ancestor)
+                .arg("/grant")
+                .arg(format!("*{ALL_APPLICATION_PACKAGES_SID}:(X)"))
+                .arg("/grant")
+                .arg(format!("*{ALL_RESTRICTED_APPLICATION_PACKAGES_SID}:(X)"))
+                .output()
+            {
+                Ok(output) if !output.status.success() => {
+                    tracing::error!(
+                        path = %ancestor.display(),
+                        stderr = %String::from_utf8_lossy(&output.stderr),
+                        manual_fix = %format!(
+                            "icacls \"{}\" /grant *{ALL_APPLICATION_PACKAGES_SID}:(X) /grant *{ALL_RESTRICTED_APPLICATION_PACKAGES_SID}:(X)",
+                            ancestor.display()
+                        ),
+                        "failed to grant AppContainer traverse access to a bucket workspace ancestor; \
+                         PowerShell steps will fail to resolve their working directory until this is \
+                         granted (run the manual_fix command from an elevated prompt, once)"
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, path = %ancestor.display(), "failed to invoke icacls for ancestor traverse grant");
+                }
+                _ => {}
+            }
         }
-        match std::process::Command::new("icacls")
-            .arg(ancestor)
-            .arg("/grant")
-            .arg(format!("*{ALL_APPLICATION_PACKAGES_SID}:(X)"))
-            .arg("/grant")
-            .arg(format!("*{ALL_RESTRICTED_APPLICATION_PACKAGES_SID}:(X)"))
-            .output()
-        {
-            Ok(output) if !output.status.success() => {
-                tracing::warn!(
-                    path = %ancestor.display(),
-                    stderr = %String::from_utf8_lossy(&output.stderr),
-                    "failed to grant traverse access to a bucket workspace ancestor directory"
-                );
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, path = %ancestor.display(), "failed to invoke icacls for ancestor traverse grant");
-            }
-            _ => {}
+
+        if is_volume_root {
+            break;
         }
     }
 }
