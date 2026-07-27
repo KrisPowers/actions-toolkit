@@ -89,22 +89,25 @@ pub trait RunClient: Send + Sync {
         host_memory_percent: Option<f64>,
     ) -> Result<()>;
     /// Opens a trip-wire timing for one phase of the event pipeline (see
-    /// `runner::lifecycle` and the migration behind `atk_db::queries::lifecycle_events`).
-    /// Returns an event id to pass to `finish_phase` once the phase ends; a phase whose id never
-    /// comes back through `finish_phase` is exactly the "still running or hung" case this exists
-    /// to catch. `started_at` is caller-supplied rather than always "now" so a phase only
-    /// reportable after it already happened (an RCP handshake, before there's a connection to
-    /// report through) can still record when it actually began.
+    /// `atk_db::queries::lifecycle_events`). `id` is caller-supplied (generate one with
+    /// `uuid::Uuid::new_v4()` before calling) rather than returned, so a fine-grained recorder
+    /// deep inside `atk_bucket`'s blocking OS code can fire this and `finish_phase` later without
+    /// ever needing to synchronously wait on this call's result. A phase whose id never comes
+    /// back through `finish_phase` is exactly the "still running or hung" case this exists to
+    /// catch. `started_at` is caller-supplied rather than always "now" so a phase only reportable
+    /// after it already happened (an RCP handshake, before there's a connection to report
+    /// through) can still record when it actually began.
     #[allow(clippy::too_many_arguments)]
     async fn start_phase(
         &self,
+        id: &str,
         phase: &str,
         subject_type: &str,
         subject_id: &str,
         workflow_run_id: Option<&str>,
         detail: Option<&str>,
         started_at: &str,
-    ) -> Result<String>;
+    ) -> Result<()>;
     /// Closes a trip-wire timing opened by `start_phase`.
     async fn finish_phase(&self, event_id: &str, ok: Option<bool>, detail: Option<&str>) -> Result<()>;
 }
@@ -292,15 +295,16 @@ impl RunClient for LocalRunClient {
 
     async fn start_phase(
         &self,
+        id: &str,
         phase: &str,
         subject_type: &str,
         subject_id: &str,
         workflow_run_id: Option<&str>,
         detail: Option<&str>,
         started_at: &str,
-    ) -> Result<String> {
-        let event = lifecycle_queries::start(&self.db, phase, subject_type, subject_id, workflow_run_id, detail, started_at).await?;
-        Ok(event.id)
+    ) -> Result<()> {
+        lifecycle_queries::start(&self.db, id, phase, subject_type, subject_id, workflow_run_id, detail, started_at).await?;
+        Ok(())
     }
 
     async fn finish_phase(&self, event_id: &str, ok: Option<bool>, detail: Option<&str>) -> Result<()> {
@@ -585,15 +589,17 @@ where
 
     async fn start_phase(
         &self,
+        id: &str,
         phase: &str,
         subject_type: &str,
         subject_id: &str,
         workflow_run_id: Option<&str>,
         detail: Option<&str>,
         started_at: &str,
-    ) -> Result<String> {
+    ) -> Result<()> {
         match self
             .call(RcpRequest::StartPhase {
+                id: id.to_string(),
                 phase: phase.to_string(),
                 subject_type: subject_type.to_string(),
                 subject_id: subject_id.to_string(),
@@ -603,7 +609,7 @@ where
             })
             .await?
         {
-            RcpResponse::PhaseId(id) => Ok(id),
+            RcpResponse::Ok => Ok(()),
             RcpResponse::Error(message) => anyhow::bail!(message),
             other => anyhow::bail!("unexpected response to StartPhase: {other:?}"),
         }

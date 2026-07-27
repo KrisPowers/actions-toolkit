@@ -233,13 +233,19 @@ async fn ensure_bucket(state: &AppState, trigger_kind: &str, webhook_event_id: O
     // start and finish together) rather than opened before the bucket's id even exists — unlike
     // `rcp_listener_bind` below, which really can stall (port exhaustion, a slow bind) and is
     // worth seeing as "started, not yet finished" in real time.
+    let create_phase_id = uuid::Uuid::new_v4().to_string();
     let create_started_at = now_iso();
     let bucket = bucket_queries::create(&state.db, trigger_kind, webhook_event_id, repo_id, &auth_token_hash, &local_endpoint).await?;
-    if let Ok(phase) = lifecycle_queries::start(&state.db, "bucket_create", "bucket", &bucket.id, None, Some(repo_id), &create_started_at).await {
-        let _ = lifecycle_queries::finish(&state.db, &phase.id, Some(true), None).await;
+    if lifecycle_queries::start(&state.db, &create_phase_id, "bucket_create", "bucket", &bucket.id, None, Some(repo_id), &create_started_at)
+        .await
+        .is_ok()
+    {
+        let _ = lifecycle_queries::finish(&state.db, &create_phase_id, Some(true), None).await;
     }
 
-    let bind_phase = lifecycle_queries::start(&state.db, "rcp_listener_bind", "bucket", &bucket.id, None, None, &now_iso()).await.ok();
+    let bind_phase_id = uuid::Uuid::new_v4().to_string();
+    let bind_phase_opened =
+        lifecycle_queries::start(&state.db, &bind_phase_id, "rcp_listener_bind", "bucket", &bucket.id, None, None, &now_iso()).await.is_ok();
     let tcp_addr = match crate::runner::bucket_server::spawn(
         state.db.clone(),
         state.log_hub.clone(),
@@ -254,14 +260,14 @@ async fn ensure_bucket(state: &AppState, trigger_kind: &str, webhook_event_id: O
     .context("failed to start this bucket's RCP server")
     {
         Ok(addr) => {
-            if let Some(phase) = &bind_phase {
-                let _ = lifecycle_queries::finish(&state.db, &phase.id, Some(true), None).await;
+            if bind_phase_opened {
+                let _ = lifecycle_queries::finish(&state.db, &bind_phase_id, Some(true), None).await;
             }
             addr
         }
         Err(e) => {
-            if let Some(phase) = &bind_phase {
-                let _ = lifecycle_queries::finish(&state.db, &phase.id, Some(false), Some(&format!("{e:#}"))).await;
+            if bind_phase_opened {
+                let _ = lifecycle_queries::finish(&state.db, &bind_phase_id, Some(false), Some(&format!("{e:#}"))).await;
             }
             return Err(e);
         }

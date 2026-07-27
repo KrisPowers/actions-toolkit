@@ -20,6 +20,7 @@ mod seccomp_policy;
 mod windows;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -80,6 +81,38 @@ pub struct ExecResult {
     pub exit_code: i64,
 }
 
+/// Fine-grained sub-phase trip-wires inside `create_job_shard`/`exec_step` (AppContainer profile
+/// creation, each ACL grant, the sandboxed process spawn/wait, ...) -- the sub-steps that were the
+/// unexplained bulk of a job's runtime in the investigation that motivated this. This crate has no
+/// async runtime or database dependency of its own (see the module doc), so persisting these
+/// durably is the caller's job: a caller that wants that supplies a sync implementation that
+/// bridges into its own async world by firing (not awaiting) whatever write it needs, the same
+/// shape `exec_step`'s `on_line` callback already uses to reach a `RunClient` from inside a
+/// blocking-pool thread. Every method here is infallible from this crate's point of view: a
+/// recorder that can't actually persist anything has nothing useful to report back up through
+/// here, and must never be able to fail the sandbox operation it's just watching.
+///
+/// `phase` names a call's own paired `start`/`finish`; a phase that can run more than once per
+/// `create_job_shard`/`exec_step` call (there's one ACL grant per ancestor directory, for example)
+/// disambiguates by folding a distinguishing detail into the phase name itself (e.g.
+/// `"grant_ancestor_traverse:C:\\Users"`), rather than this trait needing to hand back and thread
+/// through an opaque token the way `RunClient::start_phase` does for its own, single-call-per-name
+/// callers.
+pub trait PhaseRecorder: Send + Sync {
+    fn start(&self, phase: &str, detail: Option<&str>);
+    fn finish(&self, phase: &str, ok: bool, detail: Option<&str>);
+}
+
+/// The default recorder for every call site that has no reason to plumb one through, including
+/// every test in this crate: `create_job_shard`/`exec_step` themselves use this internally so
+/// their public signatures don't change for callers that don't care about sub-phase timing.
+pub struct NoopPhaseRecorder;
+
+impl PhaseRecorder for NoopPhaseRecorder {
+    fn start(&self, _phase: &str, _detail: Option<&str>) {}
+    fn finish(&self, _phase: &str, _ok: bool, _detail: Option<&str>) {}
+}
+
 #[derive(Debug, Clone)]
 pub struct BucketCapability {
     pub ok: bool,
@@ -125,13 +158,22 @@ pub async fn probe_capability() -> BucketCapability {
 /// any database — the caller (a shell, via its `RunClient`) is responsible for recording whatever
 /// bookkeeping row it needs, since this crate has no way to reach one from inside a shell process.
 pub async fn create_job_shard(buckets_root: &Path, spec: ShardSpec<'_>) -> Result<ShardHandle> {
+    create_job_shard_with_recorder(buckets_root, spec, Arc::new(NoopPhaseRecorder)).await
+}
+
+/// Same as `create_job_shard`, with `recorder` given start/finish trip-wires for each sub-phase
+/// of sandbox setup. Windows-only for now: the AppContainer/ACL-grant path this was built to
+/// diagnose is Windows-specific, and this crate's Linux backend can't be exercised or verified
+/// from a Windows dev machine, so it's left uninstrumented rather than guessed at.
+pub async fn create_job_shard_with_recorder(buckets_root: &Path, spec: ShardSpec<'_>, recorder: Arc<dyn PhaseRecorder>) -> Result<ShardHandle> {
     #[cfg(target_os = "linux")]
     {
+        let _ = recorder;
         linux::create_job_shard(buckets_root, spec).await
     }
     #[cfg(target_os = "windows")]
     {
-        windows::create_job_shard(buckets_root, spec).await
+        windows::create_job_shard(buckets_root, spec, recorder).await
     }
 }
 
@@ -149,13 +191,33 @@ pub async fn exec_step<F>(
 where
     F: FnMut(&str, String) + Send,
 {
+    exec_step_with_recorder(handle, shell_command, shell, working_dir, env, on_line, Arc::new(NoopPhaseRecorder)).await
+}
+
+/// Same as `exec_step`, with `recorder` given start/finish trip-wires around the sandboxed
+/// process spawn and the wait for it to exit -- separately, so a step that's genuinely just
+/// running a long build is distinguishable from one whose process never even started. Windows-only
+/// for now, same rationale as `create_job_shard_with_recorder`.
+pub async fn exec_step_with_recorder<F>(
+    handle: &ShardHandle,
+    shell_command: &str,
+    shell: Option<&str>,
+    working_dir: Option<&str>,
+    env: &[String],
+    on_line: F,
+    recorder: Arc<dyn PhaseRecorder>,
+) -> Result<ExecResult>
+where
+    F: FnMut(&str, String) + Send,
+{
     #[cfg(target_os = "linux")]
     {
+        let _ = recorder;
         linux::exec_step(handle, shell_command, shell, working_dir, env, on_line).await
     }
     #[cfg(target_os = "windows")]
     {
-        windows::exec_step(handle, shell_command, shell, working_dir, env, on_line).await
+        windows::exec_step(handle, shell_command, shell, working_dir, env, on_line, recorder).await
     }
 }
 

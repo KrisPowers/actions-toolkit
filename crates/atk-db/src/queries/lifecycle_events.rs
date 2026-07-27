@@ -1,18 +1,22 @@
 use sqlx::SqlitePool;
-use uuid::Uuid;
 
 use crate::models::{now_iso, LifecycleEvent};
 
 /// Opens a trip-wire timing for one phase of the runner's event pipeline (see the migration's own
-/// comment for the full rationale). `finished_at` stays `NULL` until `finish` is called with the
-/// returned id -- a row that never gets one is exactly the "still running or hung" signal this
-/// table exists to catch. `started_at` is a caller-supplied timestamp rather than always "now"
-/// so a phase that can only be reported *after* the fact (the RCP handshake itself, before there's
-/// any channel to report through) can still record when it actually began, not just when this
-/// call happened to run.
+/// comment for the full rationale). `finished_at` stays `NULL` until `finish` is called with `id`
+/// -- a row that never gets one is exactly the "still running or hung" signal this table exists to
+/// catch. `id` is caller-supplied (matching `shards::create`'s convention, not `create_step_run`'s
+/// server-generated one) rather than returned: a fine-grained sub-phase recorder deep inside
+/// `atk_bucket`'s blocking OS code has to hand a token back to its own caller *synchronously* (no
+/// `.await` available there) so it can fire this insert and move on without waiting on it --
+/// needing the id in advance is what makes that possible. `started_at` is a caller-supplied
+/// timestamp rather than always "now" so a phase only reportable *after* the fact (the RCP
+/// handshake itself, before there's any channel to report through) can still record when it
+/// actually began, not just when this call happened to run.
 #[allow(clippy::too_many_arguments)]
 pub async fn start(
     pool: &SqlitePool,
+    id: &str,
     phase: &str,
     subject_type: &str,
     subject_id: &str,
@@ -20,12 +24,11 @@ pub async fn start(
     detail: Option<&str>,
     started_at: &str,
 ) -> sqlx::Result<LifecycleEvent> {
-    let id = Uuid::new_v4().to_string();
     sqlx::query(
         "INSERT INTO lifecycle_events (id, phase, subject_type, subject_id, workflow_run_id, detail, started_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
-    .bind(&id)
+    .bind(id)
     .bind(phase)
     .bind(subject_type)
     .bind(subject_id)
@@ -35,7 +38,7 @@ pub async fn start(
     .execute(pool)
     .await?;
 
-    find(pool, &id).await?.ok_or(sqlx::Error::RowNotFound)
+    find(pool, id).await?.ok_or(sqlx::Error::RowNotFound)
 }
 
 /// Closes a trip-wire timing opened by `start`. `ok` is `None` for the (rare) case a phase's
@@ -148,7 +151,7 @@ mod tests {
     async fn start_then_finish_round_trips() {
         let pool = test_pool().await;
         seed_run(&pool, "repo-1", "run-1").await;
-        let event = start(&pool, "checkout", "job", "job-1", Some("run-1"), None, "2026-01-01T00:00:00Z")
+        let event = start(&pool, "event-1", "checkout", "job", "job-1", Some("run-1"), None, "2026-01-01T00:00:00Z")
             .await
             .expect("start should succeed");
         assert!(event.finished_at.is_none());
@@ -165,10 +168,10 @@ mod tests {
         let pool = test_pool().await;
         seed_run(&pool, "repo-1", "run-1").await;
         seed_run(&pool, "repo-2", "run-2").await;
-        start(&pool, "bucket_create", "bucket", "bucket-1", None, None, "2026-01-01T00:00:00Z").await.unwrap();
-        start(&pool, "checkout", "job", "job-1", Some("run-1"), None, "2026-01-01T00:00:02Z").await.unwrap();
-        start(&pool, "shard_create", "job", "job-1", Some("run-1"), None, "2026-01-01T00:00:01Z").await.unwrap();
-        start(&pool, "checkout", "job", "job-2", Some("run-2"), None, "2026-01-01T00:00:00Z").await.unwrap();
+        start(&pool, "event-1", "bucket_create", "bucket", "bucket-1", None, None, "2026-01-01T00:00:00Z").await.unwrap();
+        start(&pool, "event-2", "checkout", "job", "job-1", Some("run-1"), None, "2026-01-01T00:00:02Z").await.unwrap();
+        start(&pool, "event-3", "shard_create", "job", "job-1", Some("run-1"), None, "2026-01-01T00:00:01Z").await.unwrap();
+        start(&pool, "event-4", "checkout", "job", "job-2", Some("run-2"), None, "2026-01-01T00:00:00Z").await.unwrap();
 
         let phases = list_for_run(&pool, "run-1").await.expect("list should succeed");
         assert_eq!(phases.len(), 2);
@@ -179,10 +182,10 @@ mod tests {
     #[tokio::test]
     async fn list_unfinished_older_than_excludes_finished_and_recent_rows() {
         let pool = test_pool().await;
-        let stuck = start(&pool, "grant_ancestor_traverse", "shard", "shard-1", None, None, "2026-01-01T00:00:00Z").await.unwrap();
-        let finished = start(&pool, "checkout", "job", "job-1", None, None, "2026-01-01T00:00:00Z").await.unwrap();
+        let stuck = start(&pool, "event-1", "grant_ancestor_traverse", "shard", "shard-1", None, None, "2026-01-01T00:00:00Z").await.unwrap();
+        let finished = start(&pool, "event-2", "checkout", "job", "job-1", None, None, "2026-01-01T00:00:00Z").await.unwrap();
         finish(&pool, &finished.id, Some(true), None).await.unwrap();
-        start(&pool, "step_exec", "step", "step-1", None, None, "2999-01-01T00:00:00Z").await.unwrap();
+        start(&pool, "event-3", "step_exec", "step", "step-1", None, None, "2999-01-01T00:00:00Z").await.unwrap();
 
         let stuck_rows = list_unfinished_older_than(&pool, "2500-01-01T00:00:00Z").await.expect("query should succeed");
         assert_eq!(stuck_rows.len(), 1);

@@ -62,16 +62,21 @@ pub async fn run(spec_path: PathBuf) -> Result<i32> {
         Arc::new(RcpRunClient::handshake(stream, &spec.bucket_id, &spec.auth_token).await.context("RCP handshake with the owning bucket failed")?);
     let run_client: Arc<dyn RunClient> = rcp_client.clone();
 
-    if let Ok(id) = run_client
-        .start_phase("shell_capability_probe", "shell", &spec.shell_id, Some(&spec.workflow_run_id), None, &probe_started_at)
+    let probe_phase_id = uuid::Uuid::new_v4().to_string();
+    if run_client
+        .start_phase(&probe_phase_id, "shell_capability_probe", "shell", &spec.shell_id, Some(&spec.workflow_run_id), None, &probe_started_at)
         .await
+        .is_ok()
     {
-        let _ = run_client.finish_phase(&id, Some(true), None).await;
+        let _ = run_client.finish_phase(&probe_phase_id, Some(true), None).await;
     }
-    if let Ok(id) =
-        run_client.start_phase("rcp_connect_handshake", "shell", &spec.shell_id, Some(&spec.workflow_run_id), None, &rcp_started_at).await
+    let rcp_phase_id = uuid::Uuid::new_v4().to_string();
+    if run_client
+        .start_phase(&rcp_phase_id, "rcp_connect_handshake", "shell", &spec.shell_id, Some(&spec.workflow_run_id), None, &rcp_started_at)
+        .await
+        .is_ok()
     {
-        let _ = run_client.finish_phase(&id, Some(true), None).await;
+        let _ = run_client.finish_phase(&rcp_phase_id, Some(true), None).await;
     }
 
     let docker = crate::runner::docker::connect(None).ok();

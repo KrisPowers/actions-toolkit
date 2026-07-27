@@ -8,6 +8,7 @@ pub mod failure_diagnostics;
 pub mod github_status;
 pub mod host_toolchains;
 pub mod log_stream;
+pub mod phase_recorder;
 pub mod poll_sync;
 pub mod rcp_protocol;
 pub mod run_client;

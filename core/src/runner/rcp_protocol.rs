@@ -48,6 +48,7 @@ pub enum RcpRequest {
     /// so a phase only reportable after the fact -- the RCP handshake itself, before there's any
     /// connection to report through -- can still record when it actually began.
     StartPhase {
+        id: String,
         phase: String,
         subject_type: String,
         subject_id: String,
@@ -100,6 +101,5 @@ pub enum RcpResponse {
     Secret(Option<String>),
     ResourceCache(ResourceCacheState),
     BucketHostMounts(Vec<String>),
-    PhaseId(String),
     Error(String),
 }
