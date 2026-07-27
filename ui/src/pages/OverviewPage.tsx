@@ -29,10 +29,12 @@ import Button, { buttonClass } from "../components/common/Button";
 import PageHeader from "../components/common/PageHeader";
 import Select from "../components/common/Select";
 import StatusBadge from "../components/common/StatusBadge";
+import RefBadge from "../components/common/RefBadge";
 import { listCardClass } from "../components/common/Card";
 import EmptyState from "../components/common/EmptyState";
 import WebhookUnreachableBanner from "../components/common/WebhookUnreachableBanner";
-import type { WorkflowRow, WorkflowRun } from "../api/types";
+import { parseRunRef } from "../lib/runRef";
+import type { RepoPublic, WorkflowRow, WorkflowRun } from "../api/types";
 
 const PAGE_SIZE_OPTIONS = [20, 50, 75, 100];
 
@@ -110,22 +112,26 @@ function WorkflowCatalogRow({
   );
 }
 
-function RunRow({ run }: { run: WorkflowRun }) {
+function RunRow({ run, repo }: { run: WorkflowRun; repo?: RepoPublic }) {
   const Icon = triggerIcon(run.trigger_event);
+  const runRef = parseRunRef(run.ref_name);
   return (
-    <Link to={`/repos/${run.repo_id}/runs/${run.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-neutral-800/50">
-      <div className="flex min-w-0 items-center gap-2.5">
+    <div className="relative flex items-center justify-between gap-3 px-4 py-3 hover:bg-neutral-800/50">
+      <Link
+        to={`/repos/${run.repo_id}/runs/${run.id}`}
+        className="flex min-w-0 items-center gap-2.5 before:absolute before:inset-0 before:content-['']"
+      >
         <Icon className="h-4 w-4 shrink-0 text-neutral-500" strokeWidth={2} />
         <div className="min-w-0">
-          <div className="truncate text-sm capitalize text-neutral-200">
-            {triggerLabel(run.trigger_event)}
-            {run.ref_name ? <span className="normal-case text-neutral-500"> · {run.ref_name}</span> : null}
-          </div>
+          <div className="truncate text-sm capitalize text-neutral-200">{triggerLabel(run.trigger_event)}</div>
           <div className="mt-0.5 text-xs text-neutral-500">{new Date(run.created_at).toLocaleString()}</div>
         </div>
+      </Link>
+      <div className="relative z-10 flex shrink-0 items-center gap-2">
+        {runRef && repo && <RefBadge runRef={runRef} owner={repo.owner} name={repo.name} />}
+        <StatusBadge status={run.status} />
       </div>
-      <StatusBadge status={run.status} />
-    </Link>
+    </div>
   );
 }
 
@@ -225,7 +231,7 @@ export default function OverviewPage() {
           <div className={listCardClass()}>
             {runsLoading && <p className="px-4 py-3 text-sm text-neutral-500">Loading…</p>}
             {(runs ?? []).map((run) => (
-              <RunRow key={run.id} run={run} />
+              <RunRow key={run.id} run={run} repo={repo} />
             ))}
             {(runs ?? []).length === 0 && !runsLoading && <EmptyState icon={Boxes} message="No runs yet." />}
           </div>
