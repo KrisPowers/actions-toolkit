@@ -112,19 +112,27 @@ pub async fn run_job(
         let pat = ctx.pat.clone();
         let git_ref = ctx.git_ref.clone();
         let dir = workspace_dir.clone();
+        // A trip-wire, not just a timer: the phase row is written *before* checkout runs, so a
+        // checkout that stalls (network, a huge history, a slow host) shows up immediately as
+        // "started, not yet finished" instead of being indistinguishable from "the job just
+        // hasn't started yet" until the whole job's duration gets picked apart after the fact --
+        // see the investigation this came out of, where a run's first step didn't start until
+        // minutes after the job did, with nothing anywhere to say why.
         let checkout_started = std::time::Instant::now();
+        let phase_id = run_client.start_phase("checkout", "job", job_run_id, Some(workflow_run_id), Some(&git_ref), &now_iso()).await.ok();
         let checkout_result =
             tokio::task::spawn_blocking(move || crate::github::checkout::checkout(&owner, &repo, &pat, &git_ref, &dir))
                 .await?;
         if let Err(e) = checkout_result {
+            if let Some(id) = &phase_id {
+                let _ = run_client.finish_phase(id, Some(false), Some(&format!("{e:#}"))).await;
+            }
             fail_job(run_client, job_run_id, &format!("checkout failed: {e}")).await;
             return Ok(false);
         }
-        // Cheap and always-on: without this, a checkout that stalls (network, a huge history, a
-        // slow host) is indistinguishable from "the job just hasn't started yet" until the whole
-        // job's duration is picked apart after the fact -- see the investigation behind this line
-        // for a run whose first step didn't start until minutes after the job did, with nothing in
-        // between to say why.
+        if let Some(id) = &phase_id {
+            let _ = run_client.finish_phase(id, Some(true), None).await;
+        }
         emit_system_line(run_client, job_run_id, &format!("checked out {} in {:.1}s", ctx.git_ref, checkout_started.elapsed().as_secs_f64())).await;
     }
 
@@ -200,12 +208,18 @@ pub async fn run_job(
                 ttl: bucket::DEFAULT_TTL,
                 extra_ro_mounts: &extra_ro_mounts,
             };
+            // Same rationale as the checkout phase above: sandbox setup (AppContainer profile
+            // creation, ancestor ACL grants, the sandboxed process spawn itself) has been the
+            // unexplained bulk of a job's runtime before its first step even starts, and this
+            // outer phase catches a hang at the "shard never came back at all" level even before
+            // the finer-grained sub-phases `create_job_shard` records internally.
             let shard_started = std::time::Instant::now();
+            let shard_phase_id = run_client.start_phase("shard_create", "job", job_run_id, Some(workflow_run_id), None, &now_iso()).await.ok();
             match bucket::create_job_shard(buckets_dir, spec).await {
                 Ok(handle) => {
-                    // Same rationale as the checkout timing line above: sandbox setup (AppContainer
-                    // profile creation, ancestor ACL grants) has no other visible trace, and has
-                    // been the unexplained bulk of a job's runtime before its first step even starts.
+                    if let Some(id) = &shard_phase_id {
+                        let _ = run_client.finish_phase(id, Some(true), None).await;
+                    }
                     emit_system_line(run_client, job_run_id, &format!("sandbox ready in {:.1}s", shard_started.elapsed().as_secs_f64())).await;
                     let ttl_expires_at = (chrono::Utc::now() + chrono::Duration::seconds(bucket::DEFAULT_TTL.as_secs() as i64)).to_rfc3339();
                     if let Err(e) = run_client
@@ -229,6 +243,9 @@ pub async fn run_job(
                     RunBackend::Shard { handle }
                 }
                 Err(e) => {
+                    if let Some(id) = &shard_phase_id {
+                        let _ = run_client.finish_phase(id, Some(false), Some(&format!("{e:#}"))).await;
+                    }
                     fail_job(run_client, job_run_id, &format!("failed to create sandbox: {e}")).await;
                     return Ok(false);
                 }
@@ -301,6 +318,11 @@ pub async fn run_job(
                 });
             };
 
+            // Real-time, not post-hoc: this is where the user's own command runs, so it's also
+            // where a genuinely long build lives alongside an actually-hung process -- the two
+            // are indistinguishable from a job's total duration alone, but this phase's
+            // `finished_at` (or lack of one) tells them apart directly.
+            let step_exec_phase_id = run_client.start_phase("step_exec", "step", &step_run_id, Some(workflow_run_id), step.name.as_deref(), &now_iso()).await.ok();
             let result: Result<i64> = match &backend {
                 RunBackend::Docker { docker, container_id } => {
                     docker_ops::exec_step(docker, container_id, command, step.shell.as_deref(), None, &step_env, on_line)
@@ -311,6 +333,11 @@ pub async fn run_job(
                     bucket::exec_step(handle, command, step.shell.as_deref(), None, &step_env, on_line).await.map(|r| r.exit_code)
                 }
             };
+            if let Some(id) = &step_exec_phase_id {
+                let ok = result.as_ref().map(|code| *code == 0).unwrap_or(false);
+                let detail = result.as_ref().err().map(|e| format!("{e:#}"));
+                let _ = run_client.finish_phase(id, Some(ok), detail.as_deref()).await;
+            }
             let exit_code = match result {
                 Ok(exit_code) => exit_code,
                 Err(e) => {
