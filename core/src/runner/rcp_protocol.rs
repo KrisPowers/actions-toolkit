@@ -43,6 +43,20 @@ pub enum RcpRequest {
     /// settings-table access, so it asks its bucket for this once per job right before spec'ing
     /// the sandbox.
     GetBucketHostMounts,
+    /// Opens a trip-wire timing for one phase of the event pipeline (see
+    /// `atk_db::queries::lifecycle_events`). `started_at` is caller-supplied (not always "now")
+    /// so a phase only reportable after the fact -- the RCP handshake itself, before there's any
+    /// connection to report through -- can still record when it actually began.
+    StartPhase {
+        phase: String,
+        subject_type: String,
+        subject_id: String,
+        workflow_run_id: Option<String>,
+        detail: Option<String>,
+        started_at: String,
+    },
+    /// Closes a trip-wire timing opened by `StartPhase`.
+    FinishPhase { event_id: String, ok: Option<bool>, detail: Option<String> },
     ReportShellExit { shell_id: String, exit_code: i64, cache_hits: i64, cache_misses: i64 },
     ReportResourceSample {
         subject_type: String,
@@ -86,5 +100,6 @@ pub enum RcpResponse {
     Secret(Option<String>),
     ResourceCache(ResourceCacheState),
     BucketHostMounts(Vec<String>),
+    PhaseId(String),
     Error(String),
 }
