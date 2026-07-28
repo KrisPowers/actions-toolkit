@@ -7,7 +7,7 @@ use crate::auth::middleware::ApprovedUser;
 use crate::db::models::{RunLog, RunTree, WorkflowRun};
 use crate::db::queries::audit_log::{self as audit_log_queries, NewAuditLogEntry};
 use crate::db::queries::{
-    shards as shard_queries, repos as repo_queries, runs as run_queries, workflows as workflow_queries,
+    shards as shard_queries, repos as repo_queries, runs as run_queries, shells as shell_queries, workflows as workflow_queries,
 };
 use crate::error::{AppError, AppResult};
 
@@ -75,6 +75,20 @@ pub async fn cancel(
     let run = run_queries::find_run(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     if matches!(run.status.as_str(), "succeeded" | "failed" | "cancelled") {
         return Err(AppError::Conflict("run has already finished".into()));
+    }
+
+    // The shell process itself keeps running otherwise: it has no idea its containers/sandboxes
+    // are about to be torn out from under it below, and would just keep going (erroring out on
+    // its own timeline, if at all) instead of exiting immediately. Only meaningful for a shell
+    // running locally (no `agent_id`) — a remote agent's shell lives on a different host, where
+    // this instance's own PID has no meaning; a remote cancel relies on the agent noticing the
+    // run went terminal on its own poll.
+    if let Ok(Some(shell)) = shell_queries::find_by_workflow_run(&state.db, &id).await {
+        if shell.agent_id.is_none() {
+            if let Some(pid) = shell.pid {
+                crate::runner::sampler::kill_process_tree(pid as u32);
+            }
+        }
     }
 
     if let Some(docker) = &state.docker {
