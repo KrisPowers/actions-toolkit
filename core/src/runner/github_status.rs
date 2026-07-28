@@ -29,6 +29,11 @@ pub async fn report_failure(state: &AppState, owner: &str, repo: &str, sha: &str
     crate::github::status::mark_failure(&client, owner, repo, sha, target_url).await
 }
 
+pub async fn report_cancelled(state: &AppState, owner: &str, repo: &str, sha: &str, target_url: Option<String>) -> Result<()> {
+    let client = client::shared(state).await.map_err(|e| anyhow::anyhow!(e))?;
+    crate::github::status::mark_cancelled(&client, owner, repo, sha, target_url).await
+}
+
 /// Logs and persists a GitHub status reporting failure onto the run itself (see
 /// `WorkflowRun::github_report_error`), so it's visible on the run detail page instead of only
 /// discoverable from the server's own console output. Best-effort: if even the persist fails,

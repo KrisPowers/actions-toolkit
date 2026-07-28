@@ -74,19 +74,14 @@ pub async fn supervise_remote_shell(
 }
 
 async fn report_run_outcome(state: &AppState, workflow_run_id: &str, repo_owner: &str, repo_name: &str, commit_sha: Option<String>) {
-    let succeeded = run_queries::find_run(&state.db, workflow_run_id)
-        .await
-        .ok()
-        .flatten()
-        .map(|r| r.status == "succeeded")
-        .unwrap_or(false);
+    let status = run_queries::find_run(&state.db, workflow_run_id).await.ok().flatten().map(|r| r.status);
 
     if let Some(sha) = commit_sha {
         let target_url = crate::runner::github_status::run_target_url(state, workflow_run_id).await;
-        let report = if succeeded {
-            crate::runner::github_status::report_success(state, repo_owner, repo_name, &sha, target_url).await
-        } else {
-            crate::runner::github_status::report_failure(state, repo_owner, repo_name, &sha, target_url).await
+        let report = match status.as_deref() {
+            Some("succeeded") => crate::runner::github_status::report_success(state, repo_owner, repo_name, &sha, target_url).await,
+            Some("cancelled") => crate::runner::github_status::report_cancelled(state, repo_owner, repo_name, &sha, target_url).await,
+            _ => crate::runner::github_status::report_failure(state, repo_owner, repo_name, &sha, target_url).await,
         };
         if let Err(e) = report {
             crate::runner::github_status::record_report_failure(state, workflow_run_id, "failed to post the final GitHub commit status", &e).await;

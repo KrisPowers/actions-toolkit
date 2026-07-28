@@ -41,6 +41,22 @@ fn process_tree_pids(sys: &System, root: Pid) -> HashSet<Pid> {
     tree
 }
 
+/// Kills a local shell's whole process tree (the shell itself plus whatever it spawned) so a
+/// cancelled run's process can't keep running against sandboxes/containers that cancellation
+/// already tore down out from under it. A no-op for a `root_pid` that's already gone. Meaningless
+/// for a shell scheduled onto a remote agent (`root_pid` would be a PID on the agent's host, not
+/// this one) — callers must only invoke this for shells with no `agent_id`.
+pub fn kill_process_tree(root_pid: u32) {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+    let root = Pid::from_u32(root_pid);
+    for pid in process_tree_pids(&sys, root) {
+        if let Some(process) = sys.process(pid) {
+            process.kill();
+        }
+    }
+}
+
 struct TreeSample {
     cpu_percent: f64,
     memory_bytes: i64,
