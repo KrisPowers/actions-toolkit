@@ -4,7 +4,7 @@ import { cn } from "../../lib/cn";
 // GitHub's actual card radius is 6px (Primer's --borderRadius-medium), the same as its buttons
 // and inputs, not the 8px rounded-lg Tailwind default.
 export function cardClass(className?: string) {
-  return cn("rounded-md border border-neutral-800 bg-neutral-900", className);
+  return cn("overflow-hidden rounded-md border border-neutral-800 bg-neutral-900", className);
 }
 
 export function listCardClass(className?: string) {

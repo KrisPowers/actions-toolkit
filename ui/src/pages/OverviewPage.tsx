@@ -212,8 +212,10 @@ export default function OverviewPage() {
 
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-[280px_1fr]">
         <section className="min-w-0">
-          <h2 className="mb-2 text-sm font-semibold text-neutral-200">Workflows</h2>
-          <div className="divide-y divide-neutral-800">
+          <div className="mb-2 flex min-h-7 items-center">
+            <h2 className="text-sm font-semibold text-neutral-200">Workflows</h2>
+          </div>
+          <div className={listCardClass()}>
             <button
               type="button"
               onClick={() => selectWorkflow(null)}
