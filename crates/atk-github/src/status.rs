@@ -47,6 +47,14 @@ pub async fn mark_failure(client: &Octocrab, owner: &str, repo: &str, sha: &str,
     create_status(client, owner, repo, sha, "failure", "Workflow run failed", target_url).await
 }
 
+/// The commit status API has no "cancelled" state (only error/failure/pending/success), so a
+/// cancelled run is reported as `error` rather than `failure`: it distinguishes "nobody knows if
+/// this would have passed" from "this actually failed", which matters on a commit status people
+/// use to decide whether to re-run something.
+pub async fn mark_cancelled(client: &Octocrab, owner: &str, repo: &str, sha: &str, target_url: Option<String>) -> Result<()> {
+    create_status(client, owner, repo, sha, "error", "Workflow run was cancelled", target_url).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,6 +103,24 @@ mod tests {
         let states: Vec<String> =
             requests.iter().map(|r| r.body_json::<serde_json::Value>().unwrap()["state"].as_str().unwrap().to_string()).collect();
         assert_eq!(states, vec!["success", "failure"]);
+    }
+
+    #[tokio::test]
+    async fn mark_cancelled_posts_error_state_not_failure() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/repos/octocat/hello-world/statuses/abc123"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({})))
+            .mount(&mock_server)
+            .await;
+
+        let client = test_client(&mock_server).await;
+        mark_cancelled(&client, "octocat", "hello-world", "abc123", None).await.unwrap();
+
+        let requests = mock_server.received_requests().await.unwrap();
+        let body: serde_json::Value = requests[0].body_json().unwrap();
+        assert_eq!(body["state"], "error");
+        assert_eq!(body["description"], "Workflow run was cancelled");
     }
 
     #[tokio::test]
