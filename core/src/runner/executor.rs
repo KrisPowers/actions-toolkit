@@ -95,13 +95,13 @@ pub async fn run_job(
                         Ok(Some(value)) => injected_env.push(format!("{name}={value}")),
                         Ok(None) => {}
                         Err(e) => {
-                            emit_system_line(run_client, job_run_id, &format!("failed to request secret '{name}': {e}")).await;
+                            emit_system_line(run_client, job_run_id, &format!("failed to request secret '{name}': {e}"), false).await;
                         }
                     }
                 }
             }
             Err(e) => {
-                emit_system_line(run_client, job_run_id, &format!("failed to look up secrets for this repo: {e}")).await;
+                emit_system_line(run_client, job_run_id, &format!("failed to look up secrets for this repo: {e}"), false).await;
             }
         }
     }
@@ -130,7 +130,7 @@ pub async fn run_job(
             return Ok(false);
         }
         let _ = run_client.finish_phase(&phase_id, Some(true), None).await;
-        emit_system_line(run_client, job_run_id, &format!("checked out {} in {:.1}s", ctx.git_ref, checkout_started.elapsed().as_secs_f64())).await;
+        emit_system_line(run_client, job_run_id, &format!("checked out {} in {:.1}s", ctx.git_ref, checkout_started.elapsed().as_secs_f64()), true).await;
     }
 
     for name in &job.download_artifacts {
@@ -138,14 +138,14 @@ pub async fn run_job(
             Ok(Some(path_on_disk)) => {
                 let dest = workspace_dir.join(name);
                 if let Err(e) = copy_recursive(Path::new(&path_on_disk), &dest) {
-                    emit_system_line(run_client, job_run_id, &format!("failed to stage artifact '{name}': {e}")).await;
+                    emit_system_line(run_client, job_run_id, &format!("failed to stage artifact '{name}': {e}"), false).await;
                 }
             }
             Ok(None) => {
-                emit_system_line(run_client, job_run_id, &format!("declared download_artifacts entry '{name}' was not found on this run")).await;
+                emit_system_line(run_client, job_run_id, &format!("declared download_artifacts entry '{name}' was not found on this run"), false).await;
             }
             Err(e) => {
-                emit_system_line(run_client, job_run_id, &format!("failed to look up artifact '{name}': {e}")).await;
+                emit_system_line(run_client, job_run_id, &format!("failed to look up artifact '{name}': {e}"), false).await;
             }
         }
     }
@@ -222,7 +222,7 @@ pub async fn run_job(
             match bucket::create_job_shard_with_recorder(buckets_dir, spec, recorder).await {
                 Ok(handle) => {
                     let _ = run_client.finish_phase(&shard_phase_id, Some(true), None).await;
-                    emit_system_line(run_client, job_run_id, &format!("sandbox ready in {:.1}s", shard_started.elapsed().as_secs_f64())).await;
+                    emit_system_line(run_client, job_run_id, &format!("sandbox ready in {:.1}s", shard_started.elapsed().as_secs_f64()), true).await;
                     let ttl_expires_at = (chrono::Utc::now() + chrono::Duration::seconds(bucket::DEFAULT_TTL.as_secs() as i64)).to_rfc3339();
                     if let Err(e) = run_client
                         .record_job_shard(&handle.id, job_run_id, workflow_run_id, &handle.workspace.to_string_lossy(), job.network, &ttl_expires_at)
@@ -356,7 +356,7 @@ pub async fn run_job(
             let exit_code = match result {
                 Ok(exit_code) => exit_code,
                 Err(e) => {
-                    emit_system_line(run_client, job_run_id, &format!("step '{:?}' failed: {e}", step.name)).await;
+                    emit_system_line(run_client, job_run_id, &format!("step '{:?}' failed: {e}", step.name), false).await;
                     -1
                 }
             };
@@ -436,7 +436,7 @@ pub async fn run_job(
             }
         };
         if let Err(e) = capture_result {
-            emit_system_line(run_client, job_run_id, &format!("artifact capture failed: {e}")).await;
+            emit_system_line(run_client, job_run_id, &format!("artifact capture failed: {e}"), false).await;
         }
     }
 
@@ -487,6 +487,7 @@ async fn exec_docker_action_step(
             run_client,
             job_run_id,
             &format!("step '{step_name:?}' uses a docker:// action but Docker is not available on this host"),
+            false,
         )
         .await;
         return -1;
@@ -515,30 +516,38 @@ async fn exec_docker_action_step(
     match result {
         Ok(r) => r.exit_code,
         Err(e) => {
-            emit_system_line(run_client, job_run_id, &format!("container action '{uses}' failed: {e}")).await;
+            emit_system_line(run_client, job_run_id, &format!("container action '{uses}' failed: {e}"), false).await;
             -1
         }
     }
 }
 
-async fn emit_system_line(run_client: &Arc<dyn RunClient>, job_run_id: &str, message: &str) {
-    tracing::warn!(job_run_id, message);
-    // System-level messages (image pull failure, checkout failure) aren't tied to a step the
-    // workflow itself declared, so they get a synthetic step of their own here, at index -1 so
-    // it always sorts ahead of the real steps. This is what makes them visible anywhere the UI
-    // reads a job's step list (the run detail page, the log console's step picker) instead of
-    // only reaching whoever happens to be tailing this process's own tracing output.
+async fn emit_system_line(run_client: &Arc<dyn RunClient>, job_run_id: &str, message: &str, ok: bool) {
+    if ok {
+        tracing::info!(job_run_id, message);
+    } else {
+        tracing::warn!(job_run_id, message);
+    }
+    // System-level messages (image pull failure, checkout failure, but also plain progress notes
+    // like "checked out ... in 2.2s") aren't tied to a step the workflow itself declared, so they
+    // get a synthetic step of their own here, at index -1 so it always sorts ahead of the real
+    // steps. This is what makes them visible anywhere the UI reads a job's step list (the run
+    // detail page, the log console's step picker) instead of only reaching whoever happens to be
+    // tailing this process's own tracing output. `ok` decides whether that synthetic step is
+    // recorded as succeeded or failed -- callers reporting routine progress must pass `true`, or
+    // the run detail page shows a "system" stage failure for a job that never actually failed.
+    let (stream, status, exit_code) = if ok { ("stdout", "succeeded", Some(0)) } else { ("stderr", "failed", Some(-1)) };
     match run_client.create_step_run(job_run_id, -1, Some("system"), "system").await {
         Ok(step_run_id) => {
-            if let Err(e) = run_client.insert_log_line(&step_run_id, &now_iso(), "stderr", message).await {
-                tracing::warn!(error = %e, job_run_id, "failed to persist system failure message");
+            if let Err(e) = run_client.insert_log_line(&step_run_id, &now_iso(), stream, message).await {
+                tracing::warn!(error = %e, job_run_id, "failed to persist system message");
             }
-            if let Err(e) = run_client.set_step_status(&step_run_id, "failed", Some(-1), true).await {
-                tracing::warn!(error = %e, job_run_id, "failed to mark system failure step as failed");
+            if let Err(e) = run_client.set_step_status(&step_run_id, status, exit_code, true).await {
+                tracing::warn!(error = %e, job_run_id, "failed to set system step status");
             }
         }
         Err(e) => {
-            tracing::error!(error = %e, job_run_id, message, "failed to persist system failure message as a step");
+            tracing::error!(error = %e, job_run_id, message, "failed to persist system message as a step");
         }
     }
 }
@@ -550,7 +559,7 @@ async fn emit_system_line(run_client: &Arc<dyn RunClient>, job_run_id: &str, mes
 /// left the job's status exactly as `run_client.set_job_status(.., "running", .., false)` set it
 /// at the top of this function, forever, with nothing anywhere recording why.
 pub async fn fail_job(run_client: &Arc<dyn RunClient>, job_run_id: &str, message: &str) {
-    emit_system_line(run_client, job_run_id, message).await;
+    emit_system_line(run_client, job_run_id, message, false).await;
     if let Err(e) = run_client.set_job_status(job_run_id, "failed", Some(-1), true).await {
         tracing::error!(error = %e, job_run_id, "failed to mark job as failed after a job-level error");
     }
