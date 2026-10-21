@@ -112,3 +112,18 @@ fn whole_expression(s: &str) -> Option<&str> {
     let end = find_close(inner)?;
     (end + 2 == inner.len()).then(|| &inner[..end])
 }
+
+fn find_close(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut in_str = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\'' => in_str = !in_str,
+            b'}' if !in_str && bytes.get(i + 1) == Some(&b'}') => return Some(i),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
