@@ -160,3 +160,26 @@ fn job_label(key: &str, job: &Job, matrix: &Value, ctx: &Ctx) -> String {
         format!("{base} ({})", values.join(", "))
     }
 }
+
+/// Human-readable step title, mirroring GitHub's defaults.
+pub fn step_title(step: &Step, ctx: &Ctx) -> String {
+    if let Some(name) = &step.name {
+        return expr::interpolate(name, ctx).unwrap_or_else(|_| name.clone());
+    }
+    if let Some(uses) = &step.uses {
+        return format!("Run {uses}");
+    }
+    if let Some(run) = &step.run {
+        let first = run
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("");
+        let mut title: String = first.chars().take(60).collect();
+        if first.chars().count() > 60 {
+            title.push('…');
+        }
+        return format!("Run {title}");
+    }
+    "Step".to_string()
+}
