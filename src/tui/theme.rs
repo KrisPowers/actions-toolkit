@@ -84,3 +84,16 @@ pub fn row(
         Span::styled(right, dim()),
     ])
 }
+
+/// Truncates to `width` columns with an ellipsis.
+pub fn fit(s: &str, width: usize) -> String {
+    if s.chars().count() <= width {
+        s.to_string()
+    } else if width == 0 {
+        String::new()
+    } else {
+        let mut t: String = s.chars().take(width - 1).collect();
+        t.push('…');
+        t
+    }
+}
