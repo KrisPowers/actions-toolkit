@@ -50,3 +50,43 @@ maverick engines              # what's installed and usable on this machine
 | `c` | Cancel the run |
 | `q` | Back (cancels first if still running) |
 
+## Engines
+
+| Engine | Type | How it runs your job |
+| --- | --- | --- |
+| Docker, Podman | container | One container per job from the `runs-on` image; steps run via `exec` |
+| Lima, Multipass | vm | Inside a named instance (`default` / `primary` unless configured) |
+| WSL | vm (Windows) | Inside your default (or configured) distro |
+| Parallels | vm (macOS) | Inside a named Linux VM via `prlctl exec` |
+| VirtualBox, VMware, QEMU, Hyper-V, Tart | vm | Over SSH to a Linux guest you point it at |
+| Maverick Native | built-in | On the host, in a throwaway sandbox directory with a scrubbed environment |
+
+Every engine works on a **copy** of your project (respecting `.gitignore`), so runs can't touch
+your working tree. Pass `--bind` to use the project in place instead (Docker/native only).
+
+The native engine needs nothing installed and starts instantly, but it isolates files and
+environment variables, not the OS. Use a container or VM for untrusted workflows.
+
+### Choosing and configuring engines
+
+```sh
+maverick config set-engine docker                      # default engine
+maverick config set-target lima my-instance            # VM instance name
+maverick config set-target qemu runner@127.0.0.1:2222 --identity ~/.ssh/id_ed25519
+maverick run --engine native                           # one-off override
+```
+
+Without a default, maverick uses Docker or Podman if one is running, else the native engine.
+
+### Container images
+
+`runs-on` labels map to images. Defaults use the community images built for local runners:
+
+| Label | Image |
+| --- | --- |
+| `ubuntu-latest` | `ghcr.io/catthehacker/ubuntu:act-latest` |
+| `ubuntu-24.04` / `22.04` / `20.04` | `ghcr.io/catthehacker/ubuntu:act-<version>` |
+
+Override per run with `-P ubuntu-latest=node:20-bookworm`, or permanently in config. A job's
+`container:` always takes precedence.
+
