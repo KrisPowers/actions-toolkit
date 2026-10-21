@@ -27,3 +27,8 @@ pub(crate) struct JobContext {
     pub cancel: Cancel,
     pub needs: Value,
 }
+
+pub(crate) struct JobResult {
+    pub status: Status,
+    pub outputs: Map<String, Value>,
+}
