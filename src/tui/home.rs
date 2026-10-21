@@ -41,3 +41,21 @@ enum Row {
     Job(usize, String),
     Broken(usize),
 }
+
+pub struct App {
+    root: PathBuf,
+    cfg: Config,
+    workflows: Vec<WorkflowFile>,
+    rows: Vec<Row>,
+    row_sel: usize,
+    engines: Vec<EngineInfo>,
+    engine_sel: usize,
+    detect_rx: Option<Receiver<Vec<EngineInfo>>>,
+    active: Option<Kind>,
+    focus: Focus,
+    event_idx: usize,
+    flash: Option<(String, bool, Instant)>,
+    run: Option<RunView>,
+    tick: usize,
+    quit: bool,
+}
