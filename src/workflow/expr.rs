@@ -79,3 +79,28 @@ pub fn evaluate_yaml(v: &Yaml, ctx: &Ctx) -> Result<Value, String> {
         other => serde_json::to_value(other).map_err(|e| e.to_string()),
     }
 }
+
+/// Evaluates an `if:` condition, applying GitHub's implicit `success() &&` prefix.
+pub fn condition(cond: Option<&Yaml>, ctx: &Ctx) -> Result<bool, String> {
+    let src = match cond {
+        None | Some(Yaml::Null) => return Ok(ctx.state.success()),
+        Some(Yaml::Bool(b)) => return Ok(*b),
+        Some(Yaml::Number(n)) => return Ok(n.as_f64().is_some_and(|f| f != 0.0)),
+        Some(Yaml::String(s)) => s.trim(),
+        Some(_) => return Err("`if` must be a string or boolean".into()),
+    };
+    let src = whole_expression(src).unwrap_or(src).trim();
+    if src.is_empty() {
+        return Ok(ctx.state.success());
+    }
+    let lower = src.to_ascii_lowercase();
+    let has_status = ["success(", "failure(", "always(", "cancelled("]
+        .iter()
+        .any(|f| lower.contains(f));
+    let value = truthy(&evaluate(src, ctx)?);
+    Ok(if has_status {
+        value
+    } else {
+        value && ctx.state.success()
+    })
+}
