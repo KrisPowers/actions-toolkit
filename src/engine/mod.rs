@@ -145,3 +145,36 @@ pub struct EngineInfo {
     /// Extra context: how to fix it, or which instance/target is used.
     pub note: Option<String>,
 }
+
+impl EngineInfo {
+    fn new(
+        kind: Kind,
+        availability: Availability,
+        version: Option<String>,
+        note: impl Into<Option<String>>,
+    ) -> Self {
+        Self {
+            kind,
+            availability,
+            version,
+            note: note.into(),
+        }
+    }
+
+    fn missing(kind: Kind) -> Self {
+        Self::new(kind, Availability::Missing, None, None)
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.availability == Availability::Ready
+    }
+
+    pub fn status_label(&self) -> &'static str {
+        match self.availability {
+            Availability::Ready => "ready",
+            Availability::NotRunning => "not running",
+            Availability::NeedsSetup => "needs setup",
+            Availability::Missing => "not installed",
+        }
+    }
+}
