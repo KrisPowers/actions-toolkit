@@ -965,3 +965,30 @@ fn action_inputs(def: &ActionDef, step: &Step, ctx: &Ctx) -> Result<Map<String, 
     }
     Ok(inputs)
 }
+
+/// Interprets workflow commands (`::error::`, `::add-mask::`, ...) in a line of step output.
+fn handle_output(em: &Emitter, ui: usize, line: String, outputs: &mut Map<String, Value>) {
+    let Some(cmd) = line.trim_start().strip_prefix("::") else {
+        em.log(ui, LogKind::Output, line);
+        return;
+    };
+    let Some((head, value)) = cmd.split_once("::") else {
+        em.log(ui, LogKind::Output, line);
+        return;
+    };
+    let (name, params) = head.split_once(' ').unwrap_or((head, ""));
+    match name {
+        "add-mask" => em.add_mask(value),
+        "set-output" => {
+            if let Some(key) = params.trim().strip_prefix("name=") {
+                outputs.insert(key.to_string(), Value::String(value.to_string()));
+            }
+        }
+        "group" => em.log(ui, LogKind::Group, value.to_string()),
+        "endgroup" | "debug" | "save-state" | "stop-commands" | "echo" => {}
+        "error" => em.log(ui, LogKind::Error, value.to_string()),
+        "warning" => em.log(ui, LogKind::Warning, value.to_string()),
+        "notice" => em.log(ui, LogKind::Notice, value.to_string()),
+        _ => em.log(ui, LogKind::Output, line.clone()),
+    }
+}
