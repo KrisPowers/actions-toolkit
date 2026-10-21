@@ -1,0 +1,19 @@
+name: Greet
+description: A tiny composite action used by the demo workflow
+inputs:
+  who:
+    description: Who to greet
+    required: true
+  greeting:
+    default: Hi
+outputs:
+  message:
+    value: ${{ steps.say.outputs.message }}
+runs:
+  using: composite
+  steps:
+    - id: say
+      shell: bash
+      run: |
+        echo "${{ inputs.greeting }}, ${{ inputs.who }}!"
+        echo "message=${{ inputs.greeting }}, ${{ inputs.who }}" >> "$GITHUB_OUTPUT"
