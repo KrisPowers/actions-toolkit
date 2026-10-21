@@ -158,3 +158,59 @@ struct NativeSession {
     host_env: Vec<(String, String)>,
     dir: Option<TempDir>,
 }
+
+impl Session for NativeSession {
+    fn info(&self) -> &SessionInfo {
+        &self.info
+    }
+
+    fn exec(
+        &mut self,
+        req: &ExecRequest,
+        cancel: &Cancel,
+        out: &mut dyn FnMut(String),
+    ) -> Result<ExecOutcome> {
+        let Some((program, args)) = req.argv.split_first() else {
+            anyhow::bail!("empty command");
+        };
+        let mut cmd = Command::new(program);
+        cmd.args(args)
+            .env_clear()
+            .envs(self.host_env.iter().cloned())
+            .envs([
+                ("TMPDIR", &self.info.temp),
+                ("TEMP", &self.info.temp),
+                ("TMP", &self.info.temp),
+            ])
+            .envs(req.env.iter().cloned())
+            .current_dir(&req.cwd);
+        util::stream(cmd, cancel, req.timeout, out)
+    }
+
+    fn write_file(&mut self, path: &str, data: &[u8]) -> Result<()> {
+        if let Some(parent) = Path::new(path).parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, data)?;
+        Ok(())
+    }
+
+    fn read_file(&mut self, path: &str) -> Result<String> {
+        Ok(fs::read_to_string(path).unwrap_or_default())
+    }
+
+    fn copy_dir(&mut self, host: &Path, dest: &str) -> Result<()> {
+        util::copy_tree(host, Path::new(dest))?;
+        Ok(())
+    }
+
+    fn teardown(&mut self, log: &mut dyn FnMut(String)) {
+        if let Some(dir) = self.dir.take() {
+            let path = dir.path().display().to_string();
+            match dir.close() {
+                Ok(()) => log(format!("Removed sandbox {path}")),
+                Err(e) => log(format!("Could not fully remove sandbox {path}: {e}")),
+            }
+        }
+    }
+}
