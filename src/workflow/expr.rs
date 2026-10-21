@@ -23,3 +23,8 @@ impl JobState {
         !self.failed && !self.cancelled && !self.blocked
     }
 }
+
+pub struct Ctx<'a> {
+    pub data: &'a Value,
+    pub state: JobState,
+}
