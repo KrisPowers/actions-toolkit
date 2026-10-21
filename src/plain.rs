@@ -12,3 +12,13 @@ use crate::util::{fmt_duration, Cancel};
 use crate::workflow::plan::RunPlan;
 
 struct Paint(bool);
+
+impl Paint {
+    fn wrap(&self, code: &str, s: &str) -> String {
+        if self.0 {
+            format!("\x1b[{code}m{s}\x1b[0m")
+        } else {
+            s.to_string()
+        }
+    }
+}
