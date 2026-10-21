@@ -50,3 +50,75 @@ pub struct Captured {
 }
 
 const POLL: Duration = Duration::from_millis(40);
+
+/// Runs `cmd`, streaming stdout/stderr line by line to `out`, honouring cancellation and timeouts.
+pub fn stream(
+    mut cmd: Command,
+    cancel: &Cancel,
+    timeout: Option<Duration>,
+    out: &mut dyn FnMut(String),
+) -> Result<ExecOutcome> {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    own_process_group(&mut cmd);
+    let program = cmd.get_program().to_string_lossy().into_owned();
+    let mut child = cmd
+        .spawn()
+        .with_context(|| format!("failed to start `{program}`"))?;
+
+    let (tx, rx) = mpsc::channel();
+    spawn_reader(child.stdout.take(), tx.clone());
+    spawn_reader(child.stderr.take(), tx);
+
+    let started = Instant::now();
+    let mut outcome = ExecOutcome::default();
+    let mut status = None;
+    let mut exited_at: Option<Instant> = None;
+    let mut killed = false;
+    loop {
+        let disconnected = match rx.recv_timeout(POLL) {
+            Ok(line) => {
+                out(line);
+                false
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => false,
+            Err(mpsc::RecvTimeoutError::Disconnected) => true,
+        };
+        if status.is_none() {
+            if let Some(s) = child.try_wait()? {
+                status = Some(s);
+                exited_at = Some(Instant::now());
+            } else if !killed {
+                if cancel.is_cancelled() {
+                    outcome.cancelled = true;
+                    kill_tree(&mut child);
+                    killed = true;
+                } else if timeout.is_some_and(|t| started.elapsed() > t) {
+                    outcome.timed_out = true;
+                    kill_tree(&mut child);
+                    killed = true;
+                }
+            }
+        }
+        if disconnected {
+            if status.is_some() {
+                break;
+            }
+            thread::sleep(POLL);
+        }
+        // A background process may inherit our pipes and keep them open; don't wait on it forever.
+        if exited_at.is_some_and(|t| t.elapsed() > Duration::from_millis(300)) {
+            break;
+        }
+    }
+    while let Ok(line) = rx.try_recv() {
+        out(line);
+    }
+    let status = match status {
+        Some(s) => s,
+        None => child.wait()?,
+    };
+    outcome.code = status.code().unwrap_or(if killed { 137 } else { 1 });
+    Ok(outcome)
+}
