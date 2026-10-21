@@ -16,3 +16,19 @@ use anyhow::{bail, Result};
 
 use crate::config::Config;
 use crate::util::{self, Cancel, ExecOutcome};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Kind {
+    Docker,
+    Podman,
+    Lima,
+    Multipass,
+    Wsl,
+    Parallels,
+    Tart,
+    VirtualBox,
+    VMware,
+    Qemu,
+    HyperV,
+    Native,
+}
