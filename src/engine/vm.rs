@@ -13,3 +13,10 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
+
+use super::{
+    apply_probe, find_binary, probe_unix, version_of, Availability, Engine, EngineInfo,
+    ExecRequest, Kind, Session, SessionInfo, SessionRequest,
+};
+use crate::config::{Config, EngineConfig};
+use crate::util::{self, shell_quote, Cancel, ExecOutcome};
