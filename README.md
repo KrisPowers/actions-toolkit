@@ -1,8 +1,9 @@
 # maverick
 
-Run your CI/CD workflows locally, in isolation, from a single command. Maverick reads your
-GitHub Actions workflows and runs them on **Docker/Podman**, a **virtual machine** of your
-choice, or its **built-in engine**, with a fast terminal UI to watch everything happen.
+Run CI/CD workflows on your own machine, in isolation, from a terminal UI. Maverick finds the
+workflow files in your project, lets you pick a workflow or a single job, and runs it in
+**Docker/Podman**, a **virtual machine** of your choice, or its **built-in sandbox** while you
+watch every step live. It works fully offline and needs no account or hosted service.
 
 ```
  ◆ maverick ~/code/my-app                                         event push   engine ● Docker
@@ -10,9 +11,9 @@ choice, or its **built-in engine**, with a fast terminal UI to watch everything 
 │ ▾ CI                                       ci.yml││ ● Docker ★                 ctr  ready    │
 │   ├ lint                            ubuntu-latest││ ● Maverick Native         host  ready    │
 │   ├ test                        ×3  ubuntu-latest││ ◐ Lima                     vm   not running│
-│ ▾ Release                             release.yml││ ○ Podman                   ctr  not installed│
+│ ▾ Release                   global · release.yml ││ ○ Podman                   ctr  not installed│
 ╰──────────────────────────────────────────────────╯╰──────────────────────────────────────────╯
- ↑↓ move   tab switch panel   enter run   e event   r rescan   q quit
+ ↑↓ move   tab switch panel   enter run   w locations   e event   r rescan   q quit
 ```
 
 ## Install
@@ -21,22 +22,33 @@ choice, or its **built-in engine**, with a fast terminal UI to watch everything 
 cargo install --path .
 ```
 
-Works on macOS, Linux and Windows. The only hard requirement is the binary itself; engines are
-optional and detected automatically.
+Works on macOS, Linux and Windows. Engines are optional and detected automatically.
 
-## Quick start
+## Usage
 
 ```sh
-maverick                      # dashboard: pick a workflow/job and an engine, press enter
-maverick run                  # run every workflow triggered by `push`
-maverick run ci -j test       # run one job (all of its matrix variants)
-maverick run -e pull_request  # simulate a different event
-maverick list                 # workflows, jobs, matrices and dependencies
-maverick engines              # what's installed and usable on this machine
+maverick            # open the TUI for the current folder
+maverick ~/code/app # or for another project
 ```
 
-`maverick run` shows the live run view in a terminal and plain, prefixed logs everywhere else
-(pipes, CI, `--plain`). The exit code is non-zero if any job fails.
+That's the whole command line. Everything else happens in the TUI:
+
+1. Pick a workflow (runs all its jobs) or a single job on the left.
+2. Pick an engine on the right and press `enter` to make it the default.
+3. Press `enter` on the workflow or job to run it and watch it live.
+
+### Dashboard keys
+
+| Key | Action |
+| --- | --- |
+| `↑↓` / `j k` | Move |
+| `tab` / `← →` | Switch between Workflows and Engines |
+| `enter` | Run the workflow/job, or choose the engine |
+| `w` | Manage workflow locations |
+| `t` | Set a VM engine's instance or SSH target |
+| `e` | Change the simulated event (`push`, `pull_request`, ...) |
+| `r` | Rescan workflows and engines |
+| `q` | Quit |
 
 ### Run view keys
 
@@ -48,59 +60,65 @@ maverick engines              # what's installed and usable on this machine
 | `a` | Show all logs for the job |
 | `pgup` / `pgdn`, `g` / `G` | Scroll logs, jump to top / follow |
 | `c` | Cancel the run |
-| `q` | Back (cancels first if still running) |
+| `q` | Back to the dashboard (cancels first if still running) |
+
+## Where workflows are found
+
+Maverick finds the project root from the folder you start it in, then searches:
+
+| Location | Set by |
+| --- | --- |
+| `.github/workflows/` and `.maverick/workflows/` | Always searched |
+| Folders or files listed for this project | `w`, then `a` (saved to `.maverick.toml`) |
+| Folders or files listed globally | `w`, then `g` (saved to your user config, used in every project) |
+
+Any `.yml`/`.yaml` file with `jobs:` in an added location is listed; other YAML files there
+are ignored. `tab` completes paths while typing.
 
 ## Engines
 
 | Engine | Type | How it runs your job |
 | --- | --- | --- |
 | Docker, Podman | container | One container per job from the `runs-on` image; steps run via `exec` |
-| Lima, Multipass | vm | Inside a named instance (`default` / `primary` unless configured) |
-| WSL | vm (Windows) | Inside your default (or configured) distro |
-| Parallels | vm (macOS) | Inside a named Linux VM via `prlctl exec` |
-| VirtualBox, VMware, QEMU, Hyper-V, Tart | vm | Over SSH to a Linux guest you point it at |
-| Maverick Native | built-in | On the host, in a throwaway sandbox directory with a scrubbed environment |
+| Lima, Multipass | vm | Inside a named instance (`default` / `primary` unless set with `t`) |
+| WSL | vm (Windows) | Inside your default distro, or the one set with `t` |
+| Parallels | vm (macOS) | Inside the Linux VM set with `t` |
+| VirtualBox, VMware, QEMU, Hyper-V, Tart | vm | Over SSH to the Linux guest set with `t` |
+| Maverick Native | built-in | On the host, in a throwaway sandbox folder with a cleaned environment |
 
 Every engine works on a **copy** of your project (respecting `.gitignore`), so runs can't touch
-your working tree. Pass `--bind` to use the project in place instead (Docker/native only).
-
-The native engine needs nothing installed and starts instantly, but it isolates files and
-environment variables, not the OS. Use a container or VM for untrusted workflows.
-
-### Choosing and configuring engines
-
-```sh
-maverick config set-engine docker                      # default engine
-maverick config set-target lima my-instance            # VM instance name
-maverick config set-target qemu runner@127.0.0.1:2222 --identity ~/.ssh/id_ed25519
-maverick run --engine native                           # one-off override
-```
-
-Without a default, maverick uses Docker or Podman if one is running, else the native engine.
+your working files. The native engine needs nothing installed and starts instantly, but it
+isolates files and environment variables, not the OS. Use a container or VM for untrusted
+workflows.
 
 ### Container images
 
-`runs-on` labels map to images. Defaults use the community images built for local runners:
+`runs-on` labels map to images: `ubuntu-latest` and `ubuntu-24.04` use `ubuntu:24.04`, and
+`ubuntu-22.04` / `ubuntu-20.04` use the matching tag. A job's `container:` always takes
+precedence. Map your own in config:
 
-| Label | Image |
-| --- | --- |
-| `ubuntu-latest` | `ghcr.io/catthehacker/ubuntu:act-latest` |
-| `ubuntu-24.04` / `22.04` / `20.04` | `ghcr.io/catthehacker/ubuntu:act-<version>` |
-
-Override per run with `-P ubuntu-latest=node:20-bookworm`, or permanently in config. A job's
-`container:` always takes precedence.
+```toml
+[images]
+ubuntu-latest = "node:20-bookworm"
+```
 
 ## Configuration
 
-User config lives at `maverick config path` (e.g. `~/.config/maverick/config.toml` on Linux);
-a project can add `.maverick.toml` at its root, which overrides it.
+User config lives in your config folder (`~/.config/maverick/config.toml` on Linux,
+`~/Library/Application Support/maverick/config.toml` on macOS, `%APPDATA%\maverick\config.toml`
+on Windows). A project can add `.maverick.toml` at its root, which overrides it. The TUI writes
+both for you; the full format is:
 
 ```toml
-engine = "docker"
-parallel = 4
+engine = "docker"          # default engine
+parallel = 4               # jobs at once
+workflows = ["pipelines"]  # extra workflow locations
+
+[vars]                     # vars.NAME
+REGION = "eu"
 
 [images]
-ubuntu-latest = "ghcr.io/catthehacker/ubuntu:full-latest"
+ubuntu-latest = "ubuntu:24.04"
 
 [engines.lima]
 instance = "ci"
@@ -110,22 +128,12 @@ ssh = "runner@127.0.0.1:2222"
 identity = "~/.ssh/maverick"
 ```
 
-## Secrets, variables and inputs
+Secrets go in a `.secrets` file at the project root (`NAME=value` per line, ignored by git) and
+are available as `secrets.NAME`. Their values are replaced with `***` in all output.
 
-```sh
-maverick run -s NPM_TOKEN=abc           # secrets.NPM_TOKEN
-maverick run -s GITHUB_TOKEN            # value read from $GITHUB_TOKEN
-maverick run --secret-file .secrets     # dotenv file
-maverick run --var REGION=eu            # vars.REGION
-maverick run -e workflow_dispatch -i greeting=Hey
-maverick run --event-file payload.json  # custom github.event
-```
+## Workflow format
 
-Secret values (and anything passed to `::add-mask::`) are replaced with `***` in all output.
-
-## Workflow support
-
-Supported:
+Maverick runs workflows written in the widely used `jobs:` / `steps:` YAML format:
 
 - `on` triggers, `env` and `defaults.run` at every level, `if:` with the full expression
   language (`contains`, `startsWith`, `format`, `toJSON`, `fromJSON`, `success()`,
@@ -134,25 +142,24 @@ Supported:
   `fail-fast`
 - `run` steps with `bash`, `sh`, `pwsh`, `powershell`, `cmd`, `python` and custom shells;
   `working-directory`, `continue-on-error`, `timeout-minutes`
-- `$GITHUB_ENV`, `$GITHUB_OUTPUT`, `$GITHUB_PATH`, and the `::error::`, `::warning::`,
-  `::group::`, `::add-mask::` workflow commands
-- Actions: local (`./path`) and remote (`owner/repo@ref`, cached) composite and Node actions;
-  `actions/checkout` is built in
+- Step files: append `NAME=value` to `$MAVERICK_ENV` (env for later steps), `$MAVERICK_OUTPUT`
+  (step outputs) or a folder to `$MAVERICK_PATH`. `$GITHUB_ENV`, `$GITHUB_OUTPUT` and
+  `$GITHUB_PATH` are aliases, so existing files work unchanged.
+- Log commands: `::error::`, `::warning::`, `::group::`, `::add-mask::`
+- Local actions (`uses: ./path`), composite and Node. `owner/repo@ref` actions are never
+  downloaded: put a copy in `.maverick/actions/owner/repo` (project) or in your config folder
+  under `maverick/actions/owner/repo` (global), otherwise the step is skipped with a warning.
 
 Not yet supported: Docker-based actions, `services:`, reusable workflows (`jobs.<id>.uses`),
-dynamic matrices, `actions/cache`, and artifact upload/download (these steps are skipped with a
-warning rather than failing).
+dynamic matrices, caching and artifacts (these steps are skipped with a warning).
 
 ## Development
 
 ```sh
 cargo test
 cargo clippy --all-targets -- -D warnings
-maverick run CI -j lint --engine native   # maverick runs its own CI
+maverick examples/demo   # a workflow that exercises most features
 ```
-
-`examples/demo` contains a workflow that exercises most features:
-`maverick -C examples/demo`.
 
 ## License
 
