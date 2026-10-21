@@ -17,3 +17,13 @@ use crate::workflow::action::{self, ActionRef};
 use crate::workflow::expr::{self, Ctx, JobState};
 use crate::workflow::model::{ActionDef, Step};
 use crate::workflow::plan::{step_title, PlannedJob, RunPlan};
+
+pub(crate) struct JobContext {
+    pub index: usize,
+    pub plan: Arc<RunPlan>,
+    pub opts: Arc<RunOptions>,
+    pub engine: Arc<dyn Engine>,
+    pub tx: Sender<RunEvent>,
+    pub cancel: Cancel,
+    pub needs: Value,
+}
