@@ -122,3 +122,26 @@ pub fn stream(
     outcome.code = status.code().unwrap_or(if killed { 137 } else { 1 });
     Ok(outcome)
 }
+
+fn spawn_reader<R: Read + Send + 'static>(src: Option<R>, tx: mpsc::Sender<String>) {
+    let Some(src) = src else { return };
+    thread::spawn(move || {
+        let mut reader = BufReader::new(src);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            match reader.read_until(b'\n', &mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    let text = String::from_utf8_lossy(&buf);
+                    let text = text.trim_end_matches(['\n', '\r']);
+                    // Progress bars redraw with `\r`; keep only the final frame.
+                    let text = text.rsplit('\r').next().unwrap_or_default();
+                    if tx.send(strip_ansi(text)).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+}
