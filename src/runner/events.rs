@@ -9,3 +9,20 @@ pub enum Status {
     Skipped,
     Cancelled,
 }
+
+impl Status {
+    pub fn is_done(self) -> bool {
+        !matches!(self, Status::Pending | Status::Running)
+    }
+
+    /// The string GitHub uses in `steps.*.outcome` / `needs.*.result`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Status::Pending | Status::Running => "",
+            Status::Success => "success",
+            Status::Failure => "failure",
+            Status::Skipped => "skipped",
+            Status::Cancelled => "cancelled",
+        }
+    }
+}
