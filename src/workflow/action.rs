@@ -59,3 +59,5 @@ pub fn parse(uses: &str) -> Result<ActionRef> {
         },
     })
 }
+
+static FETCH_LOCK: Mutex<()> = Mutex::new(());
