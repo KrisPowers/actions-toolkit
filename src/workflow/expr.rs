@@ -34,3 +34,14 @@ impl<'a> Ctx<'a> {
         Self { data, state }
     }
 }
+
+/// Evaluates a bare expression (without the `${{ }}` wrapper).
+pub fn evaluate(src: &str, ctx: &Ctx) -> Result<Value, String> {
+    let toks = lex(src)?;
+    let mut p = Parser { toks, pos: 0 };
+    let expr = p.or()?;
+    if p.pos != p.toks.len() {
+        return Err(format!("unexpected token in expression `{src}`"));
+    }
+    eval(&expr, ctx)
+}
