@@ -198,3 +198,32 @@ pub(super) fn detect(kind: Kind, cfg: &Config) -> EngineInfo {
         _ => EngineInfo::new(kind, Availability::NeedsSetup, version, setup_hint(kind)),
     }
 }
+
+fn instance_state(
+    kind: Kind,
+    version: Option<String>,
+    name: &str,
+    state: Option<String>,
+    fix: &str,
+) -> EngineInfo {
+    match state {
+        Some(s) if s.eq_ignore_ascii_case("running") => EngineInfo::new(
+            kind,
+            Availability::Ready,
+            version,
+            format!("instance {name}"),
+        ),
+        Some(s) => EngineInfo::new(
+            kind,
+            Availability::NotRunning,
+            version,
+            format!("instance {name} is {}: {fix}", s.to_lowercase()),
+        ),
+        None => EngineInfo::new(
+            kind,
+            Availability::NeedsSetup,
+            version,
+            format!("no instance {name}: {fix}"),
+        ),
+    }
+}
