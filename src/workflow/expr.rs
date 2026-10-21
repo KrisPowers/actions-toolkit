@@ -651,3 +651,13 @@ pub fn to_str(v: &Value) -> String {
         other => serde_json::to_string_pretty(other).unwrap_or_default(),
     }
 }
+
+/// Builds a JSON object from string pairs.
+pub fn object<'a, I: IntoIterator<Item = (&'a String, &'a String)>>(pairs: I) -> Value {
+    Value::Object(
+        pairs
+            .into_iter()
+            .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+            .collect::<Map<_, _>>(),
+    )
+}
