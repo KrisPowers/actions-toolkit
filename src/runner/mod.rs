@@ -131,3 +131,20 @@ impl RunOptions {
         Ok(())
     }
 }
+
+fn parse_dotenv(text: &str) -> Vec<(String, String)> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|l| l.strip_prefix("export ").unwrap_or(l).split_once('='))
+        .map(|(k, v)| {
+            let v = v.trim();
+            let v = v
+                .strip_prefix('"')
+                .and_then(|v| v.strip_suffix('"'))
+                .or_else(|| v.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+                .unwrap_or(v);
+            (k.trim().to_string(), v.to_string())
+        })
+        .collect()
+}
