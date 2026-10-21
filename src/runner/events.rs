@@ -26,3 +26,18 @@ impl Status {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogKind {
+    Output,
+    /// Echo of the script being run.
+    Command,
+    /// Messages from maverick itself.
+    System,
+    /// Start of a step (used in the combined log view).
+    Header,
+    Group,
+    Notice,
+    Warning,
+    Error,
+}
