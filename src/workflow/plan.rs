@@ -138,3 +138,25 @@ fn fail_fast(job: &Job) -> bool {
         _ => true,
     }
 }
+
+fn job_label(key: &str, job: &Job, matrix: &Value, ctx: &Ctx) -> String {
+    let base = match &job.name {
+        Some(n) => expr::interpolate(n, ctx).unwrap_or_else(|_| n.clone()),
+        None => key.to_string(),
+    };
+    let values: Vec<String> = matrix
+        .as_object()
+        .map(|m| {
+            m.values()
+                .map(expr::to_str)
+                .map(|s| s.replace('\n', " "))
+                .collect()
+        })
+        .unwrap_or_default();
+    let name_uses_matrix = job.name.as_deref().is_some_and(|n| n.contains("matrix."));
+    if values.is_empty() || name_uses_matrix {
+        base
+    } else {
+        format!("{base} ({})", values.join(", "))
+    }
+}
