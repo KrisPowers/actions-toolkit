@@ -194,3 +194,17 @@ impl Job {
         self.defaults.as_ref().and_then(|d| d.run.as_ref())
     }
 }
+
+/// Renders a YAML scalar the way GitHub stringifies it.
+pub fn scalar(v: &Yaml) -> String {
+    match v {
+        Yaml::Null => String::new(),
+        Yaml::Bool(b) => b.to_string(),
+        Yaml::Number(n) => n.to_string(),
+        Yaml::String(s) => s.clone(),
+        other => serde_yaml::to_string(other)
+            .unwrap_or_default()
+            .trim_end()
+            .to_string(),
+    }
+}
