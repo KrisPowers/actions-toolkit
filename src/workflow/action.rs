@@ -129,3 +129,31 @@ pub fn load(dir: &Path) -> Result<ActionDef> {
     }
     bail!("no action.yml found in {}", dir.display())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_refs() {
+        assert_eq!(parse("actions/checkout@v4").unwrap(), ActionRef::Checkout);
+        assert_eq!(
+            parse("./.github/actions/setup").unwrap(),
+            ActionRef::Local("./.github/actions/setup".into())
+        );
+        assert_eq!(
+            parse("docker://alpine:3").unwrap(),
+            ActionRef::Docker("alpine:3".into())
+        );
+        assert_eq!(
+            parse("owner/repo/sub/dir@v1").unwrap(),
+            ActionRef::Remote {
+                owner: "owner".into(),
+                repo: "repo".into(),
+                path: Some("sub/dir".into()),
+                git_ref: "v1".into()
+            }
+        );
+        assert!(parse("owner/repo").is_err());
+    }
+}
