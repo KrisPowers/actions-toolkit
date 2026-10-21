@@ -256,3 +256,141 @@ struct Parser {
     toks: Vec<Tok>,
     pos: usize,
 }
+
+impl Parser {
+    fn peek(&self) -> Option<&Tok> {
+        self.toks.get(self.pos)
+    }
+
+    fn eat(&mut self, t: &Tok) -> bool {
+        if self.peek() == Some(t) {
+            self.pos += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn expect(&mut self, t: Tok) -> Result<(), String> {
+        if self.eat(&t) {
+            Ok(())
+        } else {
+            Err(format!("expected {t:?}"))
+        }
+    }
+
+    fn or(&mut self) -> Result<Expr, String> {
+        let mut left = self.and()?;
+        while self.eat(&Tok::Op("||")) {
+            left = Expr::Or(Box::new(left), Box::new(self.and()?));
+        }
+        Ok(left)
+    }
+
+    fn and(&mut self) -> Result<Expr, String> {
+        let mut left = self.equality()?;
+        while self.eat(&Tok::Op("&&")) {
+            left = Expr::And(Box::new(left), Box::new(self.equality()?));
+        }
+        Ok(left)
+    }
+
+    fn equality(&mut self) -> Result<Expr, String> {
+        let mut left = self.comparison()?;
+        loop {
+            let op = match self.peek() {
+                Some(Tok::Op(op @ ("==" | "!="))) => *op,
+                _ => return Ok(left),
+            };
+            self.pos += 1;
+            left = Expr::Cmp(op, Box::new(left), Box::new(self.comparison()?));
+        }
+    }
+
+    fn comparison(&mut self) -> Result<Expr, String> {
+        let mut left = self.unary()?;
+        loop {
+            let op = match self.peek() {
+                Some(Tok::Op(op @ ("<" | "<=" | ">" | ">="))) => *op,
+                _ => return Ok(left),
+            };
+            self.pos += 1;
+            left = Expr::Cmp(op, Box::new(left), Box::new(self.unary()?));
+        }
+    }
+
+    fn unary(&mut self) -> Result<Expr, String> {
+        if self.eat(&Tok::Op("!")) {
+            return Ok(Expr::Not(Box::new(self.unary()?)));
+        }
+        self.postfix()
+    }
+
+    fn postfix(&mut self) -> Result<Expr, String> {
+        let mut e = self.primary()?;
+        loop {
+            if self.eat(&Tok::Dot) {
+                if self.eat(&Tok::Star) {
+                    e = Expr::Star(Box::new(e));
+                    continue;
+                }
+                match self.toks.get(self.pos).cloned() {
+                    Some(Tok::Ident(name)) => {
+                        self.pos += 1;
+                        e = Expr::Prop(Box::new(e), name);
+                    }
+                    _ => return Err("expected a property name after `.`".into()),
+                }
+            } else if self.eat(&Tok::LBrack) {
+                if self.eat(&Tok::Star) {
+                    self.expect(Tok::RBrack)?;
+                    e = Expr::Star(Box::new(e));
+                } else {
+                    let idx = self.or()?;
+                    self.expect(Tok::RBrack)?;
+                    e = Expr::Index(Box::new(e), Box::new(idx));
+                }
+            } else {
+                return Ok(e);
+            }
+        }
+    }
+
+    fn primary(&mut self) -> Result<Expr, String> {
+        let tok = self
+            .toks
+            .get(self.pos)
+            .cloned()
+            .ok_or("unexpected end of expression")?;
+        self.pos += 1;
+        match tok {
+            Tok::Num(n) => Ok(Expr::Lit(num(n))),
+            Tok::Str(s) => Ok(Expr::Lit(Value::String(s))),
+            Tok::LParen => {
+                let e = self.or()?;
+                self.expect(Tok::RParen)?;
+                Ok(e)
+            }
+            Tok::Ident(name) => match name.as_str() {
+                "true" => Ok(Expr::Lit(Value::Bool(true))),
+                "false" => Ok(Expr::Lit(Value::Bool(false))),
+                "null" => Ok(Expr::Lit(Value::Null)),
+                _ if self.eat(&Tok::LParen) => {
+                    let mut args = Vec::new();
+                    if !self.eat(&Tok::RParen) {
+                        loop {
+                            args.push(self.or()?);
+                            if self.eat(&Tok::RParen) {
+                                break;
+                            }
+                            self.expect(Tok::Comma)?;
+                        }
+                    }
+                    Ok(Expr::Call(name, args))
+                }
+                _ => Ok(Expr::Context(name)),
+            },
+            other => Err(format!("unexpected token {other:?}")),
+        }
+    }
+}
