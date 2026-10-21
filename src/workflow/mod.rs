@@ -19,3 +19,48 @@ pub struct WorkflowFile {
     pub file_name: String,
     pub parsed: Result<Arc<Workflow>, String>,
 }
+
+impl WorkflowFile {
+    pub fn load(path: PathBuf) -> Self {
+        let file_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let parsed = fs::read_to_string(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|text| serde_yaml::from_str::<Workflow>(&text).map_err(|e| e.to_string()))
+            .map(Arc::new);
+        Self {
+            path,
+            file_name,
+            parsed,
+        }
+    }
+
+    pub fn workflow(&self) -> Option<&Arc<Workflow>> {
+        self.parsed.as_ref().ok()
+    }
+
+    pub fn display_name(&self) -> String {
+        self.workflow()
+            .and_then(|w| w.name.clone())
+            .unwrap_or_else(|| self.file_name.clone())
+    }
+
+    pub fn events(&self) -> Vec<String> {
+        self.workflow().map(|w| w.events()).unwrap_or_default()
+    }
+
+    fn matches(&self, query: &str) -> bool {
+        let q = query.to_lowercase();
+        let stem = self
+            .file_name
+            .rsplit_once('.')
+            .map(|(s, _)| s)
+            .unwrap_or(&self.file_name);
+        self.file_name.to_lowercase() == q
+            || stem.to_lowercase() == q
+            || self.display_name().to_lowercase() == q
+            || self.path.ends_with(query)
+    }
+}
