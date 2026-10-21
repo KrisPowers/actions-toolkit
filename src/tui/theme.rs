@@ -141,3 +141,16 @@ pub fn render_list(
 fn selected_style() -> Style {
     selected()
 }
+
+/// A one-line key hint bar: `key action  key action`.
+pub fn hints(pairs: &[(&str, &str)]) -> Line<'static> {
+    let mut spans = vec![Span::raw(" ")];
+    for (key, action) in pairs {
+        spans.push(Span::styled(
+            key.to_string(),
+            Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(format!(" {action}   "), dim()));
+    }
+    Line::from(spans)
+}
