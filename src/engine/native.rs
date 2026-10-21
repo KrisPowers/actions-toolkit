@@ -9,3 +9,8 @@ use std::process::Command;
 
 use anyhow::Result;
 use tempfile::TempDir;
+
+use super::{
+    Availability, Engine, EngineInfo, ExecRequest, Kind, Session, SessionInfo, SessionRequest,
+};
+use crate::util::{self, Cancel, ExecOutcome};
