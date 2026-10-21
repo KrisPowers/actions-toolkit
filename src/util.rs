@@ -328,3 +328,21 @@ fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+/// Writes a tar stream of `src` into `out`.
+pub fn tar_dir(src: &Path, out: &mut dyn Write, respect_ignores: bool) -> Result<()> {
+    let mut builder = tar::Builder::new(out);
+    builder.follow_symlinks(false);
+    for entry in walker(src, respect_ignores) {
+        let entry = entry?;
+        let rel = entry.path().strip_prefix(src)?;
+        if rel.as_os_str().is_empty() {
+            continue;
+        }
+        // tar paths always use forward slashes, even when built on Windows.
+        let name = rel.to_string_lossy().replace('\\', "/");
+        builder.append_path_with_name(entry.path(), name)?;
+    }
+    builder.finish()?;
+    Ok(())
+}
