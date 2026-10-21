@@ -366,3 +366,11 @@ fn apply_probe(info: &mut SessionInfo, (path, shell, arch): (String, String, Str
     info.default_shell = shell;
     info.arch = arch;
 }
+
+/// Finds a binary on PATH or at well-known install locations (`~` is expanded).
+pub(crate) fn find_binary(names: &[&str], extra: &[&str]) -> Option<PathBuf> {
+    names
+        .iter()
+        .find_map(|n| which::which(n).ok())
+        .or_else(|| extra.iter().map(|p| expand_home(p)).find(|p| p.is_file()))
+}
