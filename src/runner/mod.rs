@@ -24,7 +24,7 @@ use crate::util::{self, Cancel};
 use crate::workflow::expr::{self, Ctx, JobState};
 use crate::workflow::plan::RunPlan;
 
-pub const DEFAULT_IMAGE: &str = "ghcr.io/catthehacker/ubuntu:act-latest";
+pub const DEFAULT_IMAGE: &str = "ubuntu:24.04";
 
 /// Everything about a run that isn't the plan or the engine.
 #[derive(Clone, Debug)]
@@ -48,9 +48,9 @@ impl RunOptions {
     pub fn new(root: &Path, cfg: &Config, event: &str) -> Self {
         let mut platforms: BTreeMap<String, String> = [
             ("ubuntu-latest", DEFAULT_IMAGE),
-            ("ubuntu-24.04", "ghcr.io/catthehacker/ubuntu:act-24.04"),
-            ("ubuntu-22.04", "ghcr.io/catthehacker/ubuntu:act-22.04"),
-            ("ubuntu-20.04", "ghcr.io/catthehacker/ubuntu:act-20.04"),
+            ("ubuntu-24.04", "ubuntu:24.04"),
+            ("ubuntu-22.04", "ubuntu:22.04"),
+            ("ubuntu-20.04", "ubuntu:20.04"),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
