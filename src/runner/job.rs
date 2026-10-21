@@ -135,3 +135,84 @@ pub(crate) fn run(cx: JobContext) -> JobResult {
     job.em.job(status);
     JobResult { status, outputs }
 }
+
+fn setup(cx: &JobContext, pj: &PlannedJob, em: &Emitter) -> Result<Box<dyn Session>> {
+    if let Some(uses) = &pj.job.uses {
+        bail!("reusable workflows (`uses: {uses}`) are not supported yet");
+    }
+    if pj.job.services.is_some() {
+        em.log(
+            0,
+            LogKind::Warning,
+            "Service containers (`services:`) are not supported yet; skipping them",
+        );
+    }
+    let engine = &cx.engine;
+    em.log(
+        0,
+        LogKind::System,
+        format!("Engine: {}", engine.kind().name()),
+    );
+    if !pj.runs_on.is_empty() {
+        em.log(
+            0,
+            LogKind::System,
+            format!("runs-on: {}", pj.runs_on.join(", ")),
+        );
+    }
+    let data = json!({ "matrix": pj.matrix, "github": { "event_name": cx.opts.event } });
+    let ctx = Ctx::new(&data, JobState::default());
+    let spec = pj.job.container.as_ref().map(|c| c.spec());
+
+    let mut req = SessionRequest {
+        id: format!("{}-{}-{}", cx.opts.run_id, cx.index, util::slug(&pj.label)),
+        source: &cx.opts.root,
+        image: None,
+        container_env: Vec::new(),
+        volumes: Vec::new(),
+        options: None,
+        bind: cx.opts.bind,
+        pull: cx.opts.pull,
+        cancel: cx.cancel.clone(),
+    };
+    if engine.uses_images() {
+        let image = match &spec {
+            Some(s) => expr::interpolate(&s.image, &ctx).map_err(|e| anyhow!(e))?,
+            None => resolve_image(&cx.opts, &pj.runs_on, &mut |l| {
+                em.log(0, LogKind::Warning, l)
+            })?,
+        };
+        em.log(0, LogKind::System, format!("Image: {image}"));
+        req.image = Some(image);
+        if let Some(s) = &spec {
+            for (k, v) in &s.env {
+                req.container_env.push((
+                    k.clone(),
+                    expr::interpolate_yaml(v, &ctx).map_err(|e| anyhow!(e))?,
+                ));
+            }
+            req.volumes = s.volumes.clone();
+            req.options = s.options.clone();
+        }
+    } else if spec.is_some() {
+        em.log(
+            0,
+            LogKind::Warning,
+            format!(
+                "`container:` is ignored by the {} engine",
+                engine.kind().name()
+            ),
+        );
+    }
+    let started = Instant::now();
+    let session = engine.start(&req, &mut |l| em.log(0, LogKind::System, l))?;
+    em.log(
+        0,
+        LogKind::System,
+        format!(
+            "Environment ready in {}",
+            util::fmt_duration(started.elapsed())
+        ),
+    );
+    Ok(session)
+}
