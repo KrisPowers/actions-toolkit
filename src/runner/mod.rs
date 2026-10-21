@@ -23,3 +23,5 @@ use crate::engine::Engine;
 use crate::util::{self, Cancel};
 use crate::workflow::expr::{self, Ctx, JobState};
 use crate::workflow::plan::RunPlan;
+
+pub const DEFAULT_IMAGE: &str = "ghcr.io/catthehacker/ubuntu:act-latest";
