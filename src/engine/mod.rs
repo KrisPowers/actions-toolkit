@@ -128,3 +128,11 @@ impl Kind {
             })
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Availability {
+    Ready,
+    NotRunning,
+    NeedsSetup,
+    Missing,
+}
