@@ -129,3 +129,28 @@ pub struct RunArgs {
     #[arg(long, value_name = "N")]
     pub parallel: Option<usize>,
 }
+
+impl Cli {
+    pub fn execute(self) -> Result<ExitCode> {
+        let start = match self.dir {
+            Some(d) => d
+                .canonicalize()
+                .with_context(|| format!("{} does not exist", d.display()))?,
+            None => env::current_dir()?,
+        };
+        let root = workflow::find_root(&start);
+        match self.command.unwrap_or(Command::Tui) {
+            Command::Tui => {
+                if !std::io::stdout().is_terminal() {
+                    bail!("the dashboard needs a terminal; try `maverick run --plain` or `maverick list`");
+                }
+                tui::dashboard(root)?;
+                Ok(ExitCode::SUCCESS)
+            }
+            Command::Run(args) => run(root, args),
+            Command::List => list(&root),
+            Command::Engines { json } => engines(&root, json),
+            Command::Config { action } => config(&root, action),
+        }
+    }
+}
