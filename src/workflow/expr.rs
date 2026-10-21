@@ -451,3 +451,81 @@ fn eval(e: &Expr, ctx: &Ctx) -> Result<Value, String> {
         Expr::Call(name, args) => call(name, args, ctx)?,
     })
 }
+
+fn call(name: &str, args: &[Expr], ctx: &Ctx) -> Result<Value, String> {
+    let lname = name.to_ascii_lowercase();
+    match lname.as_str() {
+        "success" => return Ok(Value::Bool(ctx.state.success())),
+        "failure" => return Ok(Value::Bool(ctx.state.failed)),
+        "always" => return Ok(Value::Bool(true)),
+        "cancelled" => return Ok(Value::Bool(ctx.state.cancelled)),
+        _ => {}
+    }
+    let vals = args
+        .iter()
+        .map(|a| eval(a, ctx))
+        .collect::<Result<Vec<_>, _>>()?;
+    let arg = |i: usize| vals.get(i).cloned().unwrap_or(Value::Null);
+    let need = |n: usize| {
+        if vals.len() < n {
+            Err(format!("{name}() expects {n} argument(s)"))
+        } else {
+            Ok(())
+        }
+    };
+    Ok(match lname.as_str() {
+        "contains" => {
+            need(2)?;
+            match arg(0) {
+                Value::Array(items) => Value::Bool(items.iter().any(|i| loose_eq(i, &arg(1)))),
+                other => Value::Bool(
+                    to_str(&other)
+                        .to_lowercase()
+                        .contains(&to_str(&arg(1)).to_lowercase()),
+                ),
+            }
+        }
+        "startswith" => {
+            need(2)?;
+            Value::Bool(
+                to_str(&arg(0))
+                    .to_lowercase()
+                    .starts_with(&to_str(&arg(1)).to_lowercase()),
+            )
+        }
+        "endswith" => {
+            need(2)?;
+            Value::Bool(
+                to_str(&arg(0))
+                    .to_lowercase()
+                    .ends_with(&to_str(&arg(1)).to_lowercase()),
+            )
+        }
+        "format" => {
+            need(1)?;
+            Value::String(format_fn(&to_str(&arg(0)), &vals[1..])?)
+        }
+        "join" => {
+            need(1)?;
+            let sep = if vals.len() > 1 {
+                to_str(&arg(1))
+            } else {
+                ",".into()
+            };
+            match arg(0) {
+                Value::Array(items) => {
+                    Value::String(items.iter().map(to_str).collect::<Vec<_>>().join(&sep))
+                }
+                other => Value::String(to_str(&other)),
+            }
+        }
+        "tojson" => Value::String(serde_json::to_string_pretty(&arg(0)).unwrap_or_default()),
+        "fromjson" => {
+            need(1)?;
+            serde_json::from_str(&to_str(&arg(0))).map_err(|e| format!("fromJSON: {e}"))?
+        }
+        // File hashing is only used for cache keys, and caching is not supported locally.
+        "hashfiles" => Value::String(String::new()),
+        _ => return Err(format!("unknown function `{name}`")),
+    })
+}
