@@ -39,3 +39,42 @@ struct Emitter {
     job: usize,
     masks: RefCell<Vec<String>>,
 }
+
+impl Emitter {
+    fn log(&self, step: usize, kind: LogKind, text: impl Into<String>) {
+        let mut text = text.into();
+        for m in self.masks.borrow().iter() {
+            if text.contains(m.as_str()) {
+                text = text.replace(m.as_str(), "***");
+            }
+        }
+        let _ = self.tx.send(RunEvent::Log {
+            job: self.job,
+            step,
+            kind,
+            text,
+        });
+    }
+
+    fn add_mask(&self, value: &str) {
+        let v = value.trim();
+        if !v.is_empty() {
+            self.masks.borrow_mut().push(v.to_string());
+        }
+    }
+
+    fn step(&self, step: usize, status: Status) {
+        let _ = self.tx.send(RunEvent::Step {
+            job: self.job,
+            step,
+            status,
+        });
+    }
+
+    fn job(&self, status: Status) {
+        let _ = self.tx.send(RunEvent::Job {
+            job: self.job,
+            status,
+        });
+    }
+}
