@@ -116,3 +116,16 @@ pub fn fetch(
     fs::rename(&tmp, &dir)?;
     Ok(dir)
 }
+
+/// Reads `action.yml` (or `action.yaml`) from `dir`.
+pub fn load(dir: &Path) -> Result<ActionDef> {
+    for name in ["action.yml", "action.yaml"] {
+        let path = dir.join(name);
+        if path.exists() {
+            let text = fs::read_to_string(&path)?;
+            return serde_yaml::from_str(&text)
+                .with_context(|| format!("invalid {}", path.display()));
+        }
+    }
+    bail!("no action.yml found in {}", dir.display())
+}
