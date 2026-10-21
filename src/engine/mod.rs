@@ -374,3 +374,10 @@ pub(crate) fn find_binary(names: &[&str], extra: &[&str]) -> Option<PathBuf> {
         .find_map(|n| which::which(n).ok())
         .or_else(|| extra.iter().map(|p| expand_home(p)).find(|p| p.is_file()))
 }
+
+pub(crate) fn expand_home(p: &str) -> PathBuf {
+    match (p.strip_prefix("~/"), dirs::home_dir()) {
+        (Some(rest), Some(home)) => home.join(rest),
+        _ => PathBuf::from(p),
+    }
+}
