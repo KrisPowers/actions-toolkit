@@ -64,3 +64,38 @@ pub struct ContainerEngine {
     kind: Kind,
     binary: PathBuf,
 }
+
+impl ContainerEngine {
+    pub fn new(kind: Kind) -> Result<Self> {
+        let binary = locate(kind).with_context(|| format!("{} is not installed", kind.name()))?;
+        Ok(Self { kind, binary })
+    }
+
+    fn cmd(&self) -> Command {
+        Command::new(&self.binary)
+    }
+
+    fn ensure_image(
+        &self,
+        image: &str,
+        pull: bool,
+        cancel: &Cancel,
+        log: &mut dyn FnMut(String),
+    ) -> Result<()> {
+        if !pull {
+            let mut inspect = self.cmd();
+            inspect.args(["image", "inspect", image]);
+            if util::capture(inspect, Duration::from_secs(30)).is_ok_and(|o| o.success) {
+                return Ok(());
+            }
+        }
+        log(format!("Pulling image {image}"));
+        let mut cmd = self.cmd();
+        cmd.args(["pull", image]);
+        let outcome = util::stream(cmd, cancel, None, log)?;
+        if !outcome.success() {
+            bail!("failed to pull image {image}");
+        }
+        Ok(())
+    }
+}
