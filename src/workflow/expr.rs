@@ -45,3 +45,21 @@ pub fn evaluate(src: &str, ctx: &Ctx) -> Result<Value, String> {
     }
     eval(&expr, ctx)
 }
+
+/// Replaces every `${{ expr }}` in `s` with its string value.
+pub fn interpolate(s: &str, ctx: &Ctx) -> Result<String, String> {
+    if !s.contains("${{") {
+        return Ok(s.to_string());
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(start) = rest.find("${{") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 3..];
+        let end = find_close(after).ok_or_else(|| format!("unterminated expression in `{s}`"))?;
+        out.push_str(&to_str(&evaluate(&after[..end], ctx)?));
+        rest = &after[end + 2..];
+    }
+    out.push_str(rest);
+    Ok(out)
+}
