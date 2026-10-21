@@ -333,3 +333,5 @@ pub trait Session: Send {
 
     fn teardown(&mut self, log: &mut dyn FnMut(String));
 }
+
+const PROBE: &str = "printf '%s\\n' \"$PATH\"\nif command -v bash >/dev/null 2>&1; then echo bash; else echo sh; fi\nuname -m\n";
