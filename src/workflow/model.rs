@@ -57,3 +57,10 @@ pub struct Strategy {
     pub matrix: Option<Yaml>,
     pub fail_fast: Option<Yaml>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum Container {
+    Image(String),
+    Spec(ContainerSpec),
+}
