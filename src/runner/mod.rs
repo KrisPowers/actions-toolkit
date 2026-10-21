@@ -208,3 +208,19 @@ fn parse_repo(url: &str) -> Option<String> {
     let owner = parts.next().filter(|s| !s.is_empty() && !s.contains('.'))?;
     Some(format!("{owner}/{repo}"))
 }
+
+/// Starts executing `plan` on a background thread; events arrive on the returned receiver.
+pub fn spawn(
+    plan: Arc<RunPlan>,
+    engine: Arc<dyn Engine>,
+    opts: Arc<RunOptions>,
+    cancel: Cancel,
+) -> (Receiver<RunEvent>, JoinHandle<bool>) {
+    let (tx, rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        let ok = schedule(&plan, &engine, &opts, &tx, &cancel);
+        let _ = tx.send(RunEvent::Finished { success: ok });
+        ok
+    });
+    (rx, handle)
+}
