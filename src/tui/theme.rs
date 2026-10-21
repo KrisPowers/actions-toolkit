@@ -97,3 +97,12 @@ pub fn fit(s: &str, width: usize) -> String {
         t
     }
 }
+
+/// First index to render so that `selected` stays visible in `height` rows.
+pub fn scroll_start(selected: usize, len: usize, height: usize) -> usize {
+    if height == 0 || len <= height {
+        0
+    } else {
+        selected.saturating_sub(height - 1).min(len - height)
+    }
+}
