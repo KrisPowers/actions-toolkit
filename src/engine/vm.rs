@@ -360,3 +360,12 @@ pub struct VmEngine {
     kind: Kind,
     transport: Transport,
 }
+
+impl VmEngine {
+    pub fn new(kind: Kind, cfg: &Config) -> Result<Self> {
+        Ok(Self {
+            kind,
+            transport: Transport::from_config(kind, &cfg.engine(kind.id()))?,
+        })
+    }
+}
