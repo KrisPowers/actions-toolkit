@@ -32,3 +32,10 @@ pub enum Kind {
     HyperV,
     Native,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Family {
+    Container,
+    VirtualMachine,
+    BuiltIn,
+}
