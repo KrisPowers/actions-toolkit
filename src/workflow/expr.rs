@@ -598,3 +598,24 @@ pub fn truthy(v: &Value) -> bool {
         Value::Array(_) | Value::Object(_) => true,
     }
 }
+
+fn to_num(v: &Value) -> f64 {
+    match v {
+        Value::Null => 0.0,
+        Value::Bool(b) => f64::from(u8::from(*b)),
+        Value::Number(n) => n.as_f64().unwrap_or(f64::NAN),
+        Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                0.0
+            } else if let Some(hex) = t.strip_prefix("0x") {
+                i64::from_str_radix(hex, 16)
+                    .map(|n| n as f64)
+                    .unwrap_or(f64::NAN)
+            } else {
+                t.parse().unwrap_or(f64::NAN)
+            }
+        }
+        Value::Array(_) | Value::Object(_) => f64::NAN,
+    }
+}
