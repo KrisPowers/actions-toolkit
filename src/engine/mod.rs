@@ -207,3 +207,21 @@ pub fn auto_select(cfg: &Config) -> Kind {
         .find(|&k| detect(k, cfg).is_ready())
         .unwrap_or(Kind::Native)
 }
+
+/// Instantiates an engine, failing with an actionable message if it isn't usable.
+pub fn build(kind: Kind, cfg: &Config) -> Result<Arc<dyn Engine>> {
+    let info = detect(kind, cfg);
+    if !info.is_ready() {
+        let hint = info
+            .note
+            .as_ref()
+            .map(|n| format!(" ({n})"))
+            .unwrap_or_default();
+        bail!("{} is {}{hint}", kind.name(), info.status_label());
+    }
+    Ok(match kind.family() {
+        Family::Container => Arc::new(container::ContainerEngine::new(kind)?),
+        Family::VirtualMachine => Arc::new(vm::VmEngine::new(kind, cfg)?),
+        Family::BuiltIn => Arc::new(native::NativeEngine),
+    })
+}
