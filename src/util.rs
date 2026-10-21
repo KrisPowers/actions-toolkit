@@ -215,3 +215,10 @@ pub fn capture(mut cmd: Command, timeout: Duration) -> Result<Captured> {
         }
     }
 }
+
+/// Convenience wrapper: capture `program args...`, returning `None` if it can't run.
+pub fn probe<S: AsRef<OsStr>>(program: S, args: &[&str]) -> Option<Captured> {
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    capture(cmd, Duration::from_secs(6)).ok()
+}
