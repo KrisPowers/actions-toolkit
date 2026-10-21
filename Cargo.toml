@@ -1,0 +1,36 @@
+[package]
+name = "maverick"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Run CI/CD workflows (like GitHub Actions) locally in isolated environments: Docker, VMs, or a built-in engine."
+license = "MIT"
+readme = "README.md"
+keywords = ["ci", "github-actions", "tui", "docker", "workflow"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "maverick"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.5", features = ["derive"] }
+ctrlc = "3.4"
+dirs = "5"
+ignore = "0.4"
+indexmap = { version = "2", features = ["serde"] }
+ratatui = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml = "0.9"
+tar = "0.4"
+tempfile = "3"
+toml = "0.8"
+which = "6"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
