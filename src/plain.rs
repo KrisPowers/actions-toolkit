@@ -134,3 +134,13 @@ fn icon(p: &Paint, status: Status) -> String {
         Status::Pending => p.wrap("2", "○"),
     }
 }
+
+fn truncate(s: &str, width: usize) -> String {
+    if s.chars().count() <= width {
+        s.to_string()
+    } else {
+        let mut t: String = s.chars().take(width.saturating_sub(1)).collect();
+        t.push('…');
+        t
+    }
+}
