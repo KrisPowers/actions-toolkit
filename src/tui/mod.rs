@@ -15,3 +15,5 @@ use crate::engine::Engine;
 use crate::runner::RunOptions;
 use crate::workflow::plan::RunPlan;
 use run_view::{RunAction, RunView};
+
+const FRAME: Duration = Duration::from_millis(50);
