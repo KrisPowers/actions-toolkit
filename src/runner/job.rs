@@ -938,3 +938,30 @@ fn event_payload(opts: &RunOptions, inputs: &Map<String, Value>) -> Value {
     }
     payload
 }
+
+fn action_inputs(def: &ActionDef, step: &Step, ctx: &Ctx) -> Result<Map<String, Value>> {
+    let mut inputs = Map::new();
+    for (name, spec) in &def.inputs {
+        let given = step
+            .with
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v);
+        let value = match (given, spec.get("default")) {
+            (Some(v), _) | (None, Some(v)) => {
+                expr::interpolate_yaml(v, ctx).map_err(|e| anyhow!("input {name}: {e}"))?
+            }
+            (None, None) => String::new(),
+        };
+        inputs.insert(name.clone(), Value::String(value));
+    }
+    for (k, v) in &step.with {
+        if !inputs.keys().any(|n| n.eq_ignore_ascii_case(k)) {
+            inputs.insert(
+                k.clone(),
+                Value::String(expr::interpolate_yaml(v, ctx).map_err(|e| anyhow!(e))?),
+            );
+        }
+    }
+    Ok(inputs)
+}
