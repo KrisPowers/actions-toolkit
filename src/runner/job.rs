@@ -225,3 +225,11 @@ struct Scope {
     action_path: Option<String>,
     env: IndexMap<String, String>,
 }
+
+struct StepFiles {
+    env: String,
+    output: String,
+    path: String,
+    summary: String,
+    state: String,
+}
