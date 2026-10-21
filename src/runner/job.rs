@@ -1027,3 +1027,13 @@ fn script_ext(shell: &str) -> &'static str {
         _ => ".sh",
     }
 }
+
+fn wrap_script(shell: &str, script: &str) -> String {
+    match shell {
+        "pwsh" | "powershell" => format!(
+            "$ErrorActionPreference = 'stop'\n{script}\nif ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) {{ exit $LASTEXITCODE }}\n"
+        ),
+        "cmd" => format!("@echo off\r\n{}\r\n", script.replace('\n', "\r\n")),
+        _ => script.to_string(),
+    }
+}
