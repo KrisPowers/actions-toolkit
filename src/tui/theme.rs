@@ -50,3 +50,14 @@ pub fn panel(title: &str, focused: bool) -> Block<'static> {
         .border_style(border)
         .title(Span::styled(format!(" {title} "), title_style))
 }
+
+pub fn status_icon(status: Status, tick: usize) -> Span<'static> {
+    match status {
+        Status::Pending => Span::styled("○", dim()),
+        Status::Running => Span::styled(spinner(tick), Style::new().fg(WARN)),
+        Status::Success => Span::styled("✓", Style::new().fg(OK)),
+        Status::Failure => Span::styled("✗", Style::new().fg(BAD).add_modifier(Modifier::BOLD)),
+        Status::Skipped => Span::styled("⊘", dim()),
+        Status::Cancelled => Span::styled("■", Style::new().fg(Color::Magenta)),
+    }
+}
