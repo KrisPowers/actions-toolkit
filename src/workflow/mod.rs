@@ -12,3 +12,10 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 
 pub use model::Workflow;
+
+/// A workflow file found on disk, parsed or not.
+pub struct WorkflowFile {
+    pub path: PathBuf,
+    pub file_name: String,
+    pub parsed: Result<Arc<Workflow>, String>,
+}
