@@ -42,3 +42,9 @@ impl ExecOutcome {
         self.code == 0 && !self.timed_out && !self.cancelled
     }
 }
+
+pub struct Captured {
+    pub success: bool,
+    pub stdout: String,
+    pub stderr: String,
+}
