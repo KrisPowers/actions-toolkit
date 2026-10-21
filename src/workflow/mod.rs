@@ -99,6 +99,14 @@ impl WorkflowFile {
     }
 }
 
+/// Reads and parses one workflow file.
+pub fn read(path: &Path) -> Result<Arc<Workflow>, String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    serde_yaml::from_str::<Workflow>(&text)
+        .map(Arc::new)
+        .map_err(|e| format!("{}: {e}", path.display()))
+}
+
 /// Walks up from `start` to the nearest project root: a directory with workflows or maverick
 /// config, else the enclosing git checkout, else `start` itself.
 pub fn find_root(start: &Path) -> PathBuf {
