@@ -195,3 +195,27 @@ struct ContainerSession {
     dir: Option<TempDir>,
     removed: bool,
 }
+
+impl ContainerSession {
+    /// Maps an in-container path onto the bind-mounted host directory.
+    fn host_path(&self, path: &str) -> Result<PathBuf> {
+        let map = |prefix: &str, host: &Path| {
+            path.strip_prefix(prefix)
+                .filter(|rest| rest.is_empty() || rest.starts_with('/'))
+                .map(|rest| host.join(rest.trim_start_matches('/')))
+        };
+        map(RUNNER, &self.runner_host)
+            .or_else(|| map(WORKSPACE, &self.workspace_host))
+            .with_context(|| format!("{path} is outside the shared directories"))
+    }
+
+    fn remove(&mut self) {
+        if self.removed {
+            return;
+        }
+        self.removed = true;
+        let mut cmd = Command::new(&self.binary);
+        cmd.args(["rm", "-f", &self.name]);
+        let _ = util::capture(cmd, Duration::from_secs(30));
+    }
+}
