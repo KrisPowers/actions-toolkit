@@ -58,3 +58,12 @@ const PASSTHROUGH: &[&str] = &[
     "HOMEDRIVE",
     "HOMEPATH",
 ];
+
+pub(super) fn detect() -> EngineInfo {
+    EngineInfo::new(
+        Kind::Native,
+        Availability::Ready,
+        Some(env!("CARGO_PKG_VERSION").to_string()),
+        "sandboxed directory + clean environment on this machine".to_string(),
+    )
+}
