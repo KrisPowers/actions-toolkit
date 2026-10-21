@@ -199,3 +199,12 @@ impl GitInfo {
         format!("refs/heads/{}", self.branch)
     }
 }
+
+fn parse_repo(url: &str) -> Option<String> {
+    let path = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    let path = path.rsplit_once(':').map(|(_, p)| p).unwrap_or(path);
+    let mut parts = path.rsplit('/');
+    let repo = parts.next().filter(|s| !s.is_empty())?;
+    let owner = parts.next().filter(|s| !s.is_empty() && !s.contains('.'))?;
+    Some(format!("{owner}/{repo}"))
+}
