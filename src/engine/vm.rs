@@ -346,3 +346,12 @@ impl Transport {
         }
     }
 }
+
+fn split_port(target: &str) -> (String, Option<String>) {
+    match target.rsplit_once(':') {
+        Some((host, port)) if !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()) => {
+            (host.to_string(), Some(port.to_string()))
+        }
+        _ => (target.to_string(), None),
+    }
+}
