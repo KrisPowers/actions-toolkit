@@ -1,6 +1,7 @@
 //! Terminal UI: the dashboard and the live run view.
 
 mod home;
+mod input;
 mod run_view;
 mod theme;
 
