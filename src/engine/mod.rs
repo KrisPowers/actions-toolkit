@@ -335,3 +335,28 @@ pub trait Session: Send {
 }
 
 const PROBE: &str = "printf '%s\\n' \"$PATH\"\nif command -v bash >/dev/null 2>&1; then echo bash; else echo sh; fi\nuname -m\n";
+
+/// Discovers PATH, default shell and architecture inside a Unix-like session.
+fn probe_unix(session: &mut dyn Session) -> Result<(String, String, String)> {
+    let info = session.info().clone();
+    let script = format!("{}/probe.sh", info.temp);
+    session.write_file(&script, PROBE.as_bytes())?;
+    let req = ExecRequest {
+        argv: vec!["sh".into(), script],
+        env: Vec::new(),
+        cwd: info.workspace.clone(),
+        timeout: Some(Duration::from_secs(60)),
+    };
+    let mut lines = Vec::new();
+    let outcome = session.exec(&req, &Cancel::new(), &mut |l| lines.push(l))?;
+    if !outcome.success() || lines.len() < 3 {
+        bail!("environment probe failed: {}", lines.join(" / "));
+    }
+    let n = lines.len();
+    let arch = match lines[n - 1].trim() {
+        "x86_64" | "amd64" => "X64".to_string(),
+        "aarch64" | "arm64" => "ARM64".to_string(),
+        other => other.to_uppercase(),
+    };
+    Ok((lines[n - 3].clone(), lines[n - 2].trim().to_string(), arch))
+}
