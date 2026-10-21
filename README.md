@@ -123,3 +123,23 @@ maverick run --event-file payload.json  # custom github.event
 
 Secret values (and anything passed to `::add-mask::`) are replaced with `***` in all output.
 
+## Workflow support
+
+Supported:
+
+- `on` triggers, `env` and `defaults.run` at every level, `if:` with the full expression
+  language (`contains`, `startsWith`, `format`, `toJSON`, `fromJSON`, `success()`,
+  `failure()`, `always()`, `cancelled()`, ...)
+- `needs` with outputs and results, parallel jobs, `strategy.matrix` with `include`/`exclude`,
+  `fail-fast`
+- `run` steps with `bash`, `sh`, `pwsh`, `powershell`, `cmd`, `python` and custom shells;
+  `working-directory`, `continue-on-error`, `timeout-minutes`
+- `$GITHUB_ENV`, `$GITHUB_OUTPUT`, `$GITHUB_PATH`, and the `::error::`, `::warning::`,
+  `::group::`, `::add-mask::` workflow commands
+- Actions: local (`./path`) and remote (`owner/repo@ref`, cached) composite and Node actions;
+  `actions/checkout` is built in
+
+Not yet supported: Docker-based actions, `services:`, reusable workflows (`jobs.<id>.uses`),
+dynamic matrices, `actions/cache`, and artifact upload/download (these steps are skipped with a
+warning rather than failing).
+
