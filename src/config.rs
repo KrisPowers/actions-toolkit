@@ -23,3 +23,17 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub engines: BTreeMap<String, EngineConfig>,
 }
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EngineConfig {
+    /// VM instance / distro name (Lima, Multipass, WSL, Parallels).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
+    /// SSH target `user@host[:port]` for VMs reached over SSH.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh: Option<String>,
+    /// SSH private key used with `ssh`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
+}
