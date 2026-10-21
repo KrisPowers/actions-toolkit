@@ -251,3 +251,8 @@ enum Expr {
     Or(Box<Expr>, Box<Expr>),
     Cmp(&'static str, Box<Expr>, Box<Expr>),
 }
+
+struct Parser {
+    toks: Vec<Tok>,
+    pos: usize,
+}
