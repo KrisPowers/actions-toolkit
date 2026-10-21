@@ -227,3 +227,29 @@ fn instance_state(
         ),
     }
 }
+
+#[derive(Clone, Debug)]
+enum Transport {
+    Lima {
+        bin: PathBuf,
+        instance: String,
+    },
+    Multipass {
+        bin: PathBuf,
+        instance: String,
+    },
+    Wsl {
+        bin: PathBuf,
+        distro: Option<String>,
+    },
+    Parallels {
+        bin: PathBuf,
+        vm: String,
+    },
+    Ssh {
+        bin: PathBuf,
+        target: String,
+        port: Option<String>,
+        identity: Option<String>,
+    },
+}
