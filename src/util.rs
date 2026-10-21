@@ -11,3 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
+
+/// Cooperative cancellation flag shared between the UI, the scheduler and running processes.
+#[derive(Clone, Default, Debug)]
+pub struct Cancel(Arc<AtomicBool>);
