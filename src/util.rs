@@ -320,3 +320,11 @@ fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
     std::os::unix::fs::symlink(link, dst)?;
     Ok(())
 }
+
+#[cfg(not(unix))]
+fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
+    if src.is_file() {
+        fs::copy(src, dst)?;
+    }
+    Ok(())
+}
