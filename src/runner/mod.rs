@@ -25,3 +25,21 @@ use crate::workflow::expr::{self, Ctx, JobState};
 use crate::workflow::plan::RunPlan;
 
 pub const DEFAULT_IMAGE: &str = "ghcr.io/catthehacker/ubuntu:act-latest";
+
+/// Everything about a run that isn't the plan or the engine.
+#[derive(Clone, Debug)]
+pub struct RunOptions {
+    pub root: PathBuf,
+    pub event: String,
+    pub event_payload: Option<Value>,
+    pub secrets: BTreeMap<String, String>,
+    pub vars: BTreeMap<String, String>,
+    pub inputs: BTreeMap<String, String>,
+    /// `runs-on` label -> container image.
+    pub platforms: BTreeMap<String, String>,
+    pub bind: bool,
+    pub pull: bool,
+    pub parallel: usize,
+    pub git: GitInfo,
+    pub run_id: String,
+}
