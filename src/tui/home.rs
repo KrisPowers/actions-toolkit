@@ -11,16 +11,17 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, Ke
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Clear, Paragraph, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 
+use super::input::{InputAction, TextInput};
 use super::run_view::{RunAction, RunView};
 use super::theme::{self, ACCENT, BAD, OK, WARN};
 use super::FRAME;
 use crate::config::Config;
 use crate::engine::{self, Availability, EngineInfo, Family, Kind};
 use crate::runner::RunOptions;
-use crate::workflow::{self, plan::RunPlan, Source, WorkflowFile};
+use crate::workflow::{self, plan::RunPlan, Location, Source, WorkflowFile};
 
 const EVENTS: [&str; 5] = [
     "push",
@@ -42,10 +43,33 @@ enum Row {
     Broken(usize),
 }
 
+/// What a text prompt's answer is for.
+enum Purpose {
+    AddLocation(Source),
+}
+
+struct Prompt {
+    title: String,
+    help: String,
+    input: TextInput,
+    purpose: Purpose,
+    error: Option<String>,
+}
+
+/// A popup drawn over the dashboard that takes all key presses.
+enum Modal {
+    Locations,
+    Prompt(Prompt),
+}
+
 pub struct App {
     root: PathBuf,
     cfg: Config,
     workflows: Vec<WorkflowFile>,
+    /// Every searched location and how many workflows it holds (`None` if it doesn't exist).
+    locations: Vec<(Location, Option<usize>)>,
+    loc_sel: usize,
+    modal: Option<Modal>,
     rows: Vec<Row>,
     row_sel: usize,
     engines: Vec<EngineInfo>,
@@ -68,6 +92,9 @@ impl App {
             root,
             cfg,
             workflows: Vec::new(),
+            locations: Vec::new(),
+            loc_sel: 0,
+            modal: None,
             rows: Vec::new(),
             row_sel: 0,
             engines: Vec::new(),
@@ -87,6 +114,19 @@ impl App {
 
     /// Rescans workflows and kicks off engine detection in the background.
     fn reload(&mut self) {
+        self.reload_workflows();
+        self.detect_engines();
+    }
+
+    fn reload_workflows(&mut self) {
+        self.locations = workflow::locations(&self.root)
+            .into_iter()
+            .map(|l| {
+                let found = l.path.exists().then(|| workflow::scan(&l).len());
+                (l, found)
+            })
+            .collect();
+        self.loc_sel = self.loc_sel.min(self.locations.len().saturating_sub(1));
         self.workflows = workflow::discover(&self.root);
         self.rows = self
             .workflows
@@ -100,6 +140,9 @@ impl App {
             })
             .collect();
         self.row_sel = self.row_sel.min(self.rows.len().saturating_sub(1));
+    }
+
+    fn detect_engines(&mut self) {
         let (tx, rx) = mpsc::channel();
         let cfg = self.cfg.clone();
         thread::spawn(move || {
@@ -183,8 +226,16 @@ impl App {
             }
             return;
         }
+        if let Some(modal) = self.modal.take() {
+            if ctrl_c {
+                return;
+            }
+            self.modal = self.on_modal_key(modal, key);
+            return;
+        }
         match key.code {
             _ if ctrl_c => self.quit = true,
+            KeyCode::Char('w') => self.modal = Some(Modal::Locations),
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Tab
             | KeyCode::BackTab
@@ -221,6 +272,148 @@ impl App {
             },
             _ => {}
         }
+    }
+
+    /// Handles a key inside a popup; returns the popup to show next.
+    fn on_modal_key(&mut self, modal: Modal, key: KeyEvent) -> Option<Modal> {
+        match modal {
+            Modal::Locations => match key.code {
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('w') => None,
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.loc_sel = self.loc_sel.saturating_sub(1);
+                    Some(Modal::Locations)
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.loc_sel = (self.loc_sel + 1).min(self.locations.len().saturating_sub(1));
+                    Some(Modal::Locations)
+                }
+                KeyCode::Char('a') => Some(location_prompt(Source::Project)),
+                KeyCode::Char('g') => Some(location_prompt(Source::Global)),
+                KeyCode::Char('d') | KeyCode::Delete | KeyCode::Backspace => {
+                    self.remove_location();
+                    Some(Modal::Locations)
+                }
+                _ => Some(Modal::Locations),
+            },
+            Modal::Prompt(mut prompt) => {
+                let base = match prompt.purpose {
+                    Purpose::AddLocation(Source::Global) => dirs::home_dir(),
+                    Purpose::AddLocation(_) => Some(self.root.clone()),
+                };
+                match prompt.input.on_key(key, base.as_deref()) {
+                    InputAction::None => Some(Modal::Prompt(prompt)),
+                    InputAction::Cancel => match prompt.purpose {
+                        Purpose::AddLocation(_) => Some(Modal::Locations),
+                    },
+                    InputAction::Submit => {
+                        let value = prompt.input.value().trim().to_string();
+                        let result = match prompt.purpose {
+                            Purpose::AddLocation(source) => self
+                                .add_location(source, &value)
+                                .map(|msg| (msg, Some(Modal::Locations))),
+                        };
+                        match result {
+                            Ok((msg, next)) => {
+                                self.say(msg, false);
+                                next
+                            }
+                            Err(e) => {
+                                prompt.error = Some(e);
+                                Some(Modal::Prompt(prompt))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Saves a new workflow location to the project or user config.
+    fn add_location(&mut self, source: Source, value: &str) -> Result<String, String> {
+        if value.is_empty() {
+            return Err("Type a folder or a .yml file".into());
+        }
+        let base = match source {
+            Source::Global => dirs::home_dir().ok_or("could not find the home directory")?,
+            _ => self.root.clone(),
+        };
+        let path = workflow::resolve(value, &base);
+        if !path.exists() {
+            return Err(format!("{} does not exist", path.display()));
+        }
+        // Project entries are stored relative to the root so the config stays portable.
+        let entry = match source {
+            Source::Project => match path.strip_prefix(&self.root) {
+                Ok(rel) if rel.as_os_str().is_empty() => ".".to_string(),
+                Ok(rel) => rel.to_string_lossy().into_owned(),
+                Err(_) => path.to_string_lossy().into_owned(),
+            },
+            _ => value.trim_end_matches(['/', '\\']).to_string(),
+        };
+        let found = workflow::scan(&Location {
+            source,
+            entry: entry.clone(),
+            path,
+        })
+        .len();
+        self.edit_locations(source, |list| {
+            if list.contains(&entry) {
+                return Err(format!("{entry} is already listed"));
+            }
+            list.push(entry.clone());
+            Ok(())
+        })?;
+        let scope = match source {
+            Source::Global => "every project",
+            _ => "this project",
+        };
+        Ok(format!(
+            "Added {entry} for {scope}: {found} workflow{} found",
+            if found == 1 { "" } else { "s" }
+        ))
+    }
+
+    fn remove_location(&mut self) {
+        let Some((loc, _)) = self.locations.get(self.loc_sel).cloned() else {
+            return;
+        };
+        if loc.source == Source::Auto {
+            self.say(format!("{} is always searched", loc.entry), true);
+            return;
+        }
+        let entry = loc.entry.clone();
+        match self.edit_locations(loc.source, |list| {
+            list.retain(|e| *e != entry);
+            Ok(())
+        }) {
+            Ok(()) => self.say(format!("Removed {entry}"), false),
+            Err(e) => self.say(e, true),
+        }
+    }
+
+    /// Changes the location list in the project or user config, saves it and rescans.
+    fn edit_locations(
+        &mut self,
+        source: Source,
+        edit: impl FnOnce(&mut Vec<String>) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let saved = match source {
+            Source::Global => Config::load_user()
+                .map_err(|e| e.to_string())
+                .and_then(|mut c| {
+                    edit(&mut c.workflows)?;
+                    c.save_user().map_err(|e| e.to_string())
+                }),
+            _ => Config::load_project(&self.root)
+                .map_err(|e| e.to_string())
+                .and_then(|mut c| {
+                    edit(&mut c.workflows)?;
+                    c.save_project(&self.root).map_err(|e| e.to_string())
+                }),
+        };
+        saved?;
+        self.reload_workflows();
+        Ok(())
     }
 
     fn choose_engine(&mut self) {
@@ -317,6 +510,57 @@ impl App {
         self.draw_engines(f, right);
         self.draw_details(f, details);
         self.draw_footer(f, footer);
+        match &self.modal {
+            Some(Modal::Locations) => self.draw_locations(f, area),
+            Some(Modal::Prompt(prompt)) => draw_prompt(f, area, prompt),
+            None => {}
+        }
+    }
+
+    fn draw_locations(&self, f: &mut Frame, area: Rect) {
+        let height = (self.locations.len() as u16 + 5).min(area.height);
+        let popup = centered(area, 76, height);
+        f.render_widget(Clear, popup);
+        let block = theme::panel("Workflow locations", true);
+        let inner = block.inner(popup);
+        f.render_widget(block, popup);
+        let [list, hints] =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).areas(inner);
+        let width = list.width as usize;
+        let rows = self
+            .locations
+            .iter()
+            .map(|(loc, found)| {
+                let (dot, color, right) = match found {
+                    None => ("○", theme::DIM, "missing".to_string()),
+                    Some(0) => ("○", theme::DIM, "none".to_string()),
+                    Some(n) => ("●", OK, format!("{n} found")),
+                };
+                let name = format!("{:<8} {}", loc.source.label(), loc.entry);
+                theme::row(
+                    Span::styled(dot, Style::new().fg(color)),
+                    &name,
+                    right,
+                    width,
+                    Style::new(),
+                )
+            })
+            .collect();
+        theme::render_list(
+            f,
+            list,
+            ratatui::widgets::Block::new(),
+            rows,
+            Some(self.loc_sel),
+            true,
+        );
+        let line = theme::hints(&[
+            ("a", "add to project"),
+            ("g", "add global"),
+            ("d", "remove"),
+            ("esc", "close"),
+        ]);
+        f.render_widget(Paragraph::new(vec![Line::raw(""), line]), hints);
     }
 
     fn draw_header(&self, f: &mut Frame, area: Rect) {
@@ -617,12 +861,66 @@ impl App {
             ("↑↓", "move"),
             ("tab", "switch panel"),
             ("enter", enter),
+            ("w", "locations"),
             ("e", "event"),
             ("r", "rescan"),
             ("q", "quit"),
         ]);
         f.render_widget(Paragraph::new(line), area);
     }
+}
+
+fn location_prompt(source: Source) -> Modal {
+    let (title, help) = match source {
+        Source::Global => (
+            "Add a global location",
+            "Folder or .yml file searched in every project (relative to your home folder)",
+        ),
+        _ => (
+            "Add a project location",
+            "Folder or .yml file searched in this project (relative to the project root)",
+        ),
+    };
+    Modal::Prompt(Prompt {
+        title: title.into(),
+        help: help.into(),
+        input: TextInput::default(),
+        purpose: Purpose::AddLocation(source),
+        error: None,
+    })
+}
+
+fn draw_prompt(f: &mut Frame, area: Rect, prompt: &Prompt) {
+    let popup = centered(area, 76, 8);
+    f.render_widget(Clear, popup);
+    let block = theme::panel(&prompt.title, true);
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    let error = match &prompt.error {
+        Some(e) => Line::styled(e.clone(), Style::new().fg(BAD)),
+        None => Line::raw(""),
+    };
+    let lines = vec![
+        Line::styled(prompt.help.clone(), theme::dim()),
+        Line::raw(""),
+        prompt.input.line(),
+        error,
+        Line::raw(""),
+        theme::hints(&[("tab", "complete"), ("enter", "save"), ("esc", "cancel")]),
+    ];
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+/// A `width` x `height` rectangle centred in `area` (clamped to fit).
+fn centered(area: Rect, width: u16, height: u16) -> Rect {
+    let w = width.min(area.width);
+    let h = height.min(area.height);
+    Rect::new(
+        area.x + (area.width - w) / 2,
+        area.y + (area.height - h) / 2,
+        w,
+        h,
+    )
 }
 
 fn family_order(f: Family) -> u8 {
@@ -701,6 +999,47 @@ mod tests {
         assert!(screen.contains("Demo"));
         assert!(screen.contains("×2"), "matrix size is shown");
         assert!(screen.contains("Maverick Native"));
+    }
+
+    #[test]
+    fn adding_and_removing_a_project_location() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join("pipelines")).unwrap();
+        std::fs::write(
+            root.join("pipelines/build.yml"),
+            "name: Build\non: push\njobs:\n  compile: { steps: [{ run: echo }] }\n",
+        )
+        .unwrap();
+        let mut app = App::new(root.clone()).unwrap();
+        assert!(app.workflows.is_empty());
+
+        app.on_key(KeyEvent::from(KeyCode::Char('w')));
+        app.on_key(KeyEvent::from(KeyCode::Char('a')));
+        for c in "pip".chars() {
+            app.on_key(KeyEvent::from(KeyCode::Char(c)));
+        }
+        app.on_key(KeyEvent::from(KeyCode::Tab));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        let screen = render(&mut app, 100, 24);
+        if std::env::var("MAVERICK_PRINT").is_ok() {
+            println!("{screen}");
+        }
+        assert!(screen.contains("Workflow locations"), "{screen}");
+        assert!(screen.contains("project  pipelines"), "{screen}");
+        assert_eq!(app.workflows.len(), 1);
+        let saved = std::fs::read_to_string(root.join(".maverick.toml")).unwrap();
+        assert!(saved.contains("pipelines"), "{saved}");
+
+        app.loc_sel = app
+            .locations
+            .iter()
+            .position(|(l, _)| l.source == Source::Project)
+            .unwrap();
+        app.on_key(KeyEvent::from(KeyCode::Char('d')));
+        assert!(app.workflows.is_empty());
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert!(app.modal.is_none());
     }
 
     #[test]
