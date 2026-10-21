@@ -397,3 +397,57 @@ impl Parser {
 
 // ---------------------------------------------------------------------------------------------
 // Evaluation
+
+fn eval(e: &Expr, ctx: &Ctx) -> Result<Value, String> {
+    Ok(match e {
+        Expr::Lit(v) => v.clone(),
+        Expr::Context(name) => prop(ctx.data, name),
+        Expr::Prop(inner, name) => prop(&eval(inner, ctx)?, name),
+        Expr::Index(inner, idx) => {
+            let base = eval(inner, ctx)?;
+            match (&base, eval(idx, ctx)?) {
+                (Value::Array(items), Value::Number(n)) => n
+                    .as_f64()
+                    .and_then(|f| items.get(f as usize).cloned())
+                    .unwrap_or(Value::Null),
+                (_, Value::String(key)) => prop(&base, &key),
+                _ => Value::Null,
+            }
+        }
+        Expr::Star(inner) => match eval(inner, ctx)? {
+            Value::Array(items) => Value::Array(items),
+            Value::Object(map) => Value::Array(map.into_iter().map(|(_, v)| v).collect()),
+            _ => Value::Array(Vec::new()),
+        },
+        Expr::Not(inner) => Value::Bool(!truthy(&eval(inner, ctx)?)),
+        Expr::And(a, b) => {
+            let left = eval(a, ctx)?;
+            if truthy(&left) {
+                eval(b, ctx)?
+            } else {
+                left
+            }
+        }
+        Expr::Or(a, b) => {
+            let left = eval(a, ctx)?;
+            if truthy(&left) {
+                left
+            } else {
+                eval(b, ctx)?
+            }
+        }
+        Expr::Cmp(op, a, b) => {
+            let (l, r) = (eval(a, ctx)?, eval(b, ctx)?);
+            Value::Bool(match *op {
+                "==" => loose_eq(&l, &r),
+                "!=" => !loose_eq(&l, &r),
+                "<" => compare(&l, &r) == Some(Ordering::Less),
+                "<=" => matches!(compare(&l, &r), Some(Ordering::Less | Ordering::Equal)),
+                ">" => compare(&l, &r) == Some(Ordering::Greater),
+                ">=" => matches!(compare(&l, &r), Some(Ordering::Greater | Ordering::Equal)),
+                _ => unreachable!(),
+            })
+        }
+        Expr::Call(name, args) => call(name, args, ctx)?,
+    })
+}
