@@ -561,3 +561,20 @@ fn format_fn(fmt: &str, args: &[Value]) -> Result<String, String> {
     }
     Ok(out)
 }
+
+fn prop(v: &Value, name: &str) -> Value {
+    match v {
+        Value::Object(map) => map
+            .get(name)
+            .or_else(|| {
+                map.iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                    .map(|(_, v)| v)
+            })
+            .cloned()
+            .unwrap_or(Value::Null),
+        // Property access on an object filter (`a.*.b`) maps over the elements.
+        Value::Array(items) => Value::Array(items.iter().map(|i| prop(i, name)).collect()),
+        _ => Value::Null,
+    }
+}
