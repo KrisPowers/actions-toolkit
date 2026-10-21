@@ -115,3 +115,11 @@ pub struct ActionDef {
     pub outputs: IndexMap<String, Yaml>,
     pub runs: ActionRuns,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ActionRuns {
+    pub using: String,
+    pub main: Option<String>,
+    #[serde(default)]
+    pub steps: Vec<Step>,
+}
