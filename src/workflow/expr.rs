@@ -630,3 +630,10 @@ fn loose_eq(a: &Value, b: &Value) -> bool {
         _ => to_num(a) == to_num(b),
     }
 }
+
+fn compare(a: &Value, b: &Value) -> Option<Ordering> {
+    match (a, b) {
+        (Value::String(x), Value::String(y)) => Some(x.to_lowercase().cmp(&y.to_lowercase())),
+        _ => to_num(a).partial_cmp(&to_num(b)),
+    }
+}
