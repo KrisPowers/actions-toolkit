@@ -123,3 +123,14 @@ pub fn run(plan: Arc<RunPlan>, engine: Arc<dyn Engine>, opts: Arc<RunOptions>) -
     let _ = writeln!(out, "\n{verdict} in {}", fmt_duration(started.elapsed()));
     Ok(ok)
 }
+
+fn icon(p: &Paint, status: Status) -> String {
+    match status {
+        Status::Success => p.wrap("32", "✓"),
+        Status::Failure => p.wrap("31", "✗"),
+        Status::Cancelled => p.wrap("35", "■"),
+        Status::Skipped => p.wrap("2", "⊘"),
+        Status::Running => p.wrap("33", "●"),
+        Status::Pending => p.wrap("2", "○"),
+    }
+}
