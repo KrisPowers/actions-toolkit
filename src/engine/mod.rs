@@ -259,3 +259,16 @@ pub struct ExecRequest {
     pub cwd: String,
     pub timeout: Option<Duration>,
 }
+
+/// Facts about a running session; all paths are as seen from inside the environment.
+#[derive(Clone, Debug)]
+pub struct SessionInfo {
+    pub workspace: String,
+    pub temp: String,
+    pub tool_cache: String,
+    pub os: &'static str,
+    pub arch: String,
+    /// Default `PATH` inside the environment.
+    pub path: String,
+    pub default_shell: String,
+}
