@@ -137,3 +137,7 @@ pub fn render_list(
         .collect();
     f.render_widget(Paragraph::new(lines), inner);
 }
+
+fn selected_style() -> Style {
+    selected()
+}
