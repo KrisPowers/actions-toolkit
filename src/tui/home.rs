@@ -623,3 +623,11 @@ impl App {
         f.render_widget(Paragraph::new(line), area);
     }
 }
+
+fn family_order(f: Family) -> u8 {
+    match f {
+        Family::Container => 0,
+        Family::VirtualMachine => 1,
+        Family::BuiltIn => 2,
+    }
+}
