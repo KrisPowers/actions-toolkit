@@ -6,14 +6,14 @@ workflow files in your project, lets you pick a workflow or a single job, and ru
 watch every step live. It works fully offline and needs no account or hosted service.
 
 ```
- ◆ maverick ~/code/my-app                                         event push   engine ● Docker
-╭ Workflows ───────────────────────────────────────╮╭ Engines ─────────────────────────────────╮
-│ ▾ CI                                       ci.yml││ ● Docker ★                 ctr  ready    │
-│   ├ lint                            ubuntu-latest││ ● Maverick Native         host  ready    │
-│   ├ test                        ×3  ubuntu-latest││ ◐ Lima                     vm   not running│
-│ ▾ Release                   global · release.yml ││ ○ Podman                   ctr  not installed│
-╰──────────────────────────────────────────────────╯╰──────────────────────────────────────────╯
- ↑↓ move   tab switch panel   enter run   w locations   e event   r rescan   q quit
+ ◆ maverick › workflows › catalog   ~/code/my-app            event push   engine ● Docker
+╭ Catalog ─────────────────────────────────────────────────────────────────────────────────╮
+│ ▾ CI                                                                               ci.yml│
+│   ├ lint                                                                   ubuntu-latest│
+│   ├ test                                                               ×3  ubuntu-latest│
+│ ▾ Release                                                           global · release.yml │
+╰──────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓ move   enter run   e event   r rescan   ⌫ back   q quit
 ```
 
 ## Install
@@ -27,30 +27,41 @@ Works on macOS, Linux and Windows. Engines are optional and detected automatical
 ## Usage
 
 ```sh
-maverick            # open the TUI for the current folder
-maverick ~/code/app # or for another project
+maverick              # settings and the guide
+maverick workflows    # your workflow catalog and the history of runs
 ```
 
-That's the whole command line. Everything else happens in the TUI:
-
-1. Pick a workflow (runs all its jobs) or a single job on the left.
-2. Pick an engine on the right and press `enter` to make it the default.
-3. Press `enter` on the workflow or job to run it and watch it live.
-
-### Dashboard keys
+Both work on the project in the current folder; add `-C <folder>` for another one. Everything
+else happens in the TUI, with the keyboard:
 
 | Key | Action |
 | --- | --- |
-| `↑↓` / `j k` | Move |
-| `tab` / `← →` | Switch between Workflows and Engines |
-| `enter` | Run the workflow/job, or choose the engine |
-| `w` | Manage workflow locations |
-| `t` | Set a VM engine's instance or SSH target |
-| `e` | Change the simulated event (`push`, `pull_request`, ...) |
-| `r` | Rescan workflows and engines |
-| `q` | Quit |
+| `↑↓` | Move |
+| `enter` / `→` | Select or open |
+| `⌫` / `←` | Back (leaving the first screen quits) |
+| `q` / `ctrl-c` | Quit |
 
-### Run view keys
+### `maverick`: settings and guide
+
+| Section | What's there |
+| --- | --- |
+| Guide | How maverick works, its commands, keys and files |
+| Engines | Every engine found on this machine. `enter` makes one the default, `t` sets a VM's instance or SSH target |
+| Workflow locations | Where workflows are searched. Add folders or files for this project or every project, or remove them |
+| Run options | The event runs simulate, and how many jobs run at once |
+| Data | Clear this project's run history, or reset your settings |
+
+### `maverick workflows`: Catalog and Runs
+
+A two-option menu:
+
+- **Catalog**: every workflow found for this project and its jobs. `enter` runs the workflow
+  (all jobs) or a single job and opens the live run view. `e` changes the simulated event for
+  this session.
+- **Runs**: past runs of this project, newest first. `enter` reopens a run with all its logs,
+  `r` runs it again, `d` deletes it, `x` clears the history.
+
+### Run view
 
 | Key | Action |
 | --- | --- |
@@ -60,7 +71,17 @@ That's the whole command line. Everything else happens in the TUI:
 | `a` | Show all logs for the job |
 | `pgup` / `pgdn`, `g` / `G` | Scroll logs, jump to top / follow |
 | `c` | Cancel the run |
-| `q` | Back to the dashboard (cancels first if still running) |
+| `r` | Run it again (once finished) |
+| `⌫` | Back (asks to cancel first if still running) |
+
+### Confirmations and text fields
+
+Actions that can't be undone ask first: deleting a run, clearing history, removing a workflow
+location, cancelling a run, resetting settings, and quitting while a run is going. "Cancel" is
+selected by default; choose with `← →` and press `enter`.
+
+Some settings are typed in directly: workflow locations (`tab` completes paths), VM targets
+and SSH keys, and the number of jobs at once. `enter` saves, `esc` cancels.
 
 ## Where workflows are found
 
@@ -69,21 +90,21 @@ Maverick finds the project root from the folder you start it in, then searches:
 | Location | Set by |
 | --- | --- |
 | `.github/workflows/` and `.maverick/workflows/` | Always searched |
-| Folders or files listed for this project | `w`, then `a` (saved to `.maverick.toml`) |
-| Folders or files listed globally | `w`, then `g` (saved to your user config, used in every project) |
+| Folders or files listed for this project | Settings › Workflow locations (saved to `.maverick.toml`) |
+| Folders or files listed for every project | Settings › Workflow locations (saved to your user config) |
 
 Any `.yml`/`.yaml` file with `jobs:` in an added location is listed; other YAML files there
-are ignored. `tab` completes paths while typing.
+are ignored.
 
 ## Engines
 
 | Engine | Type | How it runs your job |
 | --- | --- | --- |
 | Docker, Podman | container | One container per job from the `runs-on` image; steps run via `exec` |
-| Lima, Multipass | vm | Inside a named instance (`default` / `primary` unless set with `t`) |
-| WSL | vm (Windows) | Inside your default distro, or the one set with `t` |
-| Parallels | vm (macOS) | Inside the Linux VM set with `t` |
-| VirtualBox, VMware, QEMU, Hyper-V, Tart | vm | Over SSH to the Linux guest set with `t` |
+| Lima, Multipass | vm | Inside a named instance (`default` / `primary` unless you set one) |
+| WSL | vm (Windows) | Inside your default distro, or the one you set |
+| Parallels | vm (macOS) | Inside the Linux VM you set |
+| VirtualBox, VMware, QEMU, Hyper-V, Tart | vm | Over SSH to the Linux guest you set |
 | Maverick Native | built-in | On the host, in a throwaway sandbox folder with a cleaned environment |
 
 Every engine works on a **copy** of your project (respecting `.gitignore`), so runs can't touch
@@ -106,11 +127,12 @@ ubuntu-latest = "node:20-bookworm"
 
 User config lives in your config folder (`~/.config/maverick/config.toml` on Linux,
 `~/Library/Application Support/maverick/config.toml` on macOS, `%APPDATA%\maverick\config.toml`
-on Windows). A project can add `.maverick.toml` at its root, which overrides it. The TUI writes
-both for you; the full format is:
+on Windows). A project can add `.maverick.toml` at its root, which overrides it. The settings
+screen writes both for you; the full format is:
 
 ```toml
 engine = "docker"          # default engine
+event = "push"             # event runs simulate
 parallel = 4               # jobs at once
 workflows = ["pipelines"]  # extra workflow locations
 
@@ -127,6 +149,9 @@ instance = "ci"
 ssh = "runner@127.0.0.1:2222"
 identity = "~/.ssh/maverick"
 ```
+
+Run history is kept in your data folder (`~/.local/share/maverick/runs` on Linux,
+`~/Library/Application Support/maverick/runs` on macOS, `%APPDATA%\maverick\runs` on Windows).
 
 Secrets go in a `.secrets` file at the project root (`NAME=value` per line, ignored by git) and
 are available as `secrets.NAME`. Their values are replaced with `***` in all output.
@@ -158,7 +183,7 @@ dynamic matrices, caching and artifacts (these steps are skipped with a warning)
 ```sh
 cargo test
 cargo clippy --all-targets -- -D warnings
-maverick examples/demo   # a workflow that exercises most features
+maverick -C examples/demo workflows   # a workflow that exercises most features
 ```
 
 ## License
