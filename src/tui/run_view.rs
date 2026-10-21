@@ -22,3 +22,10 @@ pub enum RunAction {
     None,
     Close,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Focus {
+    Jobs,
+    Steps,
+    Logs,
+}
