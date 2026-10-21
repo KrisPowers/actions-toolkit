@@ -661,3 +661,82 @@ pub fn object<'a, I: IntoIterator<Item = (&'a String, &'a String)>>(pairs: I) ->
             .collect::<Map<_, _>>(),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn ctx_eval(src: &str, data: &Value) -> Value {
+        evaluate(src, &Ctx::new(data, JobState::default())).unwrap()
+    }
+
+    #[test]
+    fn context_access() {
+        let data = json!({"matrix": {"node": 18, "os": "ubuntu-latest"}, "steps": {"build": {"outputs": {"v": "1.2"}}}});
+        assert_eq!(ctx_eval("matrix.node", &data), json!(18));
+        assert_eq!(ctx_eval("matrix['os']", &data), json!("ubuntu-latest"));
+        assert_eq!(ctx_eval("steps.build.outputs.v", &data), json!("1.2"));
+        assert_eq!(ctx_eval("steps.missing.outputs.v", &data), Value::Null);
+    }
+
+    #[test]
+    fn operators_and_functions() {
+        let data =
+            json!({"github": {"ref": "refs/heads/main", "event_name": "push"}, "list": ["a", "b"]});
+        assert_eq!(
+            ctx_eval("github.ref == 'refs/heads/MAIN'", &data),
+            json!(true)
+        );
+        assert_eq!(
+            ctx_eval("github.event_name != 'push' || 'fallback'", &data),
+            json!("fallback")
+        );
+        assert_eq!(
+            ctx_eval(
+                "contains(list, 'b') && startsWith(github.ref, 'refs/')",
+                &data
+            ),
+            json!(true)
+        );
+        assert_eq!(
+            ctx_eval("format('{0}-{1} {{x}}', 'a', 2)", &data),
+            json!("a-2 {x}")
+        );
+        assert_eq!(ctx_eval("join(list, '+')", &data), json!("a+b"));
+        assert_eq!(ctx_eval("fromJSON('[1,2]')[1]", &data), json!(2));
+        assert_eq!(ctx_eval("1 < 2 && !false", &data), json!(true));
+        assert_eq!(ctx_eval("'3' == 3", &data), json!(true));
+    }
+
+    #[test]
+    fn interpolation() {
+        let data = json!({"matrix": {"v": 3.10, "name": "x"}});
+        let ctx = Ctx::new(&data, JobState::default());
+        assert_eq!(
+            interpolate("node ${{ matrix.v }} / ${{matrix.name}}", &ctx).unwrap(),
+            "node 3.1 / x"
+        );
+        assert_eq!(interpolate("${{ '}}' }}", &ctx).unwrap(), "}}");
+    }
+
+    #[test]
+    fn conditions() {
+        let data = json!({"github": {"event_name": "push"}});
+        let ok = Ctx::new(&data, JobState::default());
+        let failed = Ctx::new(
+            &data,
+            JobState {
+                failed: true,
+                ..Default::default()
+            },
+        );
+        let y = |s: &str| Yaml::String(s.into());
+        assert!(condition(None, &ok).unwrap());
+        assert!(!condition(None, &failed).unwrap());
+        assert!(condition(Some(&y("github.event_name == 'push'")), &ok).unwrap());
+        assert!(!condition(Some(&y("${{ github.event_name == 'push' }}")), &failed).unwrap());
+        assert!(condition(Some(&y("always()")), &failed).unwrap());
+        assert!(condition(Some(&y("${{ failure() }}")), &failed).unwrap());
+    }
+}
