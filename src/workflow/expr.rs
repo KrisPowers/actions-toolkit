@@ -104,3 +104,11 @@ pub fn condition(cond: Option<&Yaml>, ctx: &Ctx) -> Result<bool, String> {
         value && ctx.state.success()
     })
 }
+
+/// If `s` is exactly one `${{ ... }}`, returns the inner expression.
+fn whole_expression(s: &str) -> Option<&str> {
+    let t = s.trim();
+    let inner = t.strip_prefix("${{")?;
+    let end = find_close(inner)?;
+    (end + 2 == inner.len()).then(|| &inner[..end])
+}
