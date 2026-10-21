@@ -13,6 +13,9 @@ pub struct Config {
     /// Default engine id (`docker`, `native`, `lima`, ...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<String>,
+    /// Event runs simulate unless another one is picked (`push`, `pull_request`, ...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
     /// Maximum number of jobs to run at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parallel: Option<usize>,
@@ -64,6 +67,9 @@ impl Config {
         }
         if p.parallel.is_some() {
             cfg.parallel = p.parallel;
+        }
+        if p.event.is_some() {
+            cfg.event = p.event;
         }
         cfg.images.extend(p.images);
         cfg.vars.extend(p.vars);
