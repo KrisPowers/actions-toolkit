@@ -29,3 +29,10 @@ enum Focus {
     Steps,
     Logs,
 }
+
+struct StepView {
+    name: String,
+    status: Status,
+    started: Option<Instant>,
+    took: Option<Duration>,
+}
