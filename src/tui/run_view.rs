@@ -485,3 +485,32 @@ impl RunView {
         theme::hints(&pairs)
     }
 }
+
+fn log_line(kind: LogKind, text: &str) -> Line<'static> {
+    let text = text.replace('\t', "    ");
+    match kind {
+        LogKind::Output => Line::raw(format!(" {text}")),
+        LogKind::Command => Line::from(vec![
+            Span::styled(" │ ", Style::new().fg(ACCENT)),
+            Span::styled(text, theme::dim()),
+        ]),
+        LogKind::System => Line::styled(
+            format!(" {text}"),
+            Style::new().fg(DIM).add_modifier(Modifier::ITALIC),
+        ),
+        LogKind::Header => Line::styled(
+            format!(" ━━ {text}"),
+            Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ),
+        LogKind::Group => Line::styled(format!(" ▸ {text}"), theme::bold()),
+        LogKind::Notice => Line::styled(
+            format!(" ℹ {text}"),
+            Style::new().fg(ratatui::style::Color::Blue),
+        ),
+        LogKind::Warning => Line::styled(format!(" ⚠ {text}"), Style::new().fg(WARN)),
+        LogKind::Error => Line::styled(
+            format!(" ✗ {text}"),
+            Style::new().fg(BAD).add_modifier(Modifier::BOLD),
+        ),
+    }
+}
