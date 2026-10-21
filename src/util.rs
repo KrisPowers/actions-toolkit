@@ -36,3 +36,9 @@ pub struct ExecOutcome {
     pub timed_out: bool,
     pub cancelled: bool,
 }
+
+impl ExecOutcome {
+    pub fn success(&self) -> bool {
+        self.code == 0 && !self.timed_out && !self.cancelled
+    }
+}
