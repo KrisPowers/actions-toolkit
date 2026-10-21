@@ -250,3 +250,78 @@ pub fn expand_matrix(job: &Job) -> Result<Vec<Map<String, Value>>, String> {
     }
     Ok(combos)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn job(yaml: &str) -> Job {
+        serde_yaml::from_str(yaml).unwrap()
+    }
+
+    #[test]
+    fn cartesian_with_include_exclude() {
+        let j = job(r#"
+strategy:
+  matrix:
+    os: [linux, mac]
+    node: [18, 20]
+    exclude:
+      - os: mac
+        node: 18
+    include:
+      - os: linux
+        experimental: true
+      - os: windows
+        node: 20
+"#);
+        let combos = expand_matrix(&j).unwrap();
+        assert_eq!(combos.len(), 4);
+        assert_eq!(
+            combos
+                .iter()
+                .filter(|c| c.contains_key("experimental"))
+                .count(),
+            2
+        );
+        assert_eq!(combos[3]["os"], "windows");
+    }
+
+    #[test]
+    fn no_matrix_is_single_job() {
+        assert_eq!(expand_matrix(&job("steps: []")).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn plan_resolves_needs_and_detects_cycles() {
+        let wf: Workflow = serde_yaml::from_str(
+            r#"
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy: { matrix: { v: [1, 2] } }
+    steps: [{ run: echo hi }]
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps: [{ name: "Test ${{ matrix.v }}", run: echo }]
+"#,
+        )
+        .unwrap();
+        let plan = RunPlan::build(&[(Arc::new(wf), "CI".into())], None).unwrap();
+        assert_eq!(plan.jobs.len(), 3);
+        assert_eq!(plan.jobs[2].needs, vec![0, 1]);
+        assert_eq!(plan.jobs[0].label, "build (1)");
+        assert_eq!(
+            plan.jobs[0].step_names,
+            vec!["Set up job", "Run echo hi", "Complete job"]
+        );
+
+        let cyclic: Workflow = serde_yaml::from_str(
+            "on: push\njobs:\n  a: { needs: b, steps: [] }\n  b: { needs: a, steps: [] }\n",
+        )
+        .unwrap();
+        assert!(RunPlan::build(&[(Arc::new(cyclic), "x".into())], None).is_err());
+    }
+}
