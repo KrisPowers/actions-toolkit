@@ -529,3 +529,35 @@ fn call(name: &str, args: &[Expr], ctx: &Ctx) -> Result<Value, String> {
         _ => return Err(format!("unknown function `{name}`")),
     })
 }
+
+fn format_fn(fmt: &str, args: &[Value]) -> Result<String, String> {
+    let mut out = String::new();
+    let mut chars = fmt.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '{' if chars.peek() == Some(&'{') => {
+                chars.next();
+                out.push('{');
+            }
+            '}' if chars.peek() == Some(&'}') => {
+                chars.next();
+                out.push('}');
+            }
+            '{' => {
+                let mut idx = String::new();
+                for d in chars.by_ref() {
+                    if d == '}' {
+                        break;
+                    }
+                    idx.push(d);
+                }
+                let i: usize = idx
+                    .parse()
+                    .map_err(|_| format!("format: invalid placeholder {{{idx}}}"))?;
+                out.push_str(&to_str(args.get(i).ok_or("format: not enough arguments")?));
+            }
+            c => out.push(c),
+        }
+    }
+    Ok(out)
+}
