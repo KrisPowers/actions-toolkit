@@ -53,3 +53,21 @@ pub enum Command {
         action: ConfigAction,
     },
 }
+
+#[derive(Subcommand)]
+pub enum ConfigAction {
+    /// Print the config file locations
+    Path,
+    /// Print the effective configuration
+    Show,
+    /// Set the default engine (e.g. docker, podman, native, lima)
+    SetEngine { engine: String },
+    /// Point a VM engine at an instance name or an SSH target (user@host[:port])
+    SetTarget {
+        engine: String,
+        target: String,
+        /// SSH private key to use with an SSH target
+        #[arg(long)]
+        identity: Option<String>,
+    },
+}
