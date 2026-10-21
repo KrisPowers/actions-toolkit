@@ -252,3 +252,10 @@ pub struct SessionRequest<'a> {
     pub pull: bool,
     pub cancel: Cancel,
 }
+
+pub struct ExecRequest {
+    pub argv: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub cwd: String,
+    pub timeout: Option<Duration>,
+}
