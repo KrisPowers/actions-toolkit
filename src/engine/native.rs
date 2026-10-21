@@ -79,3 +79,13 @@ fn host_os() -> &'static str {
         "Linux"
     }
 }
+
+fn host_arch() -> String {
+    match env::consts::ARCH {
+        "x86_64" => "X64".into(),
+        "aarch64" => "ARM64".into(),
+        "x86" => "X86".into(),
+        "arm" => "ARM".into(),
+        other => other.to_uppercase(),
+    }
+}
