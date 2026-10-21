@@ -35,3 +35,18 @@ pub fn selected() -> Style {
         .bg(Color::Indexed(236))
         .add_modifier(Modifier::BOLD)
 }
+
+pub fn panel(title: &str, focused: bool) -> Block<'static> {
+    let (border, title_style) = if focused {
+        (
+            Style::new().fg(ACCENT),
+            Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )
+    } else {
+        (dim(), Style::new().fg(Color::Gray))
+    };
+    Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(border)
+        .title(Span::styled(format!(" {title} "), title_style))
+}
