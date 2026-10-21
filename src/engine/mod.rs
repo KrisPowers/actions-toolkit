@@ -381,3 +381,8 @@ pub(crate) fn expand_home(p: &str) -> PathBuf {
         _ => PathBuf::from(p),
     }
 }
+
+fn version_of(bin: &Path, args: &[&str]) -> Option<String> {
+    let out = util::probe(bin, args)?;
+    util::extract_version(&out.stdout).or_else(|| util::extract_version(&out.stderr))
+}
