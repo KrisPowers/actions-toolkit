@@ -29,3 +29,10 @@ impl Cancel {
         self.0.load(Ordering::SeqCst)
     }
 }
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ExecOutcome {
+    pub code: i32,
+    pub timed_out: bool,
+    pub cancelled: bool,
+}
