@@ -15,3 +15,12 @@ choice, or its **built-in engine**, with a fast terminal UI to watch everything 
  ↑↓ move   tab switch panel   enter run   e event   r rescan   q quit
 ```
 
+## Install
+
+```sh
+cargo install --path .
+```
+
+Works on macOS, Linux and Windows. The only hard requirement is the binary itself; engines are
+optional and detected automatically.
+
