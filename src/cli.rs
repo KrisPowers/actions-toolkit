@@ -71,3 +71,61 @@ pub enum ConfigAction {
         identity: Option<String>,
     },
 }
+
+#[derive(Args, Clone, Default)]
+pub struct RunArgs {
+    /// Workflow file, file stem, or name. Defaults to every workflow triggered by --event.
+    pub workflow: Option<String>,
+
+    /// Run only this job (by id or name)
+    #[arg(short, long)]
+    pub job: Option<String>,
+
+    /// Event that triggers the run
+    #[arg(short, long, default_value = "push")]
+    pub event: String,
+
+    /// JSON file used as the event payload (github.event)
+    #[arg(long, value_name = "FILE")]
+    pub event_file: Option<PathBuf>,
+
+    /// Engine to use (overrides config): docker, podman, native, lima, multipass, wsl, ...
+    #[arg(long)]
+    pub engine: Option<String>,
+
+    /// Stream plain logs instead of the interactive view (automatic when not a terminal)
+    #[arg(long)]
+    pub plain: bool,
+
+    /// Map a runs-on label to a container image
+    #[arg(short = 'P', long = "platform", value_name = "LABEL=IMAGE")]
+    pub platforms: Vec<String>,
+
+    /// Secret available as secrets.KEY (`-s KEY` reads $KEY from the environment)
+    #[arg(short = 's', long = "secret", value_name = "KEY[=VALUE]")]
+    pub secrets: Vec<String>,
+
+    /// dotenv-style file of secrets
+    #[arg(long, value_name = "FILE")]
+    pub secret_file: Option<PathBuf>,
+
+    /// Variable available as vars.KEY
+    #[arg(long = "var", value_name = "KEY=VALUE")]
+    pub vars: Vec<String>,
+
+    /// Input available as inputs.KEY (workflow_dispatch)
+    #[arg(short = 'i', long = "input", value_name = "KEY=VALUE")]
+    pub inputs: Vec<String>,
+
+    /// Use the project directory in place instead of an isolated copy
+    #[arg(long)]
+    pub bind: bool,
+
+    /// Always pull images and re-download actions
+    #[arg(long)]
+    pub pull: bool,
+
+    /// Maximum number of jobs to run at once
+    #[arg(long, value_name = "N")]
+    pub parallel: Option<usize>,
+}
