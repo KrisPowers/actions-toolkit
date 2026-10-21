@@ -183,3 +183,70 @@ pub fn step_title(step: &Step, ctx: &Ctx) -> String {
     }
     "Step".to_string()
 }
+
+/// Expands `strategy.matrix` into concrete combinations (one empty combination if there's none).
+pub fn expand_matrix(job: &Job) -> Result<Vec<Map<String, Value>>, String> {
+    let Some(matrix) = job.strategy.as_ref().and_then(|s| s.matrix.as_ref()) else {
+        return Ok(vec![Map::new()]);
+    };
+    let matrix: Value = serde_json::to_value(matrix).map_err(|e| e.to_string())?;
+    let Some(obj) = matrix.as_object() else {
+        return Err("dynamic matrices (`${{ fromJSON(...) }}`) are not supported yet".into());
+    };
+    let base_keys: Vec<&String> = obj
+        .keys()
+        .filter(|k| *k != "include" && *k != "exclude")
+        .collect();
+    let mut combos: Vec<Map<String, Value>> = Vec::new();
+    if !base_keys.is_empty() {
+        combos.push(Map::new());
+        for key in &base_keys {
+            let values = obj[key.as_str()]
+                .as_array()
+                .ok_or_else(|| format!("matrix key `{key}` must be a list"))?;
+            combos = combos
+                .into_iter()
+                .flat_map(|c| {
+                    values.iter().map(move |v| {
+                        let mut c = c.clone();
+                        c.insert((*key).clone(), v.clone());
+                        c
+                    })
+                })
+                .collect();
+        }
+    }
+    if let Some(excludes) = obj.get("exclude").and_then(|e| e.as_array()) {
+        combos.retain(|c| {
+            !excludes
+                .iter()
+                .filter_map(|e| e.as_object())
+                .any(|ex| ex.iter().all(|(k, v)| c.get(k) == Some(v)))
+        });
+    }
+    if let Some(includes) = obj.get("include").and_then(|i| i.as_array()) {
+        let original = combos.len();
+        for inc in includes.iter().filter_map(|i| i.as_object()) {
+            let mut matched = false;
+            for c in combos.iter_mut().take(original) {
+                let compatible = inc
+                    .iter()
+                    .filter(|(k, _)| base_keys.contains(k))
+                    .all(|(k, v)| c.get(k) == Some(v));
+                if compatible {
+                    for (k, v) in inc.iter().filter(|(k, _)| !base_keys.contains(k)) {
+                        c.insert(k.clone(), v.clone());
+                    }
+                    matched = true;
+                }
+            }
+            if !matched {
+                combos.push(inc.clone());
+            }
+        }
+    }
+    if combos.is_empty() && base_keys.is_empty() {
+        combos.push(Map::new());
+    }
+    Ok(combos)
+}
