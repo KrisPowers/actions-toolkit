@@ -123,3 +123,43 @@ pub struct ActionRuns {
     #[serde(default)]
     pub steps: Vec<Step>,
 }
+
+impl Workflow {
+    /// Event names this workflow triggers on.
+    pub fn events(&self) -> Vec<String> {
+        match &self.on {
+            Some(Yaml::String(s)) => vec![s.clone()],
+            Some(Yaml::Sequence(seq)) => seq
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect(),
+            Some(Yaml::Mapping(map)) => map
+                .keys()
+                .filter_map(|k| k.as_str().map(String::from))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Default values of `on.workflow_dispatch.inputs`.
+    pub fn dispatch_inputs(&self) -> IndexMap<String, String> {
+        let mut out = IndexMap::new();
+        let inputs = self
+            .on
+            .as_ref()
+            .and_then(|on| on.get("workflow_dispatch"))
+            .and_then(|wd| wd.get("inputs"))
+            .and_then(|i| i.as_mapping());
+        for (k, v) in inputs.into_iter().flatten() {
+            if let Some(name) = k.as_str() {
+                let default = v.get("default").map(scalar).unwrap_or_default();
+                out.insert(name.to_string(), default);
+            }
+        }
+        out
+    }
+
+    pub fn run_defaults(&self) -> Option<&RunDefaults> {
+        self.defaults.as_ref().and_then(|d| d.run.as_ref())
+    }
+}
