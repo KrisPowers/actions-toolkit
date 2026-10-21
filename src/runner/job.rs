@@ -32,3 +32,10 @@ pub(crate) struct JobResult {
     pub status: Status,
     pub outputs: Map<String, Value>,
 }
+
+/// Sends events for one job, masking secrets in every log line.
+struct Emitter {
+    tx: Sender<RunEvent>,
+    job: usize,
+    masks: RefCell<Vec<String>>,
+}
