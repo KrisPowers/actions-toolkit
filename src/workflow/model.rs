@@ -86,3 +86,22 @@ impl Container {
         }
     }
 }
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Step {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub uses: Option<String>,
+    pub run: Option<String>,
+    pub shell: Option<String>,
+    #[serde(default)]
+    pub with: IndexMap<String, Yaml>,
+    #[serde(default)]
+    pub env: IndexMap<String, Yaml>,
+    #[serde(rename = "if")]
+    pub condition: Option<Yaml>,
+    pub working_directory: Option<String>,
+    pub continue_on_error: Option<Yaml>,
+    pub timeout_minutes: Option<Yaml>,
+}
