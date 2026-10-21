@@ -61,3 +61,26 @@ pub fn status_icon(status: Status, tick: usize) -> Span<'static> {
         Status::Cancelled => Span::styled("■", Style::new().fg(Color::Magenta)),
     }
 }
+
+/// A list row: `icon name ........ right`, fitted to `width` columns.
+pub fn row(
+    icon: Span<'static>,
+    name: &str,
+    right: String,
+    width: usize,
+    name_style: Style,
+) -> Line<'static> {
+    let right_w = right.chars().count();
+    // Layout: " " icon " " name pad " " right
+    let avail = width.saturating_sub(right_w + icon.width() + 3);
+    let name = fit(name, avail);
+    let pad = avail.saturating_sub(name.chars().count());
+    Line::from(vec![
+        Span::raw(" "),
+        icon,
+        Span::raw(" "),
+        Span::styled(name, name_style),
+        Span::raw(" ".repeat(pad + 1)),
+        Span::styled(right, dim()),
+    ])
+}
