@@ -103,3 +103,52 @@ fn default_shell() -> String {
         pick(&["bash"]).unwrap_or_else(|| "sh".into())
     }
 }
+
+impl Engine for NativeEngine {
+    fn kind(&self) -> Kind {
+        Kind::Native
+    }
+
+    fn start(&self, req: &SessionRequest, log: &mut dyn FnMut(String)) -> Result<Box<dyn Session>> {
+        let dir = tempfile::Builder::new().prefix("maverick-").tempdir()?;
+        let temp = dir.path().join("runner");
+        fs::create_dir_all(&temp)?;
+        let workspace = if req.bind {
+            log(format!(
+                "Running in place in {} (--bind)",
+                req.source.display()
+            ));
+            req.source.to_path_buf()
+        } else {
+            let ws = dir.path().join("workspace");
+            let files = util::copy_workspace(req.source, &ws)?;
+            log(format!(
+                "Copied {files} project files into sandbox {}",
+                ws.display()
+            ));
+            ws
+        };
+        let host_env: Vec<(String, String)> = env::vars()
+            .filter(|(k, _)| PASSTHROUGH.contains(&k.to_ascii_uppercase().as_str()))
+            .collect();
+        let temp_s = temp.to_string_lossy().into_owned();
+        let info = SessionInfo {
+            workspace: workspace.to_string_lossy().into_owned(),
+            tool_cache: format!("{temp_s}{}_tool", std::path::MAIN_SEPARATOR),
+            temp: temp_s,
+            os: host_os(),
+            arch: host_arch(),
+            path: env::var("PATH").unwrap_or_default(),
+            default_shell: default_shell(),
+        };
+        log(format!(
+            "Host: {} {} · default shell: {}",
+            info.os, info.arch, info.default_shell
+        ));
+        Ok(Box::new(NativeSession {
+            info,
+            host_env,
+            dir: Some(dir),
+        }))
+    }
+}
