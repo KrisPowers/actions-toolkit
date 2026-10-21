@@ -46,6 +46,10 @@ enum Row {
 /// What a text prompt's answer is for.
 enum Purpose {
     AddLocation(Source),
+    /// Instance name or `user@host[:port]` for a VM engine.
+    EngineTarget(Kind),
+    /// SSH key for a VM engine reached over SSH.
+    EngineKey(Kind),
 }
 
 struct Prompt {
@@ -236,6 +240,7 @@ impl App {
         match key.code {
             _ if ctrl_c => self.quit = true,
             KeyCode::Char('w') => self.modal = Some(Modal::Locations),
+            KeyCode::Char('t') if self.focus == Focus::Engines => self.target_prompt(),
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Tab
             | KeyCode::BackTab
@@ -297,13 +302,17 @@ impl App {
             },
             Modal::Prompt(mut prompt) => {
                 let base = match prompt.purpose {
-                    Purpose::AddLocation(Source::Global) => dirs::home_dir(),
+                    Purpose::AddLocation(Source::Global) | Purpose::EngineKey(_) => {
+                        dirs::home_dir()
+                    }
                     Purpose::AddLocation(_) => Some(self.root.clone()),
+                    Purpose::EngineTarget(_) => None,
                 };
                 match prompt.input.on_key(key, base.as_deref()) {
                     InputAction::None => Some(Modal::Prompt(prompt)),
                     InputAction::Cancel => match prompt.purpose {
                         Purpose::AddLocation(_) => Some(Modal::Locations),
+                        _ => None,
                     },
                     InputAction::Submit => {
                         let value = prompt.input.value().trim().to_string();
@@ -311,6 +320,8 @@ impl App {
                             Purpose::AddLocation(source) => self
                                 .add_location(source, &value)
                                 .map(|msg| (msg, Some(Modal::Locations))),
+                            Purpose::EngineTarget(kind) => self.set_target(kind, &value),
+                            Purpose::EngineKey(kind) => self.set_key(kind, &value),
                         };
                         match result {
                             Ok((msg, next)) => {
@@ -326,6 +337,86 @@ impl App {
                 }
             }
         }
+    }
+
+    fn target_prompt(&mut self) {
+        let Some(info) = self.engines.get(self.engine_sel) else {
+            return;
+        };
+        let kind = info.kind;
+        if kind.family() != Family::VirtualMachine {
+            self.say(format!("{} doesn't need a target", kind.name()), true);
+            return;
+        }
+        let current = self.cfg.engine(kind.id());
+        let value = current.ssh.or(current.instance).unwrap_or_default();
+        self.modal = Some(Modal::Prompt(Prompt {
+            title: format!("{} target", kind.name()),
+            help: "VM/instance name, or user@host[:port] to connect over SSH. Empty resets it."
+                .into(),
+            input: TextInput::new(&value),
+            purpose: Purpose::EngineTarget(kind),
+            error: None,
+        }));
+    }
+
+    /// Saves a VM engine's instance name or SSH target; an SSH target asks for a key next.
+    fn set_target(&mut self, kind: Kind, value: &str) -> Result<(String, Option<Modal>), String> {
+        let ssh = value.contains('@');
+        self.edit_engine(kind, |e| {
+            e.instance = (!ssh && !value.is_empty()).then(|| value.to_string());
+            e.ssh = ssh.then(|| value.to_string());
+            if !ssh {
+                e.identity = None;
+            }
+        })?;
+        let msg = match value {
+            "" => format!("{} uses its default target", kind.name()),
+            v => format!("{} will use {v}", kind.name()),
+        };
+        let next = ssh.then(|| {
+            let key = self.cfg.engine(kind.id()).identity.unwrap_or_default();
+            Modal::Prompt(Prompt {
+                title: format!("{} SSH key", kind.name()),
+                help:
+                    "Private key file for the SSH connection. Leave empty to use your SSH defaults."
+                        .into(),
+                input: TextInput::new(&key),
+                purpose: Purpose::EngineKey(kind),
+                error: None,
+            })
+        });
+        Ok((msg, next))
+    }
+
+    fn set_key(&mut self, kind: Kind, value: &str) -> Result<(String, Option<Modal>), String> {
+        if !value.is_empty()
+            && !workflow::resolve(value, &dirs::home_dir().unwrap_or_default()).is_file()
+        {
+            return Err(format!("{value} is not a file"));
+        }
+        self.edit_engine(kind, |e| {
+            e.identity = (!value.is_empty()).then(|| value.to_string())
+        })?;
+        Ok((format!("{} SSH settings saved", kind.name()), None))
+    }
+
+    /// Changes one engine's settings in the user config, saves, and re-detects engines.
+    fn edit_engine(
+        &mut self,
+        kind: Kind,
+        edit: impl FnOnce(&mut crate::config::EngineConfig),
+    ) -> Result<(), String> {
+        let mut user = Config::load_user().map_err(|e| e.to_string())?;
+        let entry = user.engines.entry(kind.id().to_string()).or_default();
+        edit(entry);
+        if entry.instance.is_none() && entry.ssh.is_none() && entry.identity.is_none() {
+            user.engines.remove(kind.id());
+        }
+        user.save_user().map_err(|e| e.to_string())?;
+        self.cfg = Config::load(&self.root).map_err(|e| e.to_string())?;
+        self.detect_engines();
+        Ok(())
     }
 
     /// Saves a new workflow location to the project or user config.
@@ -857,15 +948,22 @@ impl App {
         } else {
             "run"
         };
-        let line = theme::hints(&[
-            ("↑↓", "move"),
-            ("tab", "switch panel"),
-            ("enter", enter),
+        let vm = self.focus == Focus::Engines
+            && self
+                .engines
+                .get(self.engine_sel)
+                .is_some_and(|i| i.kind.family() == Family::VirtualMachine);
+        let mut keys = vec![("↑↓", "move"), ("tab", "switch panel"), ("enter", enter)];
+        if vm {
+            keys.push(("t", "set target"));
+        }
+        keys.extend([
             ("w", "locations"),
             ("e", "event"),
             ("r", "rescan"),
             ("q", "quit"),
         ]);
+        let line = theme::hints(&keys);
         f.render_widget(Paragraph::new(line), area);
     }
 }
