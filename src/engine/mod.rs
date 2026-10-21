@@ -312,3 +312,24 @@ impl SessionInfo {
         }
     }
 }
+
+pub trait Session: Send {
+    fn info(&self) -> &SessionInfo;
+
+    fn exec(
+        &mut self,
+        req: &ExecRequest,
+        cancel: &Cancel,
+        out: &mut dyn FnMut(String),
+    ) -> Result<ExecOutcome>;
+
+    fn write_file(&mut self, path: &str, data: &[u8]) -> Result<()>;
+
+    /// Reads a file; a missing file reads as empty.
+    fn read_file(&mut self, path: &str) -> Result<String>;
+
+    /// Copies a host directory into the environment at `dest`.
+    fn copy_dir(&mut self, host: &Path, dest: &str) -> Result<()>;
+
+    fn teardown(&mut self, log: &mut dyn FnMut(String));
+}
