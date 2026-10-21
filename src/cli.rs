@@ -188,3 +188,53 @@ fn run(root: PathBuf, args: RunArgs) -> Result<ExitCode> {
         ExitCode::FAILURE
     })
 }
+
+fn list(root: &std::path::Path) -> Result<ExitCode> {
+    let files = workflow::discover(root);
+    if files.is_empty() {
+        println!(
+            "No workflows found in {}",
+            workflow::workflows_dir(root).display()
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+    for f in &files {
+        let rel = f.path.strip_prefix(root).unwrap_or(&f.path);
+        match &f.parsed {
+            Err(e) => println!(
+                "✗ {}  ({})\n    {}\n",
+                f.file_name,
+                rel.display(),
+                e.lines().next().unwrap_or("")
+            ),
+            Ok(wf) => {
+                println!(
+                    "{}  ({})  on: {}",
+                    f.display_name(),
+                    rel.display(),
+                    wf.events().join(", ")
+                );
+                for (key, job) in &wf.jobs {
+                    let matrix = workflow::plan::expand_matrix(job)
+                        .map(|c| c.len())
+                        .unwrap_or(1);
+                    let mut extra = Vec::new();
+                    if matrix > 1 {
+                        extra.push(format!("matrix ×{matrix}"));
+                    }
+                    let needs = job.needs();
+                    if !needs.is_empty() {
+                        extra.push(format!("needs: {}", needs.join(", ")));
+                    }
+                    println!(
+                        "  {key:<24} {:<18} {}",
+                        job.runs_on().join(","),
+                        extra.join("  ")
+                    );
+                }
+                println!();
+            }
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
