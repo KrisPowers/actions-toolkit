@@ -13,3 +13,6 @@ use super::{
     ExecRequest, Kind, Session, SessionInfo, SessionRequest,
 };
 use crate::util::{self, Cancel, ExecOutcome};
+
+const WORKSPACE: &str = "/github/workspace";
+const RUNNER: &str = "/github/runner";
