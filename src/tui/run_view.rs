@@ -45,3 +45,26 @@ struct JobView {
     steps: Vec<StepView>,
     logs: Vec<(usize, LogKind, String)>,
 }
+
+pub struct RunView {
+    title: String,
+    engine: String,
+    event: String,
+    jobs: Vec<JobView>,
+    rx: Receiver<RunEvent>,
+    cancel: Cancel,
+    handle: Option<JoinHandle<bool>>,
+    started: Instant,
+    finished: Option<(bool, Duration)>,
+    job_sel: usize,
+    /// Follow whichever job most recently started until the user picks one.
+    auto_job: bool,
+    step_cursor: usize,
+    step_filter: Option<usize>,
+    focus: Focus,
+    /// Lines scrolled up from the bottom of the log.
+    scroll: usize,
+    follow: bool,
+    log_height: usize,
+    tick: usize,
+}
