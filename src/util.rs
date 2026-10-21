@@ -256,3 +256,20 @@ pub fn pipe_into(
         stderr,
     })
 }
+
+fn walker(src: &Path, respect_ignores: bool) -> ignore::Walk {
+    let mut builder = ignore::WalkBuilder::new(src);
+    builder.hidden(false).follow_links(false);
+    if respect_ignores {
+        builder
+            .git_ignore(true)
+            .git_exclude(true)
+            .git_global(false)
+            .ignore(true)
+            .parents(false)
+            .require_git(false);
+    } else {
+        builder.standard_filters(false);
+    }
+    builder.build()
+}
