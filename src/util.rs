@@ -278,3 +278,8 @@ fn walker(src: &Path, respect_ignores: bool) -> ignore::Walk {
 pub fn copy_workspace(src: &Path, dst: &Path) -> Result<usize> {
     copy_with(src, dst, true)
 }
+
+/// Copies a directory verbatim.
+pub fn copy_tree(src: &Path, dst: &Path) -> Result<usize> {
+    copy_with(src, dst, false)
+}
