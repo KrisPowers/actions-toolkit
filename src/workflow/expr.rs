@@ -237,3 +237,17 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
 
 // ---------------------------------------------------------------------------------------------
 // Parser
+
+#[derive(Debug)]
+enum Expr {
+    Lit(Value),
+    Context(String),
+    Prop(Box<Expr>, String),
+    Index(Box<Expr>, Box<Expr>),
+    Star(Box<Expr>),
+    Call(String, Vec<Expr>),
+    Not(Box<Expr>),
+    And(Box<Expr>, Box<Expr>),
+    Or(Box<Expr>, Box<Expr>),
+    Cmp(&'static str, Box<Expr>, Box<Expr>),
+}
