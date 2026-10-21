@@ -85,3 +85,8 @@ impl Config {
         self.engines.get(id).cloned().unwrap_or_default()
     }
 }
+
+fn read(path: &Path) -> Result<Config> {
+    let text = fs::read_to_string(path)?;
+    toml::from_str(&text).with_context(|| format!("invalid config file {}", path.display()))
+}
