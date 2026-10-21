@@ -131,3 +131,10 @@ fn check_acyclic(jobs: &[PlannedJob]) -> Result<()> {
     }
     Ok(())
 }
+
+fn fail_fast(job: &Job) -> bool {
+    match job.strategy.as_ref().and_then(|s| s.fail_fast.as_ref()) {
+        Some(serde_yaml::Value::Bool(b)) => *b,
+        _ => true,
+    }
+}
