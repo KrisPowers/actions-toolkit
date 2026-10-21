@@ -163,3 +163,34 @@ impl Workflow {
         self.defaults.as_ref().and_then(|d| d.run.as_ref())
     }
 }
+
+impl Job {
+    pub fn needs(&self) -> Vec<String> {
+        match &self.needs {
+            Some(Yaml::String(s)) => vec![s.clone()],
+            Some(Yaml::Sequence(seq)) => seq
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Raw `runs-on` labels (may still contain expressions).
+    pub fn runs_on(&self) -> Vec<String> {
+        match &self.runs_on {
+            Some(Yaml::String(s)) => vec![s.clone()],
+            Some(Yaml::Sequence(seq)) => seq.iter().map(scalar).collect(),
+            Some(m @ Yaml::Mapping(_)) => match m.get("labels") {
+                Some(Yaml::String(s)) => vec![s.clone()],
+                Some(Yaml::Sequence(seq)) => seq.iter().map(scalar).collect(),
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn run_defaults(&self) -> Option<&RunDefaults> {
+        self.defaults.as_ref().and_then(|d| d.run.as_ref())
+    }
+}
