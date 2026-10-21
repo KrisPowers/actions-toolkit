@@ -48,3 +48,5 @@ pub struct Captured {
     pub stdout: String,
     pub stderr: String,
 }
+
+const POLL: Duration = Duration::from_millis(40);
