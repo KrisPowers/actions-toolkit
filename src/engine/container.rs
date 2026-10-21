@@ -99,3 +99,88 @@ impl ContainerEngine {
         Ok(())
     }
 }
+
+impl Engine for ContainerEngine {
+    fn kind(&self) -> Kind {
+        self.kind
+    }
+
+    fn start(&self, req: &SessionRequest, log: &mut dyn FnMut(String)) -> Result<Box<dyn Session>> {
+        let image = req
+            .image
+            .clone()
+            .context("no container image resolved for this job")?;
+        let dir = tempfile::Builder::new().prefix("maverick-").tempdir()?;
+        let runner_host = dir.path().join("runner");
+        fs::create_dir_all(&runner_host)?;
+        let workspace_host = if req.bind {
+            log(format!(
+                "Mounting {} in place (--bind)",
+                req.source.display()
+            ));
+            req.source.to_path_buf()
+        } else {
+            let ws = dir.path().join("workspace");
+            let files = util::copy_workspace(req.source, &ws)?;
+            log(format!(
+                "Copied {files} project files into an isolated workspace"
+            ));
+            ws
+        };
+
+        self.ensure_image(&image, req.pull, &req.cancel, log)?;
+
+        let name = format!("maverick-{}", req.id);
+        let mut rm = self.cmd();
+        rm.args(["rm", "-f", &name]);
+        let _ = util::capture(rm, Duration::from_secs(30));
+
+        let mut cmd = self.cmd();
+        cmd.args([
+            "run",
+            "-d",
+            "--name",
+            &name,
+            "--label",
+            "dev.maverick.run=1",
+        ]);
+        cmd.arg("--mount").arg(format!(
+            "type=bind,source={},target={WORKSPACE}",
+            workspace_host.display()
+        ));
+        cmd.arg("--mount").arg(format!(
+            "type=bind,source={},target={RUNNER}",
+            runner_host.display()
+        ));
+        cmd.args(["-w", WORKSPACE]);
+        for (k, v) in &req.container_env {
+            cmd.arg("-e").arg(format!("{k}={v}"));
+        }
+        for v in &req.volumes {
+            cmd.arg("-v").arg(v);
+        }
+        if let Some(opts) = &req.options {
+            cmd.args(opts.split_whitespace());
+        }
+        cmd.args(["--entrypoint", "tail", &image, "-f", "/dev/null"]);
+        let out = util::capture(cmd, Duration::from_secs(120))?;
+        if !out.success {
+            bail!("could not start container: {}", out.stderr.trim());
+        }
+        log(format!("Started container {name} from {image}"));
+
+        let mut session = ContainerSession {
+            binary: self.binary.clone(),
+            name,
+            bind: req.bind,
+            workspace_host,
+            runner_host,
+            info: SessionInfo::linux(WORKSPACE, RUNNER),
+            dir: Some(dir),
+            removed: false,
+        };
+        let probe = probe_unix(&mut session)?;
+        apply_probe(&mut session.info, probe);
+        Ok(Box::new(session))
+    }
+}
