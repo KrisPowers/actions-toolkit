@@ -41,3 +41,25 @@ pub enum LogKind {
     Warning,
     Error,
 }
+
+#[derive(Debug, Clone)]
+pub enum RunEvent {
+    Job {
+        job: usize,
+        status: Status,
+    },
+    Step {
+        job: usize,
+        step: usize,
+        status: Status,
+    },
+    Log {
+        job: usize,
+        step: usize,
+        kind: LogKind,
+        text: String,
+    },
+    Finished {
+        success: bool,
+    },
+}
