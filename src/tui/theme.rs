@@ -9,3 +9,9 @@ use ratatui::widgets::{Block, BorderType, Paragraph};
 use ratatui::Frame;
 
 use crate::runner::Status;
+
+pub const ACCENT: Color = Color::Cyan;
+pub const DIM: Color = Color::DarkGray;
+pub const OK: Color = Color::Green;
+pub const WARN: Color = Color::Yellow;
+pub const BAD: Color = Color::Red;
