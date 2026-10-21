@@ -17,3 +17,7 @@ pub const WARN: Color = Color::Yellow;
 pub const BAD: Color = Color::Red;
 
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+pub fn spinner(tick: usize) -> &'static str {
+    SPINNER[tick % SPINNER.len()]
+}
