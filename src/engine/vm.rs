@@ -253,3 +253,96 @@ enum Transport {
         identity: Option<String>,
     },
 }
+
+impl Transport {
+    fn from_config(kind: Kind, ec: &EngineConfig) -> Result<Self> {
+        if let Some(target) = &ec.ssh {
+            let bin = find_binary(&["ssh"], &[]).context("no ssh client found")?;
+            let (target, port) = split_port(target);
+            return Ok(Transport::Ssh {
+                bin,
+                target,
+                port,
+                identity: ec
+                    .identity
+                    .as_ref()
+                    .map(|p| super::expand_home(p).to_string_lossy().into_owned()),
+            });
+        }
+        let bin = locate(kind).with_context(|| format!("{} is not installed", kind.name()))?;
+        let instance = ec
+            .instance
+            .clone()
+            .or(default_instance(kind).map(String::from));
+        Ok(match (kind, instance) {
+            (Kind::Lima, Some(instance)) => Transport::Lima { bin, instance },
+            (Kind::Multipass, Some(instance)) => Transport::Multipass { bin, instance },
+            (Kind::Wsl, distro) => Transport::Wsl { bin, distro },
+            (Kind::Parallels, Some(vm)) => Transport::Parallels { bin, vm },
+            _ => bail!("{} needs setup: {}", kind.name(), setup_hint(kind)),
+        })
+    }
+
+    fn command<S: AsRef<OsStr>>(&self, argv: &[S]) -> Command {
+        match self {
+            Transport::Lima { bin, instance } => {
+                let mut c = Command::new(bin);
+                c.args(["shell", "--workdir", "/", instance]).args(argv);
+                c
+            }
+            Transport::Multipass { bin, instance } => {
+                let mut c = Command::new(bin);
+                c.args(["exec", instance, "--"]).args(argv);
+                c
+            }
+            Transport::Wsl { bin, distro } => {
+                let mut c = Command::new(bin);
+                if let Some(d) = distro {
+                    c.args(["-d", d]);
+                }
+                c.arg("--exec").args(argv);
+                c
+            }
+            Transport::Parallels { bin, vm } => {
+                let mut c = Command::new(bin);
+                c.args(["exec", vm]).args(argv);
+                c
+            }
+            Transport::Ssh {
+                bin,
+                target,
+                port,
+                identity,
+            } => {
+                let mut c = Command::new(bin);
+                c.args([
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "StrictHostKeyChecking=accept-new",
+                    "-o",
+                    "LogLevel=ERROR",
+                ]);
+                if cfg!(unix) {
+                    // Reuse one connection for the many short commands a job issues.
+                    c.args([
+                        "-o",
+                        "ControlMaster=auto",
+                        "-o",
+                        "ControlPath=/tmp/maverick-ssh-%C",
+                        "-o",
+                        "ControlPersist=60",
+                    ]);
+                }
+                if let Some(p) = port {
+                    c.args(["-p", p]);
+                }
+                if let Some(i) = identity {
+                    c.args(["-i", i]);
+                }
+                c.arg(target).arg("--").args(argv);
+                c
+            }
+        }
+    }
+}
