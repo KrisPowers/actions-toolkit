@@ -415,3 +415,37 @@ struct VmSession {
     dirs: HashSet<String>,
     seq: usize,
 }
+
+impl VmSession {
+    fn run(&self, argv: &[&str]) -> Result<util::Captured> {
+        let out = util::capture(self.transport.command(argv), Duration::from_secs(120))?;
+        if !out.success {
+            bail!(
+                "`{}` failed in the guest: {}",
+                argv.join(" "),
+                out.stderr.trim()
+            );
+        }
+        Ok(out)
+    }
+
+    fn ensure_dir(&mut self, dir: &str) -> Result<()> {
+        if !dir.is_empty() && !self.dirs.contains(dir) {
+            self.run(&["mkdir", "-p", dir])?;
+            self.dirs.insert(dir.to_string());
+        }
+        Ok(())
+    }
+
+    fn upload(&mut self, src: &Path, dest: &str, respect_ignores: bool) -> Result<()> {
+        self.ensure_dir(dest)?;
+        let out = util::pipe_into(
+            self.transport.command(&["tar", "-xf", "-", "-C", dest]),
+            |w| util::tar_dir(src, w, respect_ignores),
+        )?;
+        if !out.success {
+            bail!("upload to the guest failed: {}", out.stderr.trim());
+        }
+        Ok(())
+    }
+}
