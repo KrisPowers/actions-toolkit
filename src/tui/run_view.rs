@@ -68,3 +68,11 @@ pub struct RunView {
     log_height: usize,
     tick: usize,
 }
+
+fn elapsed(started: Option<Instant>, took: Option<Duration>) -> String {
+    match (took, started) {
+        (Some(d), _) => fmt_duration(d),
+        (None, Some(s)) => fmt_duration(s.elapsed()),
+        _ => String::new(),
+    }
+}
