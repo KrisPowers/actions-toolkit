@@ -388,3 +388,21 @@ pub fn strip_ansi(s: &str) -> String {
 pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
+
+/// Turns arbitrary text into a short `[a-z0-9-]` slug usable in container names and paths.
+pub fn slug(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let out = out.trim_matches('-');
+    out.chars()
+        .take(40)
+        .collect::<String>()
+        .trim_end_matches('-')
+        .to_string()
+}
