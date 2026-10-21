@@ -375,3 +375,26 @@ fn schedule(
         )
     })
 }
+
+/// The `needs` context for job `i`; matrix siblings are merged under their shared key.
+fn needs_context(plan: &RunPlan, results: &[Option<job::JobResult>], i: usize) -> Value {
+    let mut needs = Map::new();
+    for &d in &plan.jobs[i].needs {
+        let Some(r) = &results[d] else { continue };
+        let key = plan.jobs[d].key.clone();
+        let entry = needs
+            .entry(key)
+            .or_insert_with(|| json!({ "result": "success", "outputs": {} }));
+        if r.status != Status::Success {
+            let worse = match (entry["result"].as_str(), r.status) {
+                (Some("failure"), _) => "failure",
+                (_, s) => s.as_str(),
+            };
+            entry["result"] = json!(worse);
+        }
+        if let Some(outputs) = entry["outputs"].as_object_mut() {
+            outputs.extend(r.outputs.clone());
+        }
+    }
+    Value::Object(needs)
+}
