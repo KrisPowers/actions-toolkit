@@ -417,3 +417,14 @@ pub fn fmt_duration(d: Duration) -> String {
         format!("{}h{:02}m", secs / 3600, (secs % 3600) / 60)
     }
 }
+
+/// Pulls the first version-looking token (`27.3.1`, `v1.0.2`) out of tool output.
+pub fn extract_version(text: &str) -> Option<String> {
+    text.split(|c: char| c.is_whitespace() || c == ',' || c == '(')
+        .map(|t| t.trim_start_matches('v'))
+        .find(|t| t.chars().next().is_some_and(|c| c.is_ascii_digit()) && t.contains('.'))
+        .map(|t| {
+            t.trim_end_matches(|c: char| !c.is_ascii_alphanumeric())
+                .to_string()
+        })
+}
