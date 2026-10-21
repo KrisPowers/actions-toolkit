@@ -15,3 +15,5 @@ pub const DIM: Color = Color::DarkGray;
 pub const OK: Color = Color::Green;
 pub const WARN: Color = Color::Yellow;
 pub const BAD: Color = Color::Red;
+
+const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
