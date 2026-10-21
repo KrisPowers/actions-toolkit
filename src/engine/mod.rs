@@ -360,3 +360,9 @@ fn probe_unix(session: &mut dyn Session) -> Result<(String, String, String)> {
     };
     Ok((lines[n - 3].clone(), lines[n - 2].trim().to_string(), arch))
 }
+
+fn apply_probe(info: &mut SessionInfo, (path, shell, arch): (String, String, String)) {
+    info.path = path;
+    info.default_shell = shell;
+    info.arch = arch;
+}
