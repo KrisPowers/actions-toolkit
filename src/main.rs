@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod engine;
+mod history;
 mod runner;
 mod tui;
 mod util;
