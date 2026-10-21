@@ -37,3 +37,51 @@ pub struct EngineConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<String>,
 }
+
+impl Config {
+    pub fn user_path() -> Option<PathBuf> {
+        dirs::config_dir().map(|d| d.join("maverick").join("config.toml"))
+    }
+
+    pub fn project_path(root: &Path) -> PathBuf {
+        root.join(".maverick.toml")
+    }
+
+    /// Loads the user config, then overlays the project config on top of it.
+    pub fn load(root: &Path) -> Result<Config> {
+        let mut cfg = Self::load_user()?;
+        let project = Self::project_path(root);
+        if project.exists() {
+            let p = read(&project)?;
+            if p.engine.is_some() {
+                cfg.engine = p.engine;
+            }
+            if p.parallel.is_some() {
+                cfg.parallel = p.parallel;
+            }
+            cfg.images.extend(p.images);
+            cfg.engines.extend(p.engines);
+        }
+        Ok(cfg)
+    }
+
+    pub fn load_user() -> Result<Config> {
+        match Self::user_path() {
+            Some(path) if path.exists() => read(&path),
+            _ => Ok(Config::default()),
+        }
+    }
+
+    pub fn save_user(&self) -> Result<PathBuf> {
+        let path = Self::user_path().context("could not determine a config directory")?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, toml::to_string_pretty(self)?)?;
+        Ok(path)
+    }
+
+    pub fn engine(&self, id: &str) -> EngineConfig {
+        self.engines.get(id).cloned().unwrap_or_default()
+    }
+}
