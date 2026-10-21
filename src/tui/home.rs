@@ -631,3 +631,12 @@ fn family_order(f: Family) -> u8 {
         Family::BuiltIn => 2,
     }
 }
+
+fn availability_order(a: &Availability) -> u8 {
+    match a {
+        Availability::Ready => 0,
+        Availability::NotRunning => 1,
+        Availability::NeedsSetup => 2,
+        Availability::Missing => 3,
+    }
+}
