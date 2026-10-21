@@ -145,3 +145,92 @@ enum Tok {
     Comma,
     Star,
 }
+
+fn lex(src: &str) -> Result<Vec<Tok>, String> {
+    let chars: Vec<char> = src.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+        match c {
+            c if c.is_whitespace() => i += 1,
+            '(' | ')' | '[' | ']' | ',' | '*' | '.' => {
+                out.push(match c {
+                    '(' => Tok::LParen,
+                    ')' => Tok::RParen,
+                    '[' => Tok::LBrack,
+                    ']' => Tok::RBrack,
+                    ',' => Tok::Comma,
+                    '*' => Tok::Star,
+                    _ => Tok::Dot,
+                });
+                i += 1;
+            }
+            '\'' => {
+                let mut s = String::new();
+                i += 1;
+                loop {
+                    match chars.get(i) {
+                        None => return Err("unterminated string literal".into()),
+                        Some('\'') if chars.get(i + 1) == Some(&'\'') => {
+                            s.push('\'');
+                            i += 2;
+                        }
+                        Some('\'') => {
+                            i += 1;
+                            break;
+                        }
+                        Some(&ch) => {
+                            s.push(ch);
+                            i += 1;
+                        }
+                    }
+                }
+                out.push(Tok::Str(s));
+            }
+            '=' | '!' | '<' | '>' | '&' | '|' => {
+                let op = match (c, next) {
+                    ('=', Some('=')) => "==",
+                    ('!', Some('=')) => "!=",
+                    ('<', Some('=')) => "<=",
+                    ('>', Some('=')) => ">=",
+                    ('&', Some('&')) => "&&",
+                    ('|', Some('|')) => "||",
+                    ('!', _) => "!",
+                    ('<', _) => "<",
+                    ('>', _) => ">",
+                    _ => return Err(format!("unexpected operator `{c}`")),
+                };
+                i += op.len();
+                out.push(Tok::Op(op));
+            }
+            c if c.is_ascii_digit() || (c == '-' && next.is_some_and(|n| n.is_ascii_digit())) => {
+                let start = i;
+                i += 1;
+                while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '.') {
+                    i += 1;
+                }
+                let text: String = chars[start..i].iter().collect();
+                let num = match text.strip_prefix("0x") {
+                    Some(hex) => i64::from_str_radix(hex, 16).map(|n| n as f64).ok(),
+                    None => text.parse::<f64>().ok(),
+                };
+                out.push(Tok::Num(
+                    num.ok_or_else(|| format!("invalid number `{text}`"))?,
+                ));
+            }
+            c if c.is_alphabetic() || c == '_' => {
+                let start = i;
+                while i < chars.len()
+                    && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '-')
+                {
+                    i += 1;
+                }
+                out.push(Tok::Ident(chars[start..i].iter().collect()));
+            }
+            other => return Err(format!("unexpected character `{other}`")),
+        }
+    }
+    Ok(out)
+}
