@@ -216,3 +216,12 @@ fn setup(cx: &JobContext, pj: &PlannedJob, em: &Emitter) -> Result<Box<dyn Sessi
     );
     Ok(session)
 }
+
+/// Where a step's commands come from: the job itself, or a composite action.
+#[derive(Clone, Default)]
+struct Scope {
+    nested: bool,
+    inputs: Option<Value>,
+    action_path: Option<String>,
+    env: IndexMap<String, String>,
+}
