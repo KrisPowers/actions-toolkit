@@ -187,3 +187,31 @@ fn kill_pid(pid: u32) {
         .stderr(Stdio::null())
         .status();
 }
+
+/// Runs `cmd` to completion and captures its output, killing it after `timeout`.
+pub fn capture(mut cmd: Command, timeout: Duration) -> Result<Captured> {
+    let program = cmd.get_program().to_string_lossy().into_owned();
+    let child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("failed to start `{program}`"))?;
+    let pid = child.id();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(out)) => Ok(Captured {
+            success: out.status.success(),
+            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        }),
+        Ok(Err(err)) => Err(err).with_context(|| format!("`{program}` failed")),
+        Err(_) => {
+            kill_pid(pid);
+            bail!("`{program}` timed out after {}s", timeout.as_secs())
+        }
+    }
+}
