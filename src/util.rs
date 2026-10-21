@@ -154,3 +154,21 @@ fn own_process_group(cmd: &mut Command) {
 
 #[cfg(not(unix))]
 fn own_process_group(_cmd: &mut Command) {}
+
+/// Kills a child and everything it spawned.
+pub fn kill_tree(child: &mut Child) {
+    let pid = child.id();
+    #[cfg(unix)]
+    let _ = Command::new("kill")
+        .args(["-s", "KILL", "--", &format!("-{pid}")])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    #[cfg(windows)]
+    let _ = Command::new("taskkill")
+        .args(["/T", "/F", "/PID", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let _ = child.kill();
+}
