@@ -640,3 +640,7 @@ fn availability_order(a: &Availability) -> u8 {
         Availability::Missing => 3,
     }
 }
+
+fn first_line(s: &str) -> &str {
+    s.lines().next().unwrap_or("")
+}
