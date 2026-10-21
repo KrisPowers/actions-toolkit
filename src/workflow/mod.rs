@@ -79,3 +79,7 @@ pub fn find_root(start: &Path) -> PathBuf {
     }
     start.to_path_buf()
 }
+
+pub fn workflows_dir(root: &Path) -> PathBuf {
+    root.join(".github").join("workflows")
+}
