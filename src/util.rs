@@ -172,3 +172,18 @@ pub fn kill_tree(child: &mut Child) {
         .status();
     let _ = child.kill();
 }
+
+fn kill_pid(pid: u32) {
+    #[cfg(unix)]
+    let _ = Command::new("kill")
+        .args(["-s", "KILL", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    #[cfg(windows)]
+    let _ = Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
