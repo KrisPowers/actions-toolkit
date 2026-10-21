@@ -15,3 +15,17 @@ use anyhow::{bail, Context, Result};
 /// Cooperative cancellation flag shared between the UI, the scheduler and running processes.
 #[derive(Clone, Default, Debug)]
 pub struct Cancel(Arc<AtomicBool>);
+
+impl Cancel {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
