@@ -152,3 +152,9 @@ impl Engine for NativeEngine {
         }))
     }
 }
+
+struct NativeSession {
+    info: SessionInfo,
+    host_env: Vec<(String, String)>,
+    dir: Option<TempDir>,
+}
