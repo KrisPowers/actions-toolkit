@@ -281,3 +281,49 @@ fn engines(root: &std::path::Path, json: bool) -> Result<ExitCode> {
     }
     Ok(ExitCode::SUCCESS)
 }
+
+fn config(root: &std::path::Path, action: ConfigAction) -> Result<ExitCode> {
+    match action {
+        ConfigAction::Path => {
+            if let Some(p) = Config::user_path() {
+                println!("user:    {}", p.display());
+            }
+            println!("project: {}", Config::project_path(root).display());
+        }
+        ConfigAction::Show => {
+            let cfg = Config::load(root)?;
+            print!("{}", toml::to_string_pretty(&cfg)?);
+        }
+        ConfigAction::SetEngine { engine } => {
+            let kind =
+                Kind::parse(&engine).with_context(|| format!("unknown engine `{engine}`"))?;
+            let mut cfg = Config::load_user()?;
+            cfg.engine = Some(kind.id().to_string());
+            let path = cfg.save_user()?;
+            println!("Default engine set to {} ({})", kind.name(), path.display());
+        }
+        ConfigAction::SetTarget {
+            engine,
+            target,
+            identity,
+        } => {
+            let kind =
+                Kind::parse(&engine).with_context(|| format!("unknown engine `{engine}`"))?;
+            if kind.family() != engine::Family::VirtualMachine {
+                bail!("{} doesn't take a target; only VM engines do", kind.name());
+            }
+            let mut cfg = Config::load_user()?;
+            let entry = cfg.engines.entry(kind.id().to_string()).or_default();
+            if target.contains('@') {
+                entry.ssh = Some(target.clone());
+                entry.identity = identity;
+            } else {
+                entry.instance = Some(target.clone());
+                entry.ssh = None;
+            }
+            let path = cfg.save_user()?;
+            println!("{} will use {target} ({})", kind.name(), path.display());
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
