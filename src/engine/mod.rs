@@ -178,3 +178,11 @@ impl EngineInfo {
         }
     }
 }
+
+pub fn detect(kind: Kind, cfg: &Config) -> EngineInfo {
+    match kind.family() {
+        Family::Container => container::detect(kind),
+        Family::VirtualMachine => vm::detect(kind, cfg),
+        Family::BuiltIn => native::detect(),
+    }
+}
