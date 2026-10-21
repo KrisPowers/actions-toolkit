@@ -184,3 +184,14 @@ impl Engine for ContainerEngine {
         Ok(Box::new(session))
     }
 }
+
+struct ContainerSession {
+    binary: PathBuf,
+    name: String,
+    bind: bool,
+    workspace_host: PathBuf,
+    runner_host: PathBuf,
+    info: SessionInfo,
+    dir: Option<TempDir>,
+    removed: bool,
+}
