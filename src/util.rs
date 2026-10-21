@@ -145,3 +145,9 @@ fn spawn_reader<R: Read + Send + 'static>(src: Option<R>, tx: mpsc::Sender<Strin
         }
     });
 }
+
+#[cfg(unix)]
+fn own_process_group(cmd: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    cmd.process_group(0);
+}
