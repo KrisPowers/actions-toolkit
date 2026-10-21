@@ -24,3 +24,8 @@ pub struct PlannedJob {
     pub matrix_index: usize,
     pub matrix_total: usize,
 }
+
+pub struct RunPlan {
+    pub title: String,
+    pub jobs: Vec<PlannedJob>,
+}
