@@ -154,3 +154,37 @@ impl Cli {
         }
     }
 }
+
+fn run(root: PathBuf, args: RunArgs) -> Result<ExitCode> {
+    let cfg = Config::load(&root)?;
+    let files = workflow::discover(&root);
+    let selected = workflow::select(&files, args.workflow.as_deref(), &args.event)?;
+    let sources: Vec<_> = selected
+        .iter()
+        .filter_map(|f| f.workflow().map(|w| (w.clone(), f.display_name())))
+        .collect();
+    let plan = Arc::new(RunPlan::build(&sources, args.job.as_deref())?);
+
+    let kind = match args.engine.as_deref().or(cfg.engine.as_deref()) {
+        Some(id) => Kind::parse(id)
+            .with_context(|| format!("unknown engine `{id}` (see `maverick engines`)"))?,
+        None => engine::auto_select(&cfg),
+    };
+    let engine = engine::build(kind, &cfg)?;
+    let mut opts = RunOptions::new(&root, &cfg, &args.event);
+    opts.apply_args(&args)?;
+    let opts = Arc::new(opts);
+
+    let interactive =
+        !args.plain && std::io::stdout().is_terminal() && std::io::stdin().is_terminal();
+    let ok = if interactive {
+        tui::run_once(plan, engine, opts)?
+    } else {
+        plain::run(plan, engine, opts)?
+    };
+    Ok(if ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
+}
