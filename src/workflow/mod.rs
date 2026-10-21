@@ -64,3 +64,18 @@ impl WorkflowFile {
             || self.path.ends_with(query)
     }
 }
+
+/// Walks up from `start` to the directory that holds `.github/workflows` (or `.git`).
+pub fn find_root(start: &Path) -> PathBuf {
+    for dir in start.ancestors() {
+        if dir.join(".github").join("workflows").is_dir() {
+            return dir.to_path_buf();
+        }
+    }
+    for dir in start.ancestors() {
+        if dir.join(".git").exists() {
+            return dir.to_path_buf();
+        }
+    }
+    start.to_path_buf()
+}
