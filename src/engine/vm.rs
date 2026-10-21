@@ -449,3 +449,74 @@ impl VmSession {
         Ok(())
     }
 }
+
+impl Session for VmSession {
+    fn info(&self) -> &SessionInfo {
+        &self.info
+    }
+
+    fn exec(
+        &mut self,
+        req: &ExecRequest,
+        cancel: &Cancel,
+        out: &mut dyn FnMut(String),
+    ) -> Result<ExecOutcome> {
+        let mut script = format!("cd {} || exit 1\n", shell_quote(&req.cwd));
+        for (k, v) in &req.env {
+            if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                script.push_str(&format!("export {k}={}\n", shell_quote(v)));
+            }
+        }
+        script.push_str("exec");
+        for arg in &req.argv {
+            script.push(' ');
+            script.push_str(&shell_quote(arg));
+        }
+        script.push('\n');
+        self.seq += 1;
+        let path = format!("{}/_exec/{}.sh", self.info.temp, self.seq);
+        self.write_file(&path, script.as_bytes())?;
+        util::stream(
+            self.transport.command(&["sh", &path]),
+            cancel,
+            req.timeout,
+            out,
+        )
+    }
+
+    fn write_file(&mut self, path: &str, data: &[u8]) -> Result<()> {
+        if let Some((dir, _)) = path.rsplit_once('/') {
+            self.ensure_dir(dir)?;
+        }
+        let out = util::pipe_into(self.transport.command(&["tee", path]), |w| {
+            Ok(w.write_all(data)?)
+        })?;
+        if !out.success {
+            bail!("could not write {path} in the guest: {}", out.stderr.trim());
+        }
+        Ok(())
+    }
+
+    fn read_file(&mut self, path: &str) -> Result<String> {
+        let out = util::capture(
+            self.transport.command(&["cat", path]),
+            Duration::from_secs(60),
+        )?;
+        Ok(if out.success {
+            out.stdout
+        } else {
+            String::new()
+        })
+    }
+
+    fn copy_dir(&mut self, host: &Path, dest: &str) -> Result<()> {
+        self.upload(host, dest, false)
+    }
+
+    fn teardown(&mut self, log: &mut dyn FnMut(String)) {
+        match self.run(&["rm", "-rf", &self.base]) {
+            Ok(_) => log(format!("Removed {} from the guest", self.base)),
+            Err(e) => log(format!("Cleanup failed: {e:#}")),
+        }
+    }
+}
