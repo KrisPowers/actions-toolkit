@@ -105,3 +105,13 @@ pub struct Step {
     pub continue_on_error: Option<Yaml>,
     pub timeout_minutes: Option<Yaml>,
 }
+
+/// `action.yml`
+#[derive(Debug, Clone, Deserialize)]
+pub struct ActionDef {
+    #[serde(default)]
+    pub inputs: IndexMap<String, Yaml>,
+    #[serde(default)]
+    pub outputs: IndexMap<String, Yaml>,
+    pub runs: ActionRuns,
+}
