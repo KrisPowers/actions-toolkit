@@ -36,3 +36,12 @@ struct StepView {
     started: Option<Instant>,
     took: Option<Duration>,
 }
+
+struct JobView {
+    name: String,
+    status: Status,
+    started: Option<Instant>,
+    took: Option<Duration>,
+    steps: Vec<StepView>,
+    logs: Vec<(usize, LogKind, String)>,
+}
