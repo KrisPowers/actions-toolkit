@@ -59,3 +59,8 @@ pub(super) fn detect(kind: Kind) -> EngineInfo {
         EngineInfo::new(kind, Availability::NotRunning, version, hint.to_string())
     }
 }
+
+pub struct ContainerEngine {
+    kind: Kind,
+    binary: PathBuf,
+}
