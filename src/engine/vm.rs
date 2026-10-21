@@ -85,3 +85,11 @@ fn version(kind: Kind, bin: &Path) -> Option<String> {
         _ => None,
     }
 }
+
+fn default_instance(kind: Kind) -> Option<&'static str> {
+    match kind {
+        Kind::Lima => Some("default"),
+        Kind::Multipass => Some("primary"),
+        _ => None,
+    }
+}
