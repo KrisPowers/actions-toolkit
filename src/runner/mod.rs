@@ -423,3 +423,34 @@ pub fn resolve_image(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repo_urls() {
+        assert_eq!(
+            parse_repo("git@github.com:me/proj.git").as_deref(),
+            Some("me/proj")
+        );
+        assert_eq!(
+            parse_repo("https://github.com/me/proj").as_deref(),
+            Some("me/proj")
+        );
+        assert_eq!(parse_repo(""), None);
+    }
+
+    #[test]
+    fn dotenv() {
+        let parsed = parse_dotenv("# c\nA=1\nexport B=\"two words\"\nC='x'\n");
+        assert_eq!(
+            parsed,
+            vec![
+                ("A".into(), "1".into()),
+                ("B".into(), "two words".into()),
+                ("C".into(), "x".into())
+            ]
+        );
+    }
+}
