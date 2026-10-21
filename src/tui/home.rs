@@ -1,6 +1,6 @@
 //! The dashboard: pick a workflow or job on the left, an engine on the right, press enter.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::thread;
@@ -20,7 +20,7 @@ use super::FRAME;
 use crate::config::Config;
 use crate::engine::{self, Availability, EngineInfo, Family, Kind};
 use crate::runner::RunOptions;
-use crate::workflow::{self, plan::RunPlan, WorkflowFile};
+use crate::workflow::{self, plan::RunPlan, Source, WorkflowFile};
 
 const EVENTS: [&str; 5] = [
     "push",
@@ -360,10 +360,7 @@ impl App {
             let text = vec![
                 Line::raw(""),
                 Line::styled(" No workflows found.", theme::bold()),
-                Line::styled(
-                    " Add one under .github/workflows/ and press r.",
-                    theme::dim(),
-                ),
+                Line::styled(" Press w to add a folder or file to search.", theme::dim()),
             ];
             f.render_widget(Paragraph::new(text), inner);
             return;
@@ -382,13 +379,11 @@ impl App {
                         "▾",
                         Style::new().fg(if triggered { ACCENT } else { theme::DIM }),
                     );
-                    theme::row(
-                        icon,
-                        &file.display_name(),
-                        file.file_name.clone(),
-                        width,
-                        theme::bold(),
-                    )
+                    let right = match file.source {
+                        Source::Auto => file.file_name.clone(),
+                        other => format!("{} · {}", other.label(), file.file_name),
+                    };
+                    theme::row(icon, &file.display_name(), right, width, theme::bold())
                 }
                 Row::Job(i, key) => {
                     let wf = self.workflows[*i]
@@ -522,7 +517,7 @@ impl App {
             Focus::Workflows => match self.rows.get(self.row_sel) {
                 Some(Row::Workflow(i)) => {
                     let file = &self.workflows[*i];
-                    let rel = file.path.strip_prefix(&self.root).unwrap_or(&file.path);
+                    let rel = display_path(&file.path, &self.root);
                     let events = file.events();
                     let jobs = file.workflow().map(|w| w.jobs.len()).unwrap_or(0);
                     let note = if events.iter().any(|e| e == self.event()) {
@@ -537,7 +532,10 @@ impl App {
                         Line::from(vec![
                             label("workflow"),
                             Span::styled(file.display_name(), theme::bold()),
-                            Span::styled(format!("  {}", rel.display()), theme::dim()),
+                            Span::styled(
+                                format!("  {rel}  ({})", file.source.label()),
+                                theme::dim(),
+                            ),
                         ]),
                         Line::from(vec![label("on"), Span::raw(events.join(", ")), note]),
                         Line::from(vec![label("jobs"), Span::raw(jobs.to_string())]),
@@ -589,7 +587,10 @@ impl App {
                     vec![Line::styled(err, Style::new().fg(BAD))]
                 }
                 None => vec![Line::styled(
-                    "Workflows live in .github/workflows/*.yml",
+                    format!(
+                        "Searched {} automatically. Press w to manage workflow locations.",
+                        workflow::AUTO_DIRS.join(" and ")
+                    ),
                     theme::dim(),
                 )],
             },
@@ -638,6 +639,17 @@ fn availability_order(a: &Availability) -> u8 {
         Availability::NotRunning => 1,
         Availability::NeedsSetup => 2,
         Availability::Missing => 3,
+    }
+}
+
+/// `path` relative to the project root, or to the home directory as `~/...`.
+fn display_path(path: &Path, root: &Path) -> String {
+    if let Ok(rel) = path.strip_prefix(root) {
+        return rel.display().to_string();
+    }
+    match dirs::home_dir().and_then(|h| path.strip_prefix(h).ok().map(|r| r.to_path_buf())) {
+        Some(rel) => format!("~/{}", rel.display()),
+        None => path.display().to_string(),
     }
 }
 
