@@ -160,7 +160,8 @@ fn setup(cx: &JobContext, pj: &PlannedJob, em: &Emitter) -> Result<Box<dyn Sessi
             format!("runs-on: {}", pj.runs_on.join(", ")),
         );
     }
-    let data = json!({ "matrix": pj.matrix, "github": { "event_name": cx.opts.event } });
+    let event = json!({ "event_name": cx.opts.event });
+    let data = json!({ "matrix": pj.matrix, "maverick": event, "github": event });
     let ctx = Ctx::new(&data, JobState::default());
     let spec = pj.job.container.as_ref().map(|c| c.spec());
 
@@ -239,9 +240,9 @@ struct JobRun<'a> {
     pj: &'a PlannedJob,
     em: Emitter,
     session: Box<dyn Session>,
-    /// Workflow + job env, plus anything appended to `$GITHUB_ENV`.
+    /// Workflow + job env, plus anything appended to `$MAVERICK_ENV`.
     env: IndexMap<String, String>,
-    /// Entries appended to `$GITHUB_PATH`, most recent first.
+    /// Entries appended to `$MAVERICK_PATH`, most recent first.
     paths: Vec<String>,
     steps: Map<String, Value>,
     failed: bool,
@@ -293,10 +294,7 @@ impl<'a> JobRun<'a> {
             "run_number": "1",
             "run_attempt": "1",
             "workspace": info.workspace,
-            "server_url": "https://github.com",
-            "api_url": "https://api.github.com",
-            "graphql_url": "https://api.github.com/graphql",
-            "token": opts.secrets.get("GITHUB_TOKEN").cloned().unwrap_or_default(),
+            "token": opts.secrets.get("TOKEN").cloned().unwrap_or_default(),
             "action_path": "",
         });
         let runner = json!({
@@ -305,7 +303,7 @@ impl<'a> JobRun<'a> {
             "arch": info.arch,
             "temp": info.temp,
             "tool_cache": info.tool_cache,
-            "environment": "github-hosted",
+            "environment": "local",
         });
         let timeout = pj
             .job
@@ -366,6 +364,7 @@ impl<'a> JobRun<'a> {
             github["action_path"] = json!(p);
         }
         json!({
+            "maverick": github,
             "github": github,
             "env": env,
             "matrix": self.pj.matrix,
@@ -641,7 +640,7 @@ impl<'a> JobRun<'a> {
         self.exec_with_files(ui, shell_argv(shell, &path), env, cwd, timeout)
     }
 
-    /// Runs a command with the GitHub runner file protocol (`$GITHUB_ENV`, `$GITHUB_OUTPUT`, ...).
+    /// Runs a command with the step file protocol (`$MAVERICK_ENV`, `$MAVERICK_OUTPUT`, ...).
     fn exec_with_files(
         &mut self,
         ui: usize,
@@ -733,46 +732,52 @@ impl<'a> JobRun<'a> {
         let opts = &self.cx.opts;
         let g = &opts.git;
         let info = self.session.info();
-        [
-            ("CI", "true".to_string()),
-            ("GITHUB_ACTIONS", "true".into()),
-            ("MAVERICK", "true".into()),
-            ("GITHUB_WORKSPACE", info.workspace.clone()),
-            ("GITHUB_REPOSITORY", g.repository.clone()),
-            ("GITHUB_REPOSITORY_OWNER", g.owner.clone()),
-            ("GITHUB_SHA", g.sha.clone()),
-            ("GITHUB_REF", g.git_ref()),
-            ("GITHUB_REF_NAME", g.branch.clone()),
-            ("GITHUB_REF_TYPE", "branch".into()),
-            ("GITHUB_EVENT_NAME", opts.event.clone()),
-            ("GITHUB_EVENT_PATH", self.event_path.clone()),
-            ("GITHUB_JOB", self.pj.key.clone()),
-            ("GITHUB_WORKFLOW", self.pj.workflow_name.clone()),
-            ("GITHUB_RUN_ID", opts.run_id.clone()),
-            ("GITHUB_RUN_NUMBER", "1".into()),
-            ("GITHUB_RUN_ATTEMPT", "1".into()),
-            ("GITHUB_ACTOR", g.actor.clone()),
-            ("GITHUB_SERVER_URL", "https://github.com".into()),
-            ("GITHUB_API_URL", "https://api.github.com".into()),
-            (
-                "GITHUB_GRAPHQL_URL",
-                "https://api.github.com/graphql".into(),
-            ),
-            ("GITHUB_ENV", files.env.clone()),
-            ("GITHUB_OUTPUT", files.output.clone()),
-            ("GITHUB_PATH", files.path.clone()),
-            ("GITHUB_STEP_SUMMARY", files.summary.clone()),
-            ("GITHUB_STATE", files.state.clone()),
-            ("RUNNER_OS", info.os.to_string()),
-            ("RUNNER_ARCH", info.arch.clone()),
-            ("RUNNER_TEMP", info.temp.clone()),
-            ("RUNNER_TOOL_CACHE", info.tool_cache.clone()),
-            ("RUNNER_NAME", "maverick".into()),
-            ("RUNNER_ENVIRONMENT", "github-hosted".into()),
-        ]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect()
+        let vars = [
+            ("WORKSPACE", info.workspace.clone()),
+            ("REPOSITORY", g.repository.clone()),
+            ("REPOSITORY_OWNER", g.owner.clone()),
+            ("SHA", g.sha.clone()),
+            ("REF", g.git_ref()),
+            ("REF_NAME", g.branch.clone()),
+            ("REF_TYPE", "branch".into()),
+            ("EVENT_NAME", opts.event.clone()),
+            ("EVENT_PATH", self.event_path.clone()),
+            ("JOB", self.pj.key.clone()),
+            ("WORKFLOW", self.pj.workflow_name.clone()),
+            ("RUN_ID", opts.run_id.clone()),
+            ("RUN_NUMBER", "1".into()),
+            ("RUN_ATTEMPT", "1".into()),
+            ("ACTOR", g.actor.clone()),
+            ("ENV", files.env.clone()),
+            ("OUTPUT", files.output.clone()),
+            ("PATH", files.path.clone()),
+            ("STEP_SUMMARY", files.summary.clone()),
+            ("STATE", files.state.clone()),
+        ];
+        // `MAVERICK_*` is the native naming; the `GITHUB_*` aliases let workflow files written
+        // in that format run unchanged.
+        let mut env: Vec<(String, String)> = vec![
+            ("CI".into(), "true".into()),
+            ("MAVERICK".into(), "true".into()),
+            ("GITHUB_ACTIONS".into(), "true".into()),
+        ];
+        for (name, value) in vars {
+            env.push((format!("MAVERICK_{name}"), value.clone()));
+            env.push((format!("GITHUB_{name}"), value));
+        }
+        env.extend(
+            [
+                ("RUNNER_OS", info.os.to_string()),
+                ("RUNNER_ARCH", info.arch.clone()),
+                ("RUNNER_TEMP", info.temp.clone()),
+                ("RUNNER_TOOL_CACHE", info.tool_cache.clone()),
+                ("RUNNER_NAME", "maverick".into()),
+                ("RUNNER_ENVIRONMENT", "local".into()),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v)),
+        );
+        env
     }
 
     fn exec_action(
@@ -864,6 +869,7 @@ impl<'a> JobRun<'a> {
                     expr::to_str(v),
                 );
             }
+            env.insert("MAVERICK_ACTION_PATH".into(), env_dir.clone());
             env.insert("GITHUB_ACTION_PATH".into(), env_dir.clone());
             env.insert(
                 "GITHUB_ACTION".into(),
@@ -892,6 +898,7 @@ impl<'a> JobRun<'a> {
         env: IndexMap<String, String>,
     ) -> Result<(Status, Map<String, Value>)> {
         let mut env = env;
+        env.insert("MAVERICK_ACTION_PATH".into(), action_dir.clone());
         env.insert("GITHUB_ACTION_PATH".into(), action_dir.clone());
         let scope = Scope {
             nested: true,
@@ -999,7 +1006,7 @@ fn handle_output(em: &Emitter, ui: usize, line: String, outputs: &mut Map<String
     }
 }
 
-/// Parses `$GITHUB_ENV` / `$GITHUB_OUTPUT` files: `KEY=value` and `KEY<<DELIM ... DELIM` blocks.
+/// Parses `$MAVERICK_ENV` / `$MAVERICK_OUTPUT` files: `KEY=value` and `KEY<<DELIM ... DELIM` blocks.
 fn parse_file_commands(text: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut lines = text.lines();
