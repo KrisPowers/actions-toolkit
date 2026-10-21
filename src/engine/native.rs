@@ -89,3 +89,17 @@ fn host_arch() -> String {
         other => other.to_uppercase(),
     }
 }
+
+fn default_shell() -> String {
+    let pick = |names: &[&str]| {
+        names
+            .iter()
+            .find(|n| which::which(n).is_ok())
+            .map(|s| s.to_string())
+    };
+    if cfg!(windows) {
+        pick(&["pwsh", "powershell"]).unwrap_or_else(|| "cmd".into())
+    } else {
+        pick(&["bash"]).unwrap_or_else(|| "sh".into())
+    }
+}
