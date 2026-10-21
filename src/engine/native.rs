@@ -69,3 +69,13 @@ pub(super) fn detect() -> EngineInfo {
 }
 
 pub struct NativeEngine;
+
+fn host_os() -> &'static str {
+    if cfg!(windows) {
+        "Windows"
+    } else if cfg!(target_os = "macos") {
+        "macOS"
+    } else {
+        "Linux"
+    }
+}
