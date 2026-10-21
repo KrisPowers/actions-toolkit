@@ -35,3 +35,9 @@ enum Focus {
     Workflows,
     Engines,
 }
+
+enum Row {
+    Workflow(usize),
+    Job(usize, String),
+    Broken(usize),
+}
