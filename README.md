@@ -154,3 +154,6 @@ maverick run CI -j lint --engine native   # maverick runs its own CI
 `examples/demo` contains a workflow that exercises most features:
 `maverick -C examples/demo`.
 
+## License
+
+MIT
