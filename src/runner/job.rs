@@ -992,3 +992,29 @@ fn handle_output(em: &Emitter, ui: usize, line: String, outputs: &mut Map<String
         _ => em.log(ui, LogKind::Output, line.clone()),
     }
 }
+
+/// Parses `$GITHUB_ENV` / `$GITHUB_OUTPUT` files: `KEY=value` and `KEY<<DELIM ... DELIM` blocks.
+fn parse_file_commands(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut lines = text.lines();
+    while let Some(line) = lines.next() {
+        let heredoc = line
+            .find("<<")
+            .filter(|&i| line.find('=').map_or(true, |e| i < e));
+        if let Some(i) = heredoc {
+            let key = line[..i].trim().to_string();
+            let delim = line[i + 2..].trim();
+            let mut value = Vec::new();
+            for l in lines.by_ref() {
+                if l == delim {
+                    break;
+                }
+                value.push(l);
+            }
+            out.push((key, value.join("\n")));
+        } else if let Some((k, v)) = line.split_once('=') {
+            out.push((k.trim().to_string(), v.to_string()));
+        }
+    }
+    out
+}
