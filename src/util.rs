@@ -273,3 +273,8 @@ fn walker(src: &Path, respect_ignores: bool) -> ignore::Walk {
     }
     builder.build()
 }
+
+/// Copies a project into a sandbox, skipping anything `.gitignore`d (build output, node_modules, ...).
+pub fn copy_workspace(src: &Path, dst: &Path) -> Result<usize> {
+    copy_with(src, dst, true)
+}
