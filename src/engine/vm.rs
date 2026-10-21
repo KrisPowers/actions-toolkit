@@ -369,3 +369,40 @@ impl VmEngine {
         })
     }
 }
+
+impl Engine for VmEngine {
+    fn kind(&self) -> Kind {
+        self.kind
+    }
+
+    fn start(&self, req: &SessionRequest, log: &mut dyn FnMut(String)) -> Result<Box<dyn Session>> {
+        let base = format!("/tmp/maverick-{}", req.id);
+        let workspace = format!("{base}/workspace");
+        let runner = format!("{base}/runner");
+        let mut session = VmSession {
+            transport: self.transport.clone(),
+            info: SessionInfo::linux(&workspace, &runner),
+            base: base.clone(),
+            dirs: HashSet::new(),
+            seq: 0,
+        };
+        session.run(&["rm", "-rf", &base])?;
+        session.run(&["mkdir", "-p", &workspace, &runner])?;
+        session.dirs.extend([workspace.clone(), runner.clone()]);
+        if req.bind {
+            log("--bind is not available for VM engines; copying the project instead".into());
+        }
+        log(format!(
+            "Uploading project to the {} guest",
+            self.kind.name()
+        ));
+        session.upload(req.source, &workspace, true)?;
+        let probe = probe_unix(&mut session)?;
+        apply_probe(&mut session.info, probe);
+        log(format!(
+            "Guest: Linux {} · default shell: {}",
+            session.info.arch, session.info.default_shell
+        ));
+        Ok(Box::new(session))
+    }
+}
