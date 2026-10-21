@@ -20,3 +20,10 @@ pub struct Workflow {
 pub struct Defaults {
     pub run: Option<RunDefaults>,
 }
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct RunDefaults {
+    pub shell: Option<String>,
+    pub working_directory: Option<String>,
+}
