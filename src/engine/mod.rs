@@ -136,3 +136,12 @@ pub enum Availability {
     NeedsSetup,
     Missing,
 }
+
+#[derive(Clone, Debug)]
+pub struct EngineInfo {
+    pub kind: Kind,
+    pub availability: Availability,
+    pub version: Option<String>,
+    /// Extra context: how to fix it, or which instance/target is used.
+    pub note: Option<String>,
+}
