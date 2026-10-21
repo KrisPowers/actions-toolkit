@@ -74,3 +74,15 @@ pub struct ContainerSpec {
     #[serde(default)]
     pub volumes: Vec<String>,
 }
+
+impl Container {
+    pub fn spec(&self) -> ContainerSpec {
+        match self {
+            Container::Image(image) => ContainerSpec {
+                image: image.clone(),
+                ..Default::default()
+            },
+            Container::Spec(spec) => spec.clone(),
+        }
+    }
+}
