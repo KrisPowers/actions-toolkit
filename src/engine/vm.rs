@@ -74,3 +74,14 @@ fn locate(kind: Kind) -> Option<PathBuf> {
         _ => None,
     }
 }
+
+fn version(kind: Kind, bin: &Path) -> Option<String> {
+    match kind {
+        Kind::Lima | Kind::Parallels | Kind::Tart | Kind::VirtualBox | Kind::Qemu => {
+            version_of(bin, &["--version"])
+        }
+        Kind::Multipass => version_of(bin, &["version"]),
+        // vmrun has no version flag; wsl/Hyper-V print UTF-16 or need elevation.
+        _ => None,
+    }
+}
