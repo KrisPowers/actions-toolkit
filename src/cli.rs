@@ -238,3 +238,46 @@ fn list(root: &std::path::Path) -> Result<ExitCode> {
     }
     Ok(ExitCode::SUCCESS)
 }
+
+fn engines(root: &std::path::Path, json: bool) -> Result<ExitCode> {
+    let cfg = Config::load(root)?;
+    let infos = engine::detect_all(&cfg);
+    let default = cfg.engine.as_deref().and_then(Kind::parse);
+    if json {
+        let list: Vec<_> = infos
+            .iter()
+            .map(|i| {
+                serde_json::json!({
+                    "id": i.kind.id(),
+                    "name": i.kind.name(),
+                    "type": i.kind.family().label(),
+                    "status": i.status_label(),
+                    "version": i.version,
+                    "note": i.note,
+                    "default": Some(i.kind) == default,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&list)?);
+        return Ok(ExitCode::SUCCESS);
+    }
+    println!(
+        "{:<2}{:<17}{:<11}{:<12}{:<15}NOTE",
+        "", "ENGINE", "TYPE", "VERSION", "STATUS"
+    );
+    for i in &infos {
+        let mark = if Some(i.kind) == default { "*" } else { " " };
+        println!(
+            "{mark:<2}{:<17}{:<11}{:<12}{:<15}{}",
+            i.kind.name(),
+            i.kind.family().label(),
+            i.version.as_deref().unwrap_or("-"),
+            i.status_label(),
+            i.note.as_deref().unwrap_or("")
+        );
+    }
+    if default.is_none() {
+        println!("\nNo default engine set; maverick picks Docker/Podman when running, else Maverick Native.");
+    }
+    Ok(ExitCode::SUCCESS)
+}
