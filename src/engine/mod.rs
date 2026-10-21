@@ -272,3 +272,43 @@ pub struct SessionInfo {
     pub path: String,
     pub default_shell: String,
 }
+
+impl SessionInfo {
+    pub fn linux(workspace: &str, temp: &str) -> Self {
+        Self {
+            workspace: workspace.to_string(),
+            temp: temp.to_string(),
+            tool_cache: format!("{temp}/_tool"),
+            os: "Linux",
+            arch: "X64".into(),
+            path: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(),
+            default_shell: "sh".into(),
+        }
+    }
+
+    fn windows(&self) -> bool {
+        self.os == "Windows"
+    }
+
+    pub fn join(&self, base: &str, rel: &str) -> String {
+        let sep = if self.windows() { '\\' } else { '/' };
+        let rel = rel.trim_start_matches("./");
+        if rel.is_empty() || rel == "." {
+            return base.to_string();
+        }
+        format!("{}{sep}{}", base.trim_end_matches(['/', '\\']), rel)
+    }
+
+    pub fn is_absolute(&self, p: &str) -> bool {
+        p.starts_with('/')
+            || (self.windows() && (p.starts_with('\\') || p.chars().nth(1) == Some(':')))
+    }
+
+    pub fn path_separator(&self) -> &'static str {
+        if self.windows() {
+            ";"
+        } else {
+            ":"
+        }
+    }
+}
