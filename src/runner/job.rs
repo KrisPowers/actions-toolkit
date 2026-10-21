@@ -1037,3 +1037,34 @@ fn wrap_script(shell: &str, script: &str) -> String {
         _ => script.to_string(),
     }
 }
+
+/// The command line GitHub uses for each built-in shell; custom shells use `{0}` for the file.
+fn shell_argv(shell: &str, file: &str) -> Vec<String> {
+    let v = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    match shell {
+        "bash" => v(&["bash", "--noprofile", "--norc", "-eo", "pipefail", file]),
+        "sh" => v(&["sh", "-e", file]),
+        "pwsh" => v(&["pwsh", "-command", &format!(". '{file}'")]),
+        "powershell" => v(&["powershell", "-command", &format!(". '{file}'")]),
+        "python" => v(&["python", file]),
+        "cmd" => v(&[
+            "cmd",
+            "/D",
+            "/E:ON",
+            "/V:OFF",
+            "/S",
+            "/C",
+            &format!("CALL \"{file}\""),
+        ]),
+        custom => {
+            let mut parts: Vec<String> = custom
+                .split_whitespace()
+                .map(|p| p.replace("{0}", file))
+                .collect();
+            if !custom.contains("{0}") {
+                parts.push(file.to_string());
+            }
+            parts
+        }
+    }
+}
