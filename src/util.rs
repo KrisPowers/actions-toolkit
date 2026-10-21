@@ -312,3 +312,11 @@ fn copy_with(src: &Path, dst: &Path, respect_ignores: bool) -> Result<usize> {
     }
     Ok(files)
 }
+
+#[cfg(unix)]
+fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
+    let link = fs::read_link(src)?;
+    let _ = fs::remove_file(dst);
+    std::os::unix::fs::symlink(link, dst)?;
+    Ok(())
+}
