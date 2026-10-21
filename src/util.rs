@@ -406,3 +406,14 @@ pub fn slug(s: &str) -> String {
         .trim_end_matches('-')
         .to_string()
 }
+
+pub fn fmt_duration(d: Duration) -> String {
+    let secs = d.as_secs();
+    if secs < 60 {
+        format!("{:.1}s", d.as_secs_f64())
+    } else if secs < 3600 {
+        format!("{}m{:02}s", secs / 60, secs % 60)
+    } else {
+        format!("{}h{:02}m", secs / 3600, (secs % 3600) / 60)
+    }
+}
