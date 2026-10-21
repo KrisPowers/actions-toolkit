@@ -222,3 +222,37 @@ pub fn probe<S: AsRef<OsStr>>(program: S, args: &[&str]) -> Option<Captured> {
     cmd.args(args);
     capture(cmd, Duration::from_secs(6)).ok()
 }
+
+/// Runs `cmd` while `feed` writes to its stdin. Stdout is discarded.
+pub fn pipe_into(
+    mut cmd: Command,
+    feed: impl FnOnce(&mut dyn Write) -> Result<()>,
+) -> Result<Captured> {
+    let program = cmd.get_program().to_string_lossy().into_owned();
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("failed to start `{program}`"))?;
+    let stderr = child.stderr.take();
+    let err_reader = thread::spawn(move || {
+        let mut s = String::new();
+        if let Some(mut e) = stderr {
+            let _ = e.read_to_string(&mut s);
+        }
+        s
+    });
+    let fed = {
+        let mut stdin = child.stdin.take().context("stdin unavailable")?;
+        feed(&mut stdin)
+    };
+    let status = child.wait()?;
+    let stderr = err_reader.join().unwrap_or_default();
+    fed.with_context(|| format!("streaming data to `{program}` failed: {}", stderr.trim()))?;
+    Ok(Captured {
+        success: status.success(),
+        stdout: String::new(),
+        stderr,
+    })
+}
