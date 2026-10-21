@@ -283,3 +283,32 @@ pub fn copy_workspace(src: &Path, dst: &Path) -> Result<usize> {
 pub fn copy_tree(src: &Path, dst: &Path) -> Result<usize> {
     copy_with(src, dst, false)
 }
+
+fn copy_with(src: &Path, dst: &Path, respect_ignores: bool) -> Result<usize> {
+    fs::create_dir_all(dst)?;
+    let mut files = 0;
+    for entry in walker(src, respect_ignores) {
+        let entry = entry?;
+        let rel = entry.path().strip_prefix(src)?;
+        if rel.as_os_str().is_empty() {
+            continue;
+        }
+        let target = dst.join(rel);
+        let Some(ft) = entry.file_type() else {
+            continue;
+        };
+        if ft.is_dir() {
+            fs::create_dir_all(&target)?;
+        } else if ft.is_symlink() {
+            copy_symlink(entry.path(), &target)?;
+        } else {
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(entry.path(), &target)
+                .with_context(|| format!("copying {}", entry.path().display()))?;
+            files += 1;
+        }
+    }
+    Ok(files)
+}
