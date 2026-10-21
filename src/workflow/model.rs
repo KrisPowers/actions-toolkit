@@ -50,3 +50,10 @@ pub struct Job {
     /// Reusable workflow call.
     pub uses: Option<String>,
 }
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Strategy {
+    pub matrix: Option<Yaml>,
+    pub fail_fast: Option<Yaml>,
+}
