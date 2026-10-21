@@ -281,3 +281,9 @@ impl Session for ContainerSession {
         }
     }
 }
+
+impl Drop for ContainerSession {
+    fn drop(&mut self) {
+        self.remove();
+    }
+}
