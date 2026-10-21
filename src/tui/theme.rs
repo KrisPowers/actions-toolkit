@@ -25,3 +25,7 @@ pub fn spinner(tick: usize) -> &'static str {
 pub fn dim() -> Style {
     Style::new().fg(DIM)
 }
+
+pub fn bold() -> Style {
+    Style::new().add_modifier(Modifier::BOLD)
+}
