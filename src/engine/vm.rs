@@ -406,3 +406,12 @@ impl Engine for VmEngine {
         Ok(Box::new(session))
     }
 }
+
+struct VmSession {
+    transport: Transport,
+    info: SessionInfo,
+    base: String,
+    /// Directories already known to exist in the guest.
+    dirs: HashSet<String>,
+    seq: usize,
+}
