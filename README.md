@@ -143,3 +143,14 @@ Not yet supported: Docker-based actions, `services:`, reusable workflows (`jobs.
 dynamic matrices, `actions/cache`, and artifact upload/download (these steps are skipped with a
 warning rather than failing).
 
+## Development
+
+```sh
+cargo test
+cargo clippy --all-targets -- -D warnings
+maverick run CI -j lint --engine native   # maverick runs its own CI
+```
+
+`examples/demo` contains a workflow that exercises most features:
+`maverick -C examples/demo`.
+
