@@ -817,11 +817,17 @@ impl<'a> JobRun<'a> {
                 path,
                 git_ref,
             } => {
-                let host_root = {
-                    let em = &self.em;
-                    action::fetch(&owner, &repo, &git_ref, self.cx.opts.pull, &mut |l| {
-                        em.log(ui, LogKind::System, l)
-                    })?
+                let Some(host_root) = action::locate(&self.cx.opts.root, &owner, &repo, &git_ref)
+                else {
+                    self.em.log(
+                        ui,
+                        LogKind::Warning,
+                        format!(
+                            "Skipping {uses}: maverick runs offline and has no local copy \
+                             (put one in .maverick/actions/{owner}/{repo})"
+                        ),
+                    );
+                    return Ok((Status::Skipped, Map::new()));
                 };
                 let env_root = info.join(
                     &info.join(
