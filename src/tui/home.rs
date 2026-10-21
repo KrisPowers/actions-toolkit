@@ -29,3 +29,9 @@ const EVENTS: [&str; 5] = [
     "schedule",
     "release",
 ];
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Focus {
+    Workflows,
+    Engines,
+}
