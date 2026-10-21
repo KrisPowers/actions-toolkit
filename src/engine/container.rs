@@ -219,3 +219,65 @@ impl ContainerSession {
         let _ = util::capture(cmd, Duration::from_secs(30));
     }
 }
+
+impl Session for ContainerSession {
+    fn info(&self) -> &SessionInfo {
+        &self.info
+    }
+
+    fn exec(
+        &mut self,
+        req: &ExecRequest,
+        cancel: &Cancel,
+        out: &mut dyn FnMut(String),
+    ) -> Result<ExecOutcome> {
+        let mut cmd = Command::new(&self.binary);
+        cmd.args(["exec", "-w", &req.cwd]);
+        for (k, v) in &req.env {
+            cmd.arg("-e").arg(format!("{k}={v}"));
+        }
+        cmd.arg(&self.name).args(&req.argv);
+        util::stream(cmd, cancel, req.timeout, out)
+    }
+
+    fn write_file(&mut self, path: &str, data: &[u8]) -> Result<()> {
+        let host = self.host_path(path)?;
+        if let Some(parent) = host.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(host, data)?;
+        Ok(())
+    }
+
+    fn read_file(&mut self, path: &str) -> Result<String> {
+        Ok(fs::read_to_string(self.host_path(path)?).unwrap_or_default())
+    }
+
+    fn copy_dir(&mut self, host: &Path, dest: &str) -> Result<()> {
+        util::copy_tree(host, &self.host_path(dest)?)?;
+        Ok(())
+    }
+
+    fn teardown(&mut self, log: &mut dyn FnMut(String)) {
+        // On Linux, files created as root inside the container can't be deleted by the host
+        // user, so empty the shared directories from inside before removing the container.
+        if cfg!(target_os = "linux") {
+            let mut targets = vec![RUNNER];
+            if !self.bind {
+                targets.push(WORKSPACE);
+            }
+            let mut cmd = Command::new(&self.binary);
+            cmd.args(["exec", &self.name, "find"]).args(&targets).args([
+                "-mindepth",
+                "1",
+                "-delete",
+            ]);
+            let _ = util::capture(cmd, Duration::from_secs(120));
+        }
+        self.remove();
+        log(format!("Removed container {}", self.name));
+        if let Some(dir) = self.dir.take() {
+            let _ = dir.close();
+        }
+    }
+}
