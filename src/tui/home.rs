@@ -21,3 +21,11 @@ use crate::config::Config;
 use crate::engine::{self, Availability, EngineInfo, Family, Kind};
 use crate::runner::RunOptions;
 use crate::workflow::{self, plan::RunPlan, WorkflowFile};
+
+const EVENTS: [&str; 5] = [
+    "push",
+    "pull_request",
+    "workflow_dispatch",
+    "schedule",
+    "release",
+];
