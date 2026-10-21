@@ -100,3 +100,44 @@ pub fn discover(root: &Path) -> Vec<WorkflowFile> {
     paths.sort();
     paths.into_iter().map(WorkflowFile::load).collect()
 }
+
+/// Picks workflows by name/file, or every workflow triggered by `event` when `query` is `None`.
+pub fn select<'a>(
+    files: &'a [WorkflowFile],
+    query: Option<&str>,
+    event: &str,
+) -> Result<Vec<&'a WorkflowFile>> {
+    if files.is_empty() {
+        bail!("no workflows found in .github/workflows");
+    }
+    let picked: Vec<&WorkflowFile> = match query {
+        Some(q) => {
+            // Allow pointing at a file outside the usual directory.
+            let found: Vec<_> = files.iter().filter(|f| f.matches(q)).collect();
+            if found.is_empty() {
+                let names: Vec<_> = files.iter().map(|f| f.file_name.as_str()).collect();
+                bail!(
+                    "no workflow matches `{q}` (available: {})",
+                    names.join(", ")
+                );
+            }
+            found
+        }
+        None => {
+            let found: Vec<_> = files
+                .iter()
+                .filter(|f| f.events().iter().any(|e| e == event))
+                .collect();
+            if found.is_empty() {
+                bail!("no workflow is triggered by `{event}`; pass a workflow name or use --event");
+            }
+            found
+        }
+    };
+    for f in &picked {
+        if let Err(e) = &f.parsed {
+            bail!("{} is invalid: {e}", f.file_name);
+        }
+    }
+    Ok(picked)
+}
