@@ -578,3 +578,13 @@ fn prop(v: &Value, name: &str) -> Value {
         _ => Value::Null,
     }
 }
+
+fn num(f: f64) -> Value {
+    if f.fract() == 0.0 && f.abs() < 1e15 {
+        Value::Number(Number::from(f as i64))
+    } else {
+        Number::from_f64(f)
+            .map(Value::Number)
+            .unwrap_or(Value::Null)
+    }
+}
