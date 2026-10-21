@@ -346,3 +346,40 @@ pub fn tar_dir(src: &Path, out: &mut dyn Write, respect_ignores: bool) -> Result
     builder.finish()?;
     Ok(())
 }
+
+/// Removes ANSI escape sequences so logs render cleanly inside the TUI.
+pub fn strip_ansi(s: &str) -> String {
+    if !s.contains('\x1b') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('\x40'..='\x7e').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\x07' {
+                        break;
+                    }
+                    if c == '\x1b' {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
