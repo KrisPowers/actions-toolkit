@@ -40,16 +40,6 @@ pub enum Family {
     BuiltIn,
 }
 
-impl Family {
-    pub fn label(self) -> &'static str {
-        match self {
-            Family::Container => "container",
-            Family::VirtualMachine => "vm",
-            Family::BuiltIn => "built-in",
-        }
-    }
-}
-
 impl Kind {
     pub const ALL: [Kind; 12] = [
         Kind::Docker,
@@ -198,14 +188,6 @@ pub fn detect_all(cfg: &Config) -> Vec<EngineInfo> {
         })
         .collect();
     handles.into_iter().filter_map(|h| h.join().ok()).collect()
-}
-
-/// The engine to use when none is configured: a running container engine, else the built-in one.
-pub fn auto_select(cfg: &Config) -> Kind {
-    [Kind::Docker, Kind::Podman]
-        .into_iter()
-        .find(|&k| detect(k, cfg).is_ready())
-        .unwrap_or(Kind::Native)
 }
 
 /// Instantiates an engine, failing with an actionable message if it isn't usable.

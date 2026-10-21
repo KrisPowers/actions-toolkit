@@ -12,12 +12,11 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use serde_json::{json, Map, Value};
 
 pub use events::{LogKind, RunEvent, Status};
 
-use crate::cli::RunArgs;
 use crate::config::Config;
 use crate::engine::Engine;
 use crate::util::{self, Cancel};
@@ -83,55 +82,6 @@ impl RunOptions {
             git: GitInfo::detect(root),
             run_id: (now.as_secs() % 1_000_000_000).to_string(),
         }
-    }
-
-    pub fn apply_args(&mut self, args: &RunArgs) -> Result<()> {
-        self.event = args.event.clone();
-        self.bind = args.bind;
-        self.pull = args.pull;
-        if let Some(n) = args.parallel {
-            self.parallel = n.max(1);
-        }
-        for p in &args.platforms {
-            let (label, image) = p
-                .split_once('=')
-                .with_context(|| format!("--platform expects LABEL=IMAGE, got `{p}`"))?;
-            self.platforms.insert(label.to_string(), image.to_string());
-        }
-        if let Some(file) = &args.secret_file {
-            let text =
-                fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
-            self.secrets.extend(parse_dotenv(&text));
-        }
-        for s in &args.secrets {
-            match s.split_once('=') {
-                Some((k, v)) => self.secrets.insert(k.to_string(), v.to_string()),
-                // `-s NAME` reads the value from the environment, keeping it out of shell history.
-                None => self.secrets.insert(
-                    s.clone(),
-                    std::env::var(s)
-                        .with_context(|| format!("secret {s} has no value and ${s} is not set"))?,
-                ),
-            };
-        }
-        for (target, list, flag) in [
-            (&mut self.vars, &args.vars, "--var"),
-            (&mut self.inputs, &args.inputs, "--input"),
-        ] {
-            for item in list {
-                let (k, v) = item
-                    .split_once('=')
-                    .with_context(|| format!("{flag} expects KEY=VALUE, got `{item}`"))?;
-                target.insert(k.to_string(), v.to_string());
-            }
-        }
-        if let Some(file) = &args.event_file {
-            let text =
-                fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
-            self.event_payload =
-                Some(serde_json::from_str(&text).context("--event-file must contain JSON")?);
-        }
-        Ok(())
     }
 }
 

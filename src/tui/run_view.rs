@@ -127,6 +127,7 @@ impl RunView {
         }
     }
 
+    #[cfg(test)]
     pub fn success(&self) -> bool {
         self.finished.is_some_and(|(ok, _)| ok)
     }
