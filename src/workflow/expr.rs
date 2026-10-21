@@ -28,3 +28,9 @@ pub struct Ctx<'a> {
     pub data: &'a Value,
     pub state: JobState,
 }
+
+impl<'a> Ctx<'a> {
+    pub fn new(data: &'a Value, state: JobState) -> Self {
+        Self { data, state }
+    }
+}
