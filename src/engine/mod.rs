@@ -237,3 +237,18 @@ pub trait Engine: Send + Sync {
     /// Provisions an isolated environment containing a copy of `req.source`.
     fn start(&self, req: &SessionRequest, log: &mut dyn FnMut(String)) -> Result<Box<dyn Session>>;
 }
+
+pub struct SessionRequest<'a> {
+    /// Unique, slug-safe identifier for this job run.
+    pub id: String,
+    pub source: &'a Path,
+    pub image: Option<String>,
+    pub container_env: Vec<(String, String)>,
+    pub volumes: Vec<String>,
+    pub options: Option<String>,
+    /// Mount the project in place instead of copying it.
+    pub bind: bool,
+    /// Always pull images.
+    pub pull: bool,
+    pub cancel: Cancel,
+}
