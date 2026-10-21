@@ -68,3 +68,14 @@ pub fn interpolate(s: &str, ctx: &Ctx) -> Result<String, String> {
 pub fn interpolate_yaml(v: &Yaml, ctx: &Ctx) -> Result<String, String> {
     interpolate(&crate::workflow::model::scalar(v), ctx)
 }
+
+/// Evaluates a YAML value, keeping the type when the whole value is a single expression.
+pub fn evaluate_yaml(v: &Yaml, ctx: &Ctx) -> Result<Value, String> {
+    match v {
+        Yaml::String(s) => match whole_expression(s) {
+            Some(inner) => evaluate(inner, ctx),
+            None => interpolate(s, ctx).map(Value::String),
+        },
+        other => serde_json::to_value(other).map_err(|e| e.to_string()),
+    }
+}
