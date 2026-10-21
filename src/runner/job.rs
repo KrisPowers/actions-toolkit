@@ -1068,3 +1068,31 @@ fn shell_argv(shell: &str, file: &str) -> Vec<String> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_commands() {
+        let parsed = parse_file_commands("A=1\nMULTI<<EOF\nline1\nline2\nEOF\nB=x=y\n");
+        assert_eq!(
+            parsed,
+            vec![
+                ("A".into(), "1".into()),
+                ("MULTI".into(), "line1\nline2".into()),
+                ("B".into(), "x=y".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn shells() {
+        assert_eq!(shell_argv("bash", "/s.sh")[0], "bash");
+        assert_eq!(
+            shell_argv("node {0} --flag", "/s.js"),
+            vec!["node", "/s.js", "--flag"]
+        );
+        assert_eq!(shell_argv("perl", "/s"), vec!["perl", "/s"]);
+    }
+}
