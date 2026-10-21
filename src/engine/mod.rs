@@ -199,3 +199,11 @@ pub fn detect_all(cfg: &Config) -> Vec<EngineInfo> {
         .collect();
     handles.into_iter().filter_map(|h| h.join().ok()).collect()
 }
+
+/// The engine to use when none is configured: a running container engine, else the built-in one.
+pub fn auto_select(cfg: &Config) -> Kind {
+    [Kind::Docker, Kind::Podman]
+        .into_iter()
+        .find(|&k| detect(k, cfg).is_ready())
+        .unwrap_or(Kind::Native)
+}
