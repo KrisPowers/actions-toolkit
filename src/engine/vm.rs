@@ -103,3 +103,98 @@ fn setup_hint(kind: Kind) -> String {
         ),
     }
 }
+
+pub(super) fn detect(kind: Kind, cfg: &Config) -> EngineInfo {
+    let Some(bin) = locate(kind) else {
+        return EngineInfo::missing(kind);
+    };
+    let version = version(kind, &bin);
+    let ec = cfg.engine(kind.id());
+    if let Some(target) = &ec.ssh {
+        if find_binary(&["ssh"], &[]).is_none() {
+            return EngineInfo::new(
+                kind,
+                Availability::NeedsSetup,
+                version,
+                "install an OpenSSH client".to_string(),
+            );
+        }
+        return EngineInfo::new(
+            kind,
+            Availability::Ready,
+            version,
+            format!("via ssh {target}"),
+        );
+    }
+    let instance = ec
+        .instance
+        .clone()
+        .or(default_instance(kind).map(String::from));
+    match (kind, instance) {
+        (Kind::Lima, Some(inst)) => {
+            let listing = util::probe(&bin, &["list", "--format", "{{.Name}} {{.Status}}"]);
+            let state = listing.and_then(|o| {
+                o.stdout.lines().find_map(|l| {
+                    l.split_once(' ')
+                        .filter(|(n, _)| *n == inst)
+                        .map(|(_, s)| s.trim().to_string())
+                })
+            });
+            instance_state(
+                kind,
+                version,
+                &inst,
+                state,
+                &format!("limactl start {inst}"),
+            )
+        }
+        (Kind::Multipass, Some(inst)) => {
+            let listing = util::probe(&bin, &["list", "--format", "csv"]);
+            let state = listing.and_then(|o| {
+                o.stdout.lines().skip(1).find_map(|l| {
+                    let mut cols = l.split(',');
+                    (cols.next() == Some(inst.as_str()))
+                        .then(|| cols.next().unwrap_or_default().to_string())
+                })
+            });
+            instance_state(
+                kind,
+                version,
+                &inst,
+                state,
+                &format!("multipass launch --name {inst}"),
+            )
+        }
+        (Kind::Wsl, inst) => {
+            let ok = util::probe(&bin, &["--status"]).is_some_and(|o| o.success);
+            let target = inst
+                .map(|i| format!("distro {i}"))
+                .unwrap_or_else(|| "default distro".into());
+            if ok {
+                EngineInfo::new(kind, Availability::Ready, version, target)
+            } else {
+                EngineInfo::new(
+                    kind,
+                    Availability::NeedsSetup,
+                    version,
+                    "install a distro: wsl --install".to_string(),
+                )
+            }
+        }
+        (Kind::Parallels, Some(vm)) => {
+            let listing = util::probe(
+                &bin,
+                &["list", "--all", "--output", "name,status", "--no-header"],
+            );
+            let state = listing.and_then(|o| {
+                o.stdout.lines().find_map(|l| {
+                    let l = l.trim();
+                    l.strip_prefix(vm.as_str())
+                        .map(|rest| rest.trim().to_string())
+                })
+            });
+            instance_state(kind, version, &vm, state, &format!("prlctl start \"{vm}\""))
+        }
+        _ => EngineInfo::new(kind, Availability::NeedsSetup, version, setup_hint(kind)),
+    }
+}
