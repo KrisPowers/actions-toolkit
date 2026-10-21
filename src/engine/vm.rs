@@ -355,3 +355,8 @@ fn split_port(target: &str) -> (String, Option<String>) {
         _ => (target.to_string(), None),
     }
 }
+
+pub struct VmEngine {
+    kind: Kind,
+    transport: Transport,
+}
