@@ -30,3 +30,26 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 }
+
+#[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)] // parsed once per process
+pub enum Command {
+    /// Open the interactive dashboard (default)
+    Tui,
+    /// Run a workflow, or a single job of it
+    Run(RunArgs),
+    /// List workflows and jobs in this project
+    #[command(alias = "ls")]
+    List,
+    /// Show which isolation engines are available on this machine
+    Engines {
+        /// Print machine-readable JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// View or change configuration
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
