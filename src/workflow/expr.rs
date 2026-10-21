@@ -619,3 +619,14 @@ fn to_num(v: &Value) -> f64 {
         Value::Array(_) | Value::Object(_) => f64::NAN,
     }
 }
+
+fn loose_eq(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::String(x), Value::String(y)) => x.eq_ignore_ascii_case(y),
+        (Value::Null, Value::Null) => true,
+        (Value::Bool(x), Value::Bool(y)) => x == y,
+        (Value::Array(_), Value::Array(_)) | (Value::Object(_), Value::Object(_)) => a == b,
+        (Value::Array(_) | Value::Object(_), _) | (_, Value::Array(_) | Value::Object(_)) => false,
+        _ => to_num(a) == to_num(b),
+    }
+}
