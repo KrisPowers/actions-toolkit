@@ -225,3 +225,15 @@ pub fn build(kind: Kind, cfg: &Config) -> Result<Arc<dyn Engine>> {
         Family::BuiltIn => Arc::new(native::NativeEngine),
     })
 }
+
+pub trait Engine: Send + Sync {
+    fn kind(&self) -> Kind;
+
+    /// Whether jobs need a container image (resolved from `runs-on`).
+    fn uses_images(&self) -> bool {
+        self.kind().family() == Family::Container
+    }
+
+    /// Provisions an isolated environment containing a copy of `req.source`.
+    fn start(&self, req: &SessionRequest, log: &mut dyn FnMut(String)) -> Result<Box<dyn Session>>;
+}
