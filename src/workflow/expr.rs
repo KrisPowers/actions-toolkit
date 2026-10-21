@@ -17,3 +17,9 @@ pub struct JobState {
     /// An upstream job didn't succeed (e.g. was skipped) without failing.
     pub blocked: bool,
 }
+
+impl JobState {
+    pub fn success(&self) -> bool {
+        !self.failed && !self.cancelled && !self.blocked
+    }
+}
