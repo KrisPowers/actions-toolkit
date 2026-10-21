@@ -61,3 +61,58 @@ pub fn parse(uses: &str) -> Result<ActionRef> {
 }
 
 static FETCH_LOCK: Mutex<()> = Mutex::new(());
+
+/// Downloads (or reuses from cache) a GitHub-hosted action, returning its local directory.
+pub fn fetch(
+    owner: &str,
+    repo: &str,
+    git_ref: &str,
+    refresh: bool,
+    log: &mut dyn FnMut(String),
+) -> Result<PathBuf> {
+    let cache = dirs::cache_dir()
+        .context("could not determine a cache directory")?
+        .join("maverick")
+        .join("actions");
+    let dir = cache.join(owner).join(repo).join(util::slug(git_ref));
+    let marker = dir.join(".maverick-complete");
+    let _guard = FETCH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if marker.exists() && !refresh {
+        return Ok(dir);
+    }
+    let tmp = dir.with_extension(format!("tmp{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.parent().unwrap_or(&cache))?;
+    let url = format!("https://github.com/{owner}/{repo}");
+    log(format!("Downloading action {owner}/{repo}@{git_ref}"));
+
+    let git = |args: &[&str]| -> Result<util::Captured> {
+        let mut cmd = Command::new("git");
+        cmd.args(args).env("GIT_TERMINAL_PROMPT", "0");
+        util::capture(cmd, Duration::from_secs(180))
+    };
+    let tmp_s = tmp.to_string_lossy().into_owned();
+    let shallow = git(&[
+        "clone", "--quiet", "--depth", "1", "--branch", git_ref, &url, &tmp_s,
+    ])?;
+    if !shallow.success {
+        // `--branch` only accepts branches and tags; fall back to a full clone for commit SHAs.
+        let _ = fs::remove_dir_all(&tmp);
+        let full = git(&["clone", "--quiet", &url, &tmp_s])?;
+        if !full.success {
+            bail!("could not clone {url}: {}", full.stderr.trim());
+        }
+        let co = git(&["-C", &tmp_s, "checkout", "--quiet", git_ref])?;
+        if !co.success {
+            bail!(
+                "{owner}/{repo} has no ref `{git_ref}`: {}",
+                co.stderr.trim()
+            );
+        }
+    }
+    let _ = fs::remove_dir_all(tmp.join(".git"));
+    fs::write(tmp.join(".maverick-complete"), git_ref)?;
+    let _ = fs::remove_dir_all(&dir);
+    fs::rename(&tmp, &dir)?;
+    Ok(dir)
+}
