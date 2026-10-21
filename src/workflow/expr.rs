@@ -637,3 +637,17 @@ fn compare(a: &Value, b: &Value) -> Option<Ordering> {
         _ => to_num(a).partial_cmp(&to_num(b)),
     }
 }
+
+/// Stringifies a value the way interpolation does.
+pub fn to_str(v: &Value) -> String {
+    match v {
+        Value::Null => String::new(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => match n.as_f64() {
+            Some(f) if f.fract() == 0.0 && f.abs() < 1e15 => format!("{}", f as i64),
+            _ => n.to_string(),
+        },
+        Value::String(s) => s.clone(),
+        other => serde_json::to_string_pretty(other).unwrap_or_default(),
+    }
+}
