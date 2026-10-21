@@ -15,3 +15,8 @@ pub struct Workflow {
     #[serde(default)]
     pub jobs: IndexMap<String, Job>,
 }
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Defaults {
+    pub run: Option<RunDefaults>,
+}
