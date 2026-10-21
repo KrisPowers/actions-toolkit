@@ -1018,3 +1018,12 @@ fn parse_file_commands(text: &str) -> Vec<(String, String)> {
     }
     out
 }
+
+fn script_ext(shell: &str) -> &'static str {
+    match shell {
+        "pwsh" | "powershell" => ".ps1",
+        "cmd" => ".cmd",
+        "python" => ".py",
+        _ => ".sh",
+    }
+}
