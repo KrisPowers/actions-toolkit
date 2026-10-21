@@ -106,3 +106,34 @@ pub fn scroll_start(selected: usize, len: usize, height: usize) -> usize {
         selected.saturating_sub(height - 1).min(len - height)
     }
 }
+
+/// Renders rows inside a panel, highlighting and keeping `selected` in view.
+pub fn render_list(
+    f: &mut Frame,
+    area: Rect,
+    block: Block,
+    rows: Vec<Line<'static>>,
+    selected: Option<usize>,
+    focused: bool,
+) {
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let height = inner.height as usize;
+    let start = scroll_start(selected.unwrap_or(0), rows.len(), height);
+    let lines: Vec<Line> = rows
+        .into_iter()
+        .enumerate()
+        .skip(start)
+        .take(height)
+        .map(|(i, line)| {
+            if Some(i) == selected && focused {
+                line.style(selected_style())
+            } else if Some(i) == selected {
+                line.style(Style::new().add_modifier(Modifier::BOLD))
+            } else {
+                line
+            }
+        })
+        .collect();
+    f.render_widget(Paragraph::new(lines), inner);
+}
