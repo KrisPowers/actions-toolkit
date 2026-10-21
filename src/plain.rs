@@ -10,3 +10,5 @@ use crate::engine::Engine;
 use crate::runner::{self, LogKind, RunEvent, RunOptions, Status};
 use crate::util::{fmt_duration, Cancel};
 use crate::workflow::plan::RunPlan;
+
+struct Paint(bool);
