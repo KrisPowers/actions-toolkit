@@ -644,3 +644,71 @@ fn availability_order(a: &Availability) -> u8 {
 fn first_line(s: &str) -> &str {
     s.lines().next().unwrap_or("")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    fn render(app: &mut App, w: u16, h: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal.draw(|f| app.draw(f)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        (0..h)
+            .map(|y| {
+                (0..w)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn demo_app() -> App {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/demo");
+        let mut app = App::new(root).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while app.detect_rx.is_some() && Instant::now() < deadline {
+            app.update();
+            thread::sleep(Duration::from_millis(20));
+        }
+        app
+    }
+
+    #[test]
+    fn dashboard_lists_workflows_and_engines() {
+        let mut app = demo_app();
+        let screen = render(&mut app, 110, 24);
+        if std::env::var("MAVERICK_PRINT").is_ok() {
+            println!("{screen}");
+        }
+        assert!(screen.contains("Workflows"));
+        assert!(screen.contains("Demo"));
+        assert!(screen.contains("×2"), "matrix size is shown");
+        assert!(screen.contains("Maverick Native"));
+    }
+
+    #[test]
+    fn running_a_job_from_the_dashboard() {
+        let mut app = demo_app();
+        app.active = Some(Kind::Native);
+        app.row_sel = 1; // first job: build
+        app.start_selected();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !app.run.as_ref().unwrap().is_finished() && Instant::now() < deadline {
+            app.update();
+            thread::sleep(Duration::from_millis(20));
+        }
+        let screen = render(&mut app, 110, 26);
+        if std::env::var("MAVERICK_PRINT").is_ok() {
+            println!("{screen}");
+        }
+        let run = app.run.as_ref().unwrap();
+        assert!(run.success(), "{screen}");
+        assert!(screen.contains("succeeded"));
+        assert!(screen.contains("Compute version"));
+    }
+}
