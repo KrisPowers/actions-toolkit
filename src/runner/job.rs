@@ -233,3 +233,25 @@ struct StepFiles {
     summary: String,
     state: String,
 }
+
+struct JobRun<'a> {
+    cx: &'a JobContext,
+    pj: &'a PlannedJob,
+    em: Emitter,
+    session: Box<dyn Session>,
+    /// Workflow + job env, plus anything appended to `$GITHUB_ENV`.
+    env: IndexMap<String, String>,
+    /// Entries appended to `$GITHUB_PATH`, most recent first.
+    paths: Vec<String>,
+    steps: Map<String, Value>,
+    failed: bool,
+    github: Value,
+    runner: Value,
+    secrets: Value,
+    vars: Value,
+    inputs: Value,
+    event_path: String,
+    copied_actions: HashSet<String>,
+    seq: usize,
+    deadline: Option<Instant>,
+}
