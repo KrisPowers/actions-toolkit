@@ -151,3 +151,6 @@ fn own_process_group(cmd: &mut Command) {
     use std::os::unix::process::CommandExt;
     cmd.process_group(0);
 }
+
+#[cfg(not(unix))]
+fn own_process_group(_cmd: &mut Command) {}
