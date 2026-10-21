@@ -78,3 +78,60 @@ impl Emitter {
         });
     }
 }
+
+pub(crate) fn run(cx: JobContext) -> JobResult {
+    let pj = &cx.plan.jobs[cx.index];
+    let em = Emitter {
+        tx: cx.tx.clone(),
+        job: cx.index,
+        masks: RefCell::new(
+            cx.opts
+                .secrets
+                .values()
+                .filter(|v| !v.trim().is_empty())
+                .cloned()
+                .collect(),
+        ),
+    };
+    let last = pj.step_names.len() - 1;
+    em.job(Status::Running);
+    em.step(0, Status::Running);
+
+    let session = match setup(&cx, pj, &em) {
+        Ok(s) => s,
+        Err(e) => {
+            let cancelled = cx.cancel.is_cancelled();
+            if !cancelled {
+                em.log(0, LogKind::Error, format!("{e:#}"));
+            }
+            let status = if cancelled {
+                Status::Cancelled
+            } else {
+                Status::Failure
+            };
+            em.step(0, status);
+            for i in 1..=last {
+                em.step(i, Status::Skipped);
+            }
+            em.job(status);
+            return JobResult {
+                status,
+                outputs: Map::new(),
+            };
+        }
+    };
+    em.step(0, Status::Success);
+
+    let mut job = JobRun::new(&cx, pj, em, session);
+    let status = job.execute();
+    let outputs = job.outputs();
+
+    job.em.step(last, Status::Running);
+    {
+        let JobRun { session, em, .. } = &mut job;
+        session.teardown(&mut |l| em.log(last, LogKind::System, l));
+    }
+    job.em.step(last, Status::Success);
+    job.em.job(status);
+    JobResult { status, outputs }
+}
