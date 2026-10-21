@@ -63,8 +63,11 @@ impl RunOptions {
             root: root.to_path_buf(),
             event: event.to_string(),
             event_payload: None,
-            secrets: BTreeMap::new(),
-            vars: BTreeMap::new(),
+            // `.secrets` (dotenv format) at the project root supplies `secrets.NAME`.
+            secrets: fs::read_to_string(root.join(".secrets"))
+                .map(|t| parse_dotenv(&t).into_iter().collect())
+                .unwrap_or_default(),
+            vars: cfg.vars.clone(),
             inputs: BTreeMap::new(),
             platforms,
             bind: false,
