@@ -17,3 +17,12 @@ use crate::workflow::plan::RunPlan;
 use run_view::{RunAction, RunView};
 
 const FRAME: Duration = Duration::from_millis(50);
+
+/// Opens the interactive dashboard.
+pub fn dashboard(root: PathBuf) -> Result<()> {
+    let mut app = home::App::new(root)?;
+    let mut terminal = ratatui::init();
+    let result = app.run(&mut terminal);
+    ratatui::restore();
+    result
+}
