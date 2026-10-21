@@ -63,3 +63,8 @@ pub fn interpolate(s: &str, ctx: &Ctx) -> Result<String, String> {
     out.push_str(rest);
     Ok(out)
 }
+
+/// Interpolates a YAML scalar into a string.
+pub fn interpolate_yaml(v: &Yaml, ctx: &Ctx) -> Result<String, String> {
+    interpolate(&crate::workflow::model::scalar(v), ctx)
+}
