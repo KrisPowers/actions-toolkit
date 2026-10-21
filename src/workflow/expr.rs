@@ -130,3 +130,18 @@ fn find_close(s: &str) -> Option<usize> {
 
 // ---------------------------------------------------------------------------------------------
 // Lexer
+
+#[derive(Debug, Clone, PartialEq)]
+enum Tok {
+    Num(f64),
+    Str(String),
+    Ident(String),
+    Op(&'static str),
+    LParen,
+    RParen,
+    LBrack,
+    RBrack,
+    Dot,
+    Comma,
+    Star,
+}
