@@ -39,3 +39,13 @@ pub enum Family {
     VirtualMachine,
     BuiltIn,
 }
+
+impl Family {
+    pub fn label(self) -> &'static str {
+        match self {
+            Family::Container => "container",
+            Family::VirtualMachine => "vm",
+            Family::BuiltIn => "built-in",
+        }
+    }
+}
