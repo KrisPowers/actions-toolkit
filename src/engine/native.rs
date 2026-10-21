@@ -67,3 +67,5 @@ pub(super) fn detect() -> EngineInfo {
         "sandboxed directory + clean environment on this machine".to_string(),
     )
 }
+
+pub struct NativeEngine;
