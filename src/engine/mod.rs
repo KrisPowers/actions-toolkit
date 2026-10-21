@@ -186,3 +186,16 @@ pub fn detect(kind: Kind, cfg: &Config) -> EngineInfo {
         Family::BuiltIn => native::detect(),
     }
 }
+
+/// Probes every engine relevant to this OS in parallel.
+pub fn detect_all(cfg: &Config) -> Vec<EngineInfo> {
+    let handles: Vec<_> = Kind::ALL
+        .into_iter()
+        .filter(|k| k.on_this_host())
+        .map(|k| {
+            let cfg = cfg.clone();
+            thread::spawn(move || detect(k, &cfg))
+        })
+        .collect();
+    handles.into_iter().filter_map(|h| h.join().ok()).collect()
+}
