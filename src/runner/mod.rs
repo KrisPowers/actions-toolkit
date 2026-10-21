@@ -398,3 +398,28 @@ fn needs_context(plan: &RunPlan, results: &[Option<job::JobResult>], i: usize) -
     }
     Value::Object(needs)
 }
+
+/// Resolves the container image for a job, preferring an explicit `container:`.
+pub fn resolve_image(
+    opts: &RunOptions,
+    runs_on: &[String],
+    log: &mut dyn FnMut(String),
+) -> Result<String> {
+    if let Some(image) = runs_on.iter().find_map(|l| opts.platforms.get(l)) {
+        return Ok(image.clone());
+    }
+    let fallback = opts
+        .platforms
+        .get("ubuntu-latest")
+        .cloned()
+        .unwrap_or_else(|| DEFAULT_IMAGE.to_string());
+    match runs_on.first() {
+        None => bail!("job has no `runs-on`"),
+        Some(label) => {
+            log(format!(
+                "No image mapped for runs-on `{label}`; using {fallback} (map one with -P {label}=IMAGE)"
+            ));
+            Ok(fallback)
+        }
+    }
+}
