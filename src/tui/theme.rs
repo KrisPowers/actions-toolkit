@@ -29,3 +29,9 @@ pub fn dim() -> Style {
 pub fn bold() -> Style {
     Style::new().add_modifier(Modifier::BOLD)
 }
+
+pub fn selected() -> Style {
+    Style::new()
+        .bg(Color::Indexed(236))
+        .add_modifier(Modifier::BOLD)
+}
