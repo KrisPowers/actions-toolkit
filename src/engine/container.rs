@@ -41,3 +41,21 @@ fn locate(kind: Kind) -> Option<PathBuf> {
         ),
     }
 }
+
+pub(super) fn detect(kind: Kind) -> EngineInfo {
+    let Some(bin) = locate(kind) else {
+        return EngineInfo::missing(kind);
+    };
+    let version = version_of(&bin, &["--version"]);
+    // `info` talks to the daemon / VM, so it tells us whether containers can actually run.
+    let alive = util::probe(&bin, &["info", "--format", "{{json .}}"]).is_some_and(|o| o.success);
+    if alive {
+        EngineInfo::new(kind, Availability::Ready, version, None)
+    } else {
+        let hint = match kind {
+            Kind::Docker => "start Docker Desktop (or the docker daemon)",
+            _ => "run `podman machine start`",
+        };
+        EngineInfo::new(kind, Availability::NotRunning, version, hint.to_string())
+    }
+}
