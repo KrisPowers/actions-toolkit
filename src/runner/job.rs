@@ -917,3 +917,24 @@ impl<'a> JobRun<'a> {
         Ok((status, outputs))
     }
 }
+
+fn event_payload(opts: &RunOptions, inputs: &Map<String, Value>) -> Value {
+    if let Some(p) = &opts.event_payload {
+        return p.clone();
+    }
+    let g = &opts.git;
+    let (owner, name) = g
+        .repository
+        .split_once('/')
+        .unwrap_or(("", g.repository.as_str()));
+    let mut payload = json!({
+        "ref": g.git_ref(),
+        "after": g.sha,
+        "repository": { "full_name": g.repository, "name": name, "owner": { "login": owner }, "default_branch": g.branch },
+        "sender": { "login": g.actor },
+    });
+    if opts.event == "workflow_dispatch" {
+        payload["inputs"] = Value::Object(inputs.clone());
+    }
+    payload
+}
