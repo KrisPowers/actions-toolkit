@@ -83,3 +83,20 @@ pub fn find_root(start: &Path) -> PathBuf {
 pub fn workflows_dir(root: &Path) -> PathBuf {
     root.join(".github").join("workflows")
 }
+
+/// Loads every `.yml`/`.yaml` file under `.github/workflows`, sorted by file name.
+pub fn discover(root: &Path) -> Vec<WorkflowFile> {
+    let Ok(entries) = fs::read_dir(workflows_dir(root)) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.is_file()
+                && p.extension()
+                    .is_some_and(|ext| ext == "yml" || ext == "yaml")
+        })
+        .collect();
+    paths.sort();
+    paths.into_iter().map(WorkflowFile::load).collect()
+}
