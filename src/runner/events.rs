@@ -1,6 +1,9 @@
-//! Events streamed from the runner to whichever front-end is attached (TUI or plain).
+//! Events streamed from the runner to the TUI.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Status {
     Pending,
     Running,
@@ -15,7 +18,7 @@ impl Status {
         !matches!(self, Status::Pending | Status::Running)
     }
 
-    /// The string GitHub uses in `steps.*.outcome` / `needs.*.result`.
+    /// The string used in `steps.*.outcome` / `needs.*.result`.
     pub fn as_str(self) -> &'static str {
         match self {
             Status::Pending | Status::Running => "",
@@ -27,7 +30,8 @@ impl Status {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum LogKind {
     Output,
     /// Echo of the script being run.
