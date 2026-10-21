@@ -1,5 +1,7 @@
-//! Live view of a run: jobs, steps of the selected job, and its logs.
+//! A run: jobs, steps of the selected job, and its logs. Live runs save themselves to the
+//! history when they end; saved runs can be reopened read-only.
 
+use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -14,6 +16,7 @@ use ratatui::Frame;
 
 use super::theme::{self, ACCENT, BAD, DIM, OK, WARN};
 use crate::engine::Engine;
+use crate::history::{self, JobRecord, LogLine, Outcome, RunRecord, StepRecord, Store};
 use crate::runner::{self, LogKind, RunEvent, RunOptions, Status};
 use crate::util::{fmt_duration, Cancel};
 use crate::workflow::plan::RunPlan;
@@ -21,6 +24,18 @@ use crate::workflow::plan::RunPlan;
 pub enum RunAction {
     None,
     Close,
+    /// Run the same workflow/job again.
+    Rerun,
+    /// The user asked to stop a run that is still going; confirm first.
+    ConfirmCancel,
+}
+
+/// Where a live run came from, so it can be saved to the history and re-run.
+pub struct RunMeta {
+    pub project: PathBuf,
+    pub workflow: PathBuf,
+    pub job: Option<String>,
+    pub store: Option<Store>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -49,9 +64,20 @@ struct JobView {
 pub struct RunView {
     title: String,
     engine: String,
-    event: String,
+    pub event: String,
+    pub workflow: PathBuf,
+    pub job: Option<String>,
+    project: PathBuf,
+    store: Option<Store>,
+    id: String,
+    /// Unix time the run started.
+    started_at: u64,
+    /// Set for runs reopened from the history.
+    replay: bool,
+    saved: bool,
+    save_error: Option<String>,
     jobs: Vec<JobView>,
-    rx: Receiver<RunEvent>,
+    rx: Option<Receiver<RunEvent>>,
     cancel: Cancel,
     handle: Option<JoinHandle<bool>>,
     started: Instant,
@@ -78,7 +104,12 @@ fn elapsed(started: Option<Instant>, took: Option<Duration>) -> String {
 }
 
 impl RunView {
-    pub fn start(plan: Arc<RunPlan>, engine: Arc<dyn Engine>, opts: Arc<RunOptions>) -> Self {
+    pub fn start(
+        plan: Arc<RunPlan>,
+        engine: Arc<dyn Engine>,
+        opts: Arc<RunOptions>,
+        meta: RunMeta,
+    ) -> Self {
         let jobs = plan
             .jobs
             .iter()
@@ -109,8 +140,17 @@ impl RunView {
             title,
             engine: engine_name,
             event,
+            workflow: meta.workflow,
+            job: meta.job,
+            project: meta.project,
+            store: meta.store,
+            id: history::new_id(),
+            started_at: history::now(),
+            replay: false,
+            saved: false,
+            save_error: None,
             jobs,
-            rx,
+            rx: Some(rx),
             cancel,
             handle: Some(handle),
             started: Instant::now(),
@@ -127,9 +167,161 @@ impl RunView {
         }
     }
 
-    #[cfg(test)]
-    pub fn success(&self) -> bool {
-        self.finished.is_some_and(|(ok, _)| ok)
+    /// Reopens a saved run, read-only.
+    pub fn replay(record: &RunRecord, logs: Vec<LogLine>) -> Self {
+        let took = |ms: Option<u64>| ms.map(Duration::from_millis);
+        let mut jobs: Vec<JobView> = record
+            .jobs
+            .iter()
+            .map(|j| JobView {
+                name: j.name.clone(),
+                status: j.status,
+                started: None,
+                took: took(j.millis),
+                steps: j
+                    .steps
+                    .iter()
+                    .map(|s| StepView {
+                        name: s.name.clone(),
+                        status: s.status,
+                        started: None,
+                        took: took(s.millis),
+                    })
+                    .collect(),
+                logs: Vec::new(),
+            })
+            .collect();
+        for line in logs {
+            if let Some(job) = jobs.get_mut(line.job) {
+                job.logs.push((line.step, line.kind, line.text));
+            }
+        }
+        if jobs.is_empty() {
+            jobs.push(JobView {
+                name: record.title.clone(),
+                status: Status::Skipped,
+                started: None,
+                took: None,
+                steps: Vec::new(),
+                logs: Vec::new(),
+            });
+        }
+        let cancel = Cancel::new();
+        if record.outcome == Outcome::Cancelled {
+            cancel.cancel();
+        }
+        Self {
+            title: record.title.clone(),
+            engine: record.engine.clone(),
+            event: record.event.clone(),
+            workflow: record.workflow.clone(),
+            job: record.job.clone(),
+            project: record.project.clone(),
+            store: None,
+            id: record.id.clone(),
+            started_at: record.started,
+            replay: true,
+            saved: true,
+            save_error: None,
+            jobs,
+            rx: None,
+            cancel,
+            handle: None,
+            started: Instant::now(),
+            finished: Some((
+                record.outcome == Outcome::Success,
+                Duration::from_millis(record.millis),
+            )),
+            job_sel: 0,
+            auto_job: false,
+            step_cursor: 0,
+            step_filter: None,
+            focus: Focus::Jobs,
+            scroll: 0,
+            follow: true,
+            log_height: 10,
+            tick: 0,
+        }
+    }
+
+    /// Writes the run to the history (once).
+    fn save(&mut self) {
+        let Some(store) = self.store.clone() else {
+            return;
+        };
+        if self.saved {
+            return;
+        }
+        self.saved = true;
+        let (success, took) = self.finished.unwrap_or((false, self.started.elapsed()));
+        let outcome = if success {
+            Outcome::Success
+        } else if self.cancel.is_cancelled() {
+            Outcome::Cancelled
+        } else {
+            Outcome::Failure
+        };
+        // Anything still pending or running when the run stopped counts as cancelled.
+        let settle = |s: Status| if s.is_done() { s } else { Status::Cancelled };
+        let millis = |started: Option<Instant>, took: Option<Duration>| {
+            took.or(started.map(|s| s.elapsed()))
+                .map(|d| d.as_millis() as u64)
+        };
+        let record = RunRecord {
+            id: self.id.clone(),
+            project: self.project.clone(),
+            title: self.title.clone(),
+            workflow: self.workflow.clone(),
+            job: self.job.clone(),
+            engine: self.engine.clone(),
+            event: self.event.clone(),
+            started: self.started_at,
+            millis: took.as_millis() as u64,
+            outcome,
+            jobs: self
+                .jobs
+                .iter()
+                .map(|j| JobRecord {
+                    name: j.name.clone(),
+                    status: settle(j.status),
+                    millis: millis(j.started, j.took),
+                    steps: j
+                        .steps
+                        .iter()
+                        .map(|s| StepRecord {
+                            name: s.name.clone(),
+                            status: settle(s.status),
+                            millis: millis(s.started, s.took),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        };
+        let logs: Vec<LogLine> = self
+            .jobs
+            .iter()
+            .enumerate()
+            .flat_map(|(job, j)| {
+                j.logs.iter().map(move |(step, kind, text)| LogLine {
+                    job,
+                    step: *step,
+                    kind: *kind,
+                    text: text.clone(),
+                })
+            })
+            .collect();
+        if let Err(e) = store.save(&record, &logs) {
+            self.save_error = Some(format!("Could not save this run to the history: {e:#}"));
+        }
+    }
+
+    /// Cancels a run that is still going and saves it as cancelled, for when maverick exits.
+    pub fn abandon(&mut self) {
+        if self.finished.is_none() {
+            self.cancel();
+            self.finished = Some((false, self.started.elapsed()));
+        }
+        self.save();
     }
 
     pub fn is_finished(&self) -> bool {
@@ -143,7 +335,12 @@ impl RunView {
     /// Drains pending runner events. Call once per frame.
     pub fn update(&mut self) {
         self.tick = self.tick.wrapping_add(1);
-        while let Ok(event) = self.rx.try_recv() {
+        let Some(rx) = &self.rx else {
+            return;
+        };
+        let events: Vec<RunEvent> = rx.try_iter().collect();
+        let mut finished = false;
+        for event in events {
             match event {
                 RunEvent::Job { job, status } => {
                     let j = &mut self.jobs[job];
@@ -183,8 +380,12 @@ impl RunView {
                         let _ = h.join();
                     }
                     self.finished = Some((success, self.started.elapsed()));
+                    finished = true;
                 }
             }
+        }
+        if finished {
+            self.save();
         }
     }
 
@@ -218,18 +419,18 @@ impl RunView {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let page = self.log_height.max(1);
         match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => {
+            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Backspace => {
                 if self.is_finished() {
                     return RunAction::Close;
                 }
-                self.cancel();
-            }
-            KeyCode::Char('c') => {
-                if ctrl && self.is_finished() {
-                    return RunAction::Close;
+                if !self.cancel.is_cancelled() {
+                    return RunAction::ConfirmCancel;
                 }
-                self.cancel();
             }
+            KeyCode::Char('c') if !ctrl && !self.is_finished() && !self.cancel.is_cancelled() => {
+                return RunAction::ConfirmCancel;
+            }
+            KeyCode::Char('r') if self.is_finished() => return RunAction::Rerun,
             KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
                 self.focus = match self.focus {
                     Focus::Jobs => Focus::Steps,
@@ -397,6 +598,11 @@ impl RunView {
             Span::styled(self.title.clone(), theme::bold()),
             Span::styled(format!("   {} · {}", self.engine, self.event), theme::dim()),
         ]);
+        let when = if self.replay {
+            format!("· {} ", history::ago(self.started_at))
+        } else {
+            String::new()
+        };
         let right = match self.finished {
             None if self.cancel.is_cancelled() => Line::styled(
                 format!("{} cancelling… ", theme::spinner(self.tick / 2)),
@@ -411,15 +617,15 @@ impl RunView {
                 Style::new().fg(WARN),
             ),
             Some((true, d)) => Line::styled(
-                format!("✓ succeeded in {} ", fmt_duration(d)),
+                format!("✓ succeeded in {} {when}", fmt_duration(d)),
                 Style::new().fg(OK).add_modifier(Modifier::BOLD),
             ),
             Some((false, d)) if self.cancel.is_cancelled() => Line::styled(
-                format!("■ cancelled after {} ", fmt_duration(d)),
+                format!("■ cancelled after {} {when}", fmt_duration(d)),
                 Style::new().fg(ratatui::style::Color::Magenta),
             ),
             Some((false, d)) => Line::styled(
-                format!("✗ failed after {} ", fmt_duration(d)),
+                format!("✗ failed after {} {when}", fmt_duration(d)),
                 Style::new().fg(BAD).add_modifier(Modifier::BOLD),
             ),
         };
@@ -473,13 +679,16 @@ impl RunView {
     }
 
     fn footer(&self) -> Line<'static> {
+        if let Some(err) = &self.save_error {
+            return Line::styled(format!(" {err}"), Style::new().fg(BAD));
+        }
         let mut pairs = vec![("↑↓", "select"), ("tab", "panel")];
         if self.focus == Focus::Steps {
             pairs.push(("enter", "filter logs"));
         }
         pairs.extend([("a", "all logs"), ("pgup/pgdn", "scroll"), ("f", "follow")]);
         if self.is_finished() {
-            pairs.push(("q", "back"));
+            pairs.extend([("r", "run again"), ("⌫", "back")]);
         } else {
             pairs.push(("c", "cancel"));
         }
