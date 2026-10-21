@@ -21,3 +21,7 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 pub fn spinner(tick: usize) -> &'static str {
     SPINNER[tick % SPINNER.len()]
 }
+
+pub fn dim() -> Style {
+    Style::new().fg(DIM)
+}
