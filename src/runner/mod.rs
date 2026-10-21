@@ -157,3 +157,45 @@ pub struct GitInfo {
     pub owner: String,
     pub actor: String,
 }
+
+impl GitInfo {
+    pub fn detect(root: &Path) -> Self {
+        let git = |args: &[&str]| -> String {
+            let mut cmd = Command::new("git");
+            cmd.arg("-C").arg(root).args(args);
+            util::capture(cmd, Duration::from_secs(3))
+                .ok()
+                .filter(|o| o.success)
+                .map(|o| o.stdout.trim().to_string())
+                .unwrap_or_default()
+        };
+        let remote = git(&["config", "--get", "remote.origin.url"]);
+        let repository = parse_repo(&remote).unwrap_or_else(|| {
+            let dir = root
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            format!("local/{dir}")
+        });
+        let owner = repository.split('/').next().unwrap_or_default().to_string();
+        let actor = std::env::var("USER")
+            .or_else(|_| std::env::var("USERNAME"))
+            .unwrap_or_else(|_| owner.clone());
+        let branch = git(&["rev-parse", "--abbrev-ref", "HEAD"]);
+        Self {
+            sha: git(&["rev-parse", "HEAD"]),
+            branch: if branch.is_empty() {
+                "main".into()
+            } else {
+                branch
+            },
+            repository,
+            owner,
+            actor,
+        }
+    }
+
+    pub fn git_ref(&self) -> String {
+        format!("refs/heads/{}", self.branch)
+    }
+}
