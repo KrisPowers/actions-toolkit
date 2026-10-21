@@ -110,3 +110,24 @@ impl RunPlan {
         Ok(RunPlan { title, jobs })
     }
 }
+
+fn check_acyclic(jobs: &[PlannedJob]) -> Result<()> {
+    let mut indegree: Vec<usize> = jobs.iter().map(|j| j.needs.len()).collect();
+    let mut ready: Vec<usize> = (0..jobs.len()).filter(|&i| indegree[i] == 0).collect();
+    let mut seen = 0;
+    while let Some(i) = ready.pop() {
+        seen += 1;
+        for (j, job) in jobs.iter().enumerate() {
+            for _ in job.needs.iter().filter(|&&n| n == i) {
+                indegree[j] -= 1;
+                if indegree[j] == 0 {
+                    ready.push(j);
+                }
+            }
+        }
+    }
+    if seen != jobs.len() {
+        bail!("job dependencies (`needs`) form a cycle");
+    }
+    Ok(())
+}
