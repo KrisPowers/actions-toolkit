@@ -428,3 +428,41 @@ pub fn extract_version(text: &str) -> Option<String> {
                 .to_string()
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_ansi() {
+        assert_eq!(strip_ansi("\x1b[1;32mok\x1b[0m done"), "ok done");
+        assert_eq!(strip_ansi("\x1b]0;title\x07text"), "text");
+    }
+
+    #[test]
+    fn slugs() {
+        assert_eq!(slug("Test (ubuntu-latest, 18)"), "test-ubuntu-latest-18");
+    }
+
+    #[test]
+    fn versions() {
+        assert_eq!(
+            extract_version("Docker version 27.3.1, build ce12230").as_deref(),
+            Some("27.3.1")
+        );
+        assert_eq!(
+            extract_version("limactl version 1.0.3").as_deref(),
+            Some("1.0.3")
+        );
+        assert_eq!(
+            extract_version("QEMU emulator version 9.1.0").as_deref(),
+            Some("9.1.0")
+        );
+        assert_eq!(extract_version("no version here"), None);
+    }
+
+    #[test]
+    fn quotes() {
+        assert_eq!(shell_quote("it's"), r"'it'\''s'");
+    }
+}
