@@ -224,3 +224,154 @@ pub fn spawn(
     });
     (rx, handle)
 }
+
+fn schedule(
+    plan: &Arc<RunPlan>,
+    engine: &Arc<dyn Engine>,
+    opts: &Arc<RunOptions>,
+    tx: &Sender<RunEvent>,
+    cancel: &Cancel,
+) -> bool {
+    let n = plan.jobs.len();
+    let mut results: Vec<Option<job::JobResult>> = (0..n).map(|_| None).collect();
+    let mut started = vec![false; n];
+    let mut tokens: Vec<Cancel> = (0..n).map(|_| Cancel::new()).collect();
+    let (done_tx, done_rx) = mpsc::channel::<(usize, job::JobResult)>();
+    let mut running = 0;
+
+    let finish = |i: usize, status: Status, results: &mut Vec<Option<job::JobResult>>| {
+        let _ = tx.send(RunEvent::Job { job: i, status });
+        for step in 0..plan.jobs[i].step_names.len() {
+            let _ = tx.send(RunEvent::Step {
+                job: i,
+                step,
+                status: Status::Skipped,
+            });
+        }
+        results[i] = Some(job::JobResult {
+            status,
+            outputs: Map::new(),
+        });
+    };
+
+    loop {
+        // Start (or skip) every job whose dependencies are finished, until nothing changes.
+        let mut progressed = true;
+        while progressed {
+            progressed = false;
+            for i in 0..n {
+                if started[i] || results[i].is_some() {
+                    continue;
+                }
+                let pj = &plan.jobs[i];
+                if pj.needs.iter().any(|&d| results[d].is_none()) {
+                    continue;
+                }
+                let needs = needs_context(plan, &results, i);
+                let state = JobState {
+                    failed: pj.needs.iter().any(|&d| {
+                        matches!(results[d].as_ref().map(|r| r.status), Some(Status::Failure))
+                    }),
+                    blocked: pj.needs.iter().any(|&d| {
+                        !matches!(results[d].as_ref().map(|r| r.status), Some(Status::Success))
+                    }),
+                    cancelled: cancel.is_cancelled(),
+                };
+                let data = json!({
+                    "github": { "event_name": opts.event, "ref": opts.git.git_ref(), "sha": opts.git.sha, "repository": opts.git.repository },
+                    "needs": needs,
+                    "matrix": pj.matrix,
+                    "vars": expr::object(&opts.vars),
+                    "inputs": expr::object(&opts.inputs),
+                });
+                let should_run =
+                    match expr::condition(pj.job.condition.as_ref(), &Ctx::new(&data, state)) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            let _ = tx.send(RunEvent::Log {
+                                job: i,
+                                step: 0,
+                                kind: LogKind::Error,
+                                text: format!("invalid job `if`: {e}"),
+                            });
+                            finish(i, Status::Failure, &mut results);
+                            progressed = true;
+                            continue;
+                        }
+                    };
+                if !should_run {
+                    let status = if cancel.is_cancelled() {
+                        Status::Cancelled
+                    } else {
+                        Status::Skipped
+                    };
+                    finish(i, status, &mut results);
+                    progressed = true;
+                    continue;
+                }
+                if running >= opts.parallel {
+                    continue;
+                }
+                started[i] = true;
+                running += 1;
+                progressed = true;
+                let cx = job::JobContext {
+                    index: i,
+                    plan: plan.clone(),
+                    opts: opts.clone(),
+                    engine: engine.clone(),
+                    tx: tx.clone(),
+                    cancel: tokens[i].clone(),
+                    needs,
+                };
+                let done = done_tx.clone();
+                thread::spawn(move || {
+                    let result = job::run(cx);
+                    let _ = done.send((i, result));
+                });
+            }
+        }
+
+        if results.iter().all(Option::is_some) {
+            break;
+        }
+        if running == 0 {
+            // Nothing running and nothing startable: should be impossible for an acyclic plan.
+            break;
+        }
+        match done_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok((i, result)) => {
+                running -= 1;
+                let failed = result.status == Status::Failure;
+                results[i] = Some(result);
+                if failed && plan.jobs[i].fail_fast && plan.jobs[i].matrix_total > 1 {
+                    for j in 0..n {
+                        let same = Arc::ptr_eq(&plan.jobs[j].workflow, &plan.jobs[i].workflow)
+                            && plan.jobs[j].key == plan.jobs[i].key;
+                        if same && j != i && results[j].is_none() {
+                            if started[j] {
+                                tokens[j].cancel();
+                            } else {
+                                finish(j, Status::Cancelled, &mut results);
+                            }
+                        }
+                    }
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+        if cancel.is_cancelled() {
+            for t in tokens.iter_mut() {
+                t.cancel();
+            }
+        }
+    }
+
+    results.iter().all(|r| {
+        matches!(
+            r.as_ref().map(|r| r.status),
+            Some(Status::Success | Status::Skipped)
+        )
+    })
+}
