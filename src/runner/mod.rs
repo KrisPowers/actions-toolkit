@@ -148,3 +148,12 @@ fn parse_dotenv(text: &str) -> Vec<(String, String)> {
         })
         .collect()
 }
+
+#[derive(Clone, Debug, Default)]
+pub struct GitInfo {
+    pub sha: String,
+    pub branch: String,
+    pub repository: String,
+    pub owner: String,
+    pub actor: String,
+}
