@@ -64,3 +64,13 @@ pub enum Container {
     Image(String),
     Spec(ContainerSpec),
 }
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ContainerSpec {
+    pub image: String,
+    #[serde(default)]
+    pub env: IndexMap<String, Yaml>,
+    pub options: Option<String>,
+    #[serde(default)]
+    pub volumes: Vec<String>,
+}
