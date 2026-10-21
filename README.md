@@ -110,3 +110,16 @@ ssh = "runner@127.0.0.1:2222"
 identity = "~/.ssh/maverick"
 ```
 
+## Secrets, variables and inputs
+
+```sh
+maverick run -s NPM_TOKEN=abc           # secrets.NPM_TOKEN
+maverick run -s GITHUB_TOKEN            # value read from $GITHUB_TOKEN
+maverick run --secret-file .secrets     # dotenv file
+maverick run --var REGION=eu            # vars.REGION
+maverick run -e workflow_dispatch -i greeting=Hey
+maverick run --event-file payload.json  # custom github.event
+```
+
+Secret values (and anything passed to `::add-mask::`) are replaced with `***` in all output.
+
