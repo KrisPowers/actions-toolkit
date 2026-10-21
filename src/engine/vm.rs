@@ -96,11 +96,9 @@ fn default_instance(kind: Kind) -> Option<&'static str> {
 
 fn setup_hint(kind: Kind) -> String {
     match kind {
-        Kind::Parallels => "pick a Linux VM: maverick config set-target parallels <vm-name>".into(),
-        _ => format!(
-            "enable SSH in a Linux guest, then: maverick config set-target {} user@host[:port]",
-            kind.id()
-        ),
+        Kind::Parallels => "pick a Linux VM: select Parallels and press t".into(),
+        _ => "enable SSH in a Linux guest, then select this engine, press t and enter user@host[:port]"
+            .into(),
     }
 }
 
