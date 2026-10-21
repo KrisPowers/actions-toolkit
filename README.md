@@ -90,3 +90,23 @@ Without a default, maverick uses Docker or Podman if one is running, else the na
 Override per run with `-P ubuntu-latest=node:20-bookworm`, or permanently in config. A job's
 `container:` always takes precedence.
 
+## Configuration
+
+User config lives at `maverick config path` (e.g. `~/.config/maverick/config.toml` on Linux);
+a project can add `.maverick.toml` at its root, which overrides it.
+
+```toml
+engine = "docker"
+parallel = 4
+
+[images]
+ubuntu-latest = "ghcr.io/catthehacker/ubuntu:full-latest"
+
+[engines.lima]
+instance = "ci"
+
+[engines.virtualbox]
+ssh = "runner@127.0.0.1:2222"
+identity = "~/.ssh/maverick"
+```
+
