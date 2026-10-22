@@ -1,22 +1,5 @@
-mod cli;
-mod config;
-mod engine;
-mod history;
-mod runner;
-mod tui;
-mod util;
-mod workflow;
+//! `maverick`: settings and the guide.
 
-use std::process::ExitCode;
-
-use clap::Parser;
-
-fn main() -> ExitCode {
-    match cli::Cli::parse().execute() {
-        Ok(code) => code,
-        Err(err) => {
-            eprintln!("error: {err:#}");
-            ExitCode::FAILURE
-        }
-    }
+fn main() -> std::process::ExitCode {
+    maverick::main(maverick::Start::Settings)
 }
