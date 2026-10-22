@@ -22,13 +22,15 @@ watch every step live. It works fully offline and needs no account or hosted ser
 cargo install --path .
 ```
 
+This installs two commands: `maverick` and `workflows`.
+
 Works on macOS, Linux and Windows. Engines are optional and detected automatically.
 
 ## Usage
 
 ```sh
 maverick              # settings and the guide
-maverick workflows    # your workflow catalog and the history of runs
+workflows             # your workflow catalog and the history of runs
 ```
 
 Both work on the project in the current folder; add `-C <folder>` for another one. Everything
@@ -51,7 +53,7 @@ else happens in the TUI, with the keyboard:
 | Run options | The event runs simulate, and how many jobs run at once |
 | Data | Clear this project's run history, or reset your settings |
 
-### `maverick workflows`: Catalog and Runs
+### `workflows`: Catalog and Runs
 
 A two-option menu:
 
@@ -183,7 +185,7 @@ dynamic matrices, caching and artifacts (these steps are skipped with a warning)
 ```sh
 cargo test
 cargo clippy --all-targets -- -D warnings
-maverick -C examples/demo workflows   # a workflow that exercises most features
+workflows -C examples/demo   # a workflow that exercises most features
 ```
 
 ## License
