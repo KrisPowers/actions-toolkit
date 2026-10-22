@@ -1,5 +1,5 @@
 //! Terminal UI: settings and guide (`maverick`), the workflow catalog and run history
-//! (`maverick workflows`), and the live run view.
+//! (`workflows`), and the live run view.
 
 mod app;
 mod dialog;

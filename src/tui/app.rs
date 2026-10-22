@@ -45,7 +45,7 @@ pub const EVENTS: [&str; 5] = [
 pub enum Start {
     /// `maverick`: settings and the guide.
     Settings,
-    /// `maverick workflows`: the catalog / runs menu.
+    /// `workflows`: the catalog / runs menu.
     Workflows,
 }
 

@@ -579,7 +579,7 @@ impl App {
             h("Commands"),
             kv("maverick", "this page: settings and the guide".into()),
             kv(
-                "maverick workflows",
+                "workflows",
                 "your workflow catalog and the history of runs".into(),
             ),
             t(""),
@@ -587,7 +587,7 @@ impl App {
             t("  1. Engines: choose where runs happen."),
             t("  2. Workflow locations: .github/workflows and .maverick/workflows are always"),
             t("     searched. Add other folders or files for this project or every project."),
-            t("  3. Run `maverick workflows`, open Catalog, pick a workflow or job, press Enter."),
+            t("  3. Run `workflows`, open Catalog, pick a workflow or job, press Enter."),
             t(""),
             h("Keys"),
             kv("↑ ↓", "move".into()),
@@ -648,7 +648,7 @@ mod tests {
         let mut app = App::with_store(root, Start::Settings, None).unwrap();
         let screen = render(&mut app, 110, 30);
         assert!(screen.contains("Settings"), "{screen}");
-        assert!(screen.contains("maverick workflows"), "{screen}");
+        assert!(screen.contains("workflows "), "{screen}");
         assert!(screen.contains("Workflow locations"), "{screen}");
     }
 

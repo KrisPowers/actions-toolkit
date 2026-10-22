@@ -1,4 +1,4 @@
-//! `maverick workflows`: choose between the workflow catalog and the run history.
+//! `workflows`: choose between the workflow catalog and the run history.
 
 use std::path::Path;
 
