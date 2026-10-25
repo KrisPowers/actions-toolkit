@@ -1,17 +1,17 @@
-# Installs the actions-toolkit CLI (backend + embedded UI in one binary).
+# Installs the Actions Toolkit CLI, `atk`.
 #
 #   irm https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.ps1 | iex
 #
 # Env overrides:
-#   ACTIONS_TOOLKIT_VERSION     release tag to install, e.g. v0.1.0 (default: latest)
-#   ACTIONS_TOOLKIT_INSTALL_DIR directory to install the binary into (default: %LOCALAPPDATA%\actions-toolkit\bin)
+#   ATK_VERSION     release tag to install, e.g. v0.1.0 (default: latest)
+#   ATK_INSTALL_DIR directory to install the binary into (default: %LOCALAPPDATA%\atk\bin)
 
 $ErrorActionPreference = "Stop"
 
 $Repo = "KrisPowers/actions-toolkit"
-$BinName = "actions-toolkit.exe"
-$InstallDir = if ($env:ACTIONS_TOOLKIT_INSTALL_DIR) { $env:ACTIONS_TOOLKIT_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "actions-toolkit\bin" }
-$Version = if ($env:ACTIONS_TOOLKIT_VERSION) { $env:ACTIONS_TOOLKIT_VERSION } else { "latest" }
+$BinName = "atk.exe"
+$InstallDir = if ($env:ATK_INSTALL_DIR) { $env:ATK_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "atk\bin" }
+$Version = if ($env:ATK_VERSION) { $env:ATK_VERSION } else { "latest" }
 
 $arch = if ([System.Environment]::Is64BitOperatingSystem) { "x86_64" } else { $null }
 if ($arch -ne "x86_64") {
@@ -19,7 +19,7 @@ if ($arch -ne "x86_64") {
   exit 1
 }
 
-$asset = "actions-toolkit-windows-$arch"
+$asset = "atk-windows-$arch"
 if ($Version -eq "latest") {
   $url = "https://github.com/$Repo/releases/latest/download/$asset.zip"
 } else {
@@ -31,7 +31,7 @@ New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 try {
   $zipPath = Join-Path $tmpDir "$asset.zip"
 
-  Write-Host "Downloading actions-toolkit (windows-$arch, $Version)..."
+  Write-Host "Downloading atk (windows-$arch, $Version)..."
   try {
     Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
   } catch {
@@ -47,10 +47,7 @@ try {
   Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
 }
 
-Write-Host "Installed actions-toolkit to $InstallDir\$BinName"
-
-Write-Host "Initializing data directory..."
-& (Join-Path $InstallDir $BinName) init
+Write-Host "Installed atk to $InstallDir\$BinName"
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if (";$userPath;" -notlike "*;$InstallDir;*") {
@@ -61,4 +58,4 @@ if (";$userPath;" -notlike "*;$InstallDir;*") {
 }
 
 Write-Host ""
-Write-Host "Run 'actions-toolkit start' (or 'actions-toolkit listen') to launch actions-toolkit."
+Write-Host "ATK runs every job in Docker. Run 'atk doctor' to check your setup, then 'atk' in a project."

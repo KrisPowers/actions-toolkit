@@ -1,3 +1,5 @@
 /target
-.maverick.local.toml
+/dist/
+/atk-*.tar.gz*
+/atk-*.zip*
 .secrets
