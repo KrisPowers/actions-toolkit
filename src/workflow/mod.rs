@@ -15,9 +15,9 @@ pub use model::Workflow;
 /// Where a workflow location came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
-    /// A conventional folder maverick always checks.
+    /// A conventional folder ATK always checks.
     Auto,
-    /// Listed in the project's `.maverick.toml`.
+    /// Listed in the project's `.atk.toml`.
     Project,
     /// Listed in the user config; applies to every project.
     Global,
@@ -34,7 +34,7 @@ impl Source {
 }
 
 /// Folders searched automatically, relative to the project root.
-pub const AUTO_DIRS: [&str; 2] = [".github/workflows", ".maverick/workflows"];
+pub const AUTO_DIRS: [&str; 2] = [".github/workflows", ".atk/workflows"];
 
 /// A folder or single file to search for workflows.
 #[derive(Debug, Clone)]
@@ -107,7 +107,53 @@ pub fn read(path: &Path) -> Result<Arc<Workflow>, String> {
         .map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Walks up from `start` to the nearest project root: a directory with workflows or maverick
+/// Plans a run of the workflow at `path`, or of just `job` in it.
+pub fn plan_for(path: &Path, job: Option<&str>) -> Result<plan::RunPlan, String> {
+    let wf = read(path)?;
+    let name = wf.name.clone().unwrap_or_else(|| {
+        path.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    });
+    plan::RunPlan::build(&[(wf, name)], job).map_err(|e| format!("{e:#}"))
+}
+
+/// Finds a workflow of this project by path, file name (with or without extension) or
+/// `name:`, case-insensitively.
+pub fn find(root: &Path, query: &str) -> Result<PathBuf, String> {
+    for base in [std::env::current_dir().ok(), Some(root.to_path_buf())]
+        .into_iter()
+        .flatten()
+    {
+        let path = base.join(query);
+        if is_yaml(&path) {
+            return Ok(crate::util::canonical(&path).unwrap_or(path));
+        }
+    }
+    let q = query.to_lowercase();
+    let files = discover(root);
+    let matches: Vec<&WorkflowFile> = files
+        .iter()
+        .filter(|f| {
+            let stem = f.path.file_stem().map(|s| s.to_string_lossy().to_lowercase());
+            f.file_name.to_lowercase() == q
+                || stem.as_deref() == Some(q.as_str())
+                || f.display_name().to_lowercase() == q
+        })
+        .collect();
+    match matches.as_slice() {
+        [one] => Ok(one.path.clone()),
+        [] => Err(format!(
+            "no workflow `{query}` in this project (see `atk list`)"
+        )),
+        many => Err(format!(
+            "`{query}` matches {} workflows; give its path instead",
+            many.len()
+        )),
+    }
+}
+
+/// Walks up from `start` to the nearest project root: a directory with workflows or ATK
 /// config, else the enclosing git checkout, else `start` itself.
 pub fn find_root(start: &Path) -> PathBuf {
     let is_project = |dir: &Path| {
