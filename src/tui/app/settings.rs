@@ -1,4 +1,4 @@
-//! `maverick`: the guide and settings. Sections on the left, their contents on the right.
+//! `atk settings`: the guide and settings. Sections on the left, their contents on the right.
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -9,7 +9,7 @@ use ratatui::Frame;
 
 use super::{menu::plural, tilde, App, Danger, Modal, Nav, Purpose, EVENTS};
 use crate::config::Config;
-use crate::engine::{Family, Kind};
+use crate::engine;
 use crate::tui::dialog::{Confirm, Prompt};
 use crate::tui::theme::{self, ACCENT, OK};
 use crate::workflow::{self, Location, Source};
@@ -17,7 +17,7 @@ use crate::workflow::{self, Location, Source};
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Section {
     Guide,
-    Engines,
+    Docker,
     Locations,
     Options,
     Data,
@@ -25,7 +25,7 @@ enum Section {
 
 const SECTIONS: [Section; 5] = [
     Section::Guide,
-    Section::Engines,
+    Section::Docker,
     Section::Locations,
     Section::Options,
     Section::Data,
@@ -35,7 +35,7 @@ impl Section {
     fn title(self) -> &'static str {
         match self {
             Section::Guide => "Guide",
-            Section::Engines => "Engines",
+            Section::Docker => "Docker",
             Section::Locations => "Workflow locations",
             Section::Options => "Run options",
             Section::Data => "Data",
@@ -44,10 +44,8 @@ impl Section {
 
     fn blurb(self) -> &'static str {
         match self {
-            Section::Guide => "How maverick works, its commands and keys.",
-            Section::Engines => {
-                "Where runs happen: containers, virtual machines or the built-in sandbox."
-            }
+            Section::Guide => "How ATK works, its commands and keys.",
+            Section::Docker => "Every job runs in its own Docker container. Is Docker ready?",
             Section::Locations => {
                 "Folders and files searched for workflows, for this project or every project."
             }
@@ -75,7 +73,7 @@ impl App {
     fn section_len(&self, section: Section) -> usize {
         match section {
             Section::Guide => self.guide().len(),
-            Section::Engines => self.engines.len(),
+            Section::Docker => 1,
             Section::Locations => self.locations.len() + 2,
             Section::Options | Section::Data => 2,
         }
@@ -106,7 +104,6 @@ impl App {
                 s.inside = false
             }
             KeyCode::Enter => self.activate(section, s.sel),
-            KeyCode::Char('t') if section == Section::Engines => self.target_prompt(s.sel),
             KeyCode::Char('a') if section == Section::Locations => {
                 self.modal = Some(location_prompt(Source::Project))
             }
@@ -125,7 +122,10 @@ impl App {
     fn activate(&mut self, section: Section, sel: usize) {
         match section {
             Section::Guide => {}
-            Section::Engines => self.choose_engine(sel),
+            Section::Docker => {
+                self.detect_docker();
+                self.say("Checking Docker…", false);
+            }
             Section::Locations => {
                 let n = self.locations.len();
                 if sel == n {
@@ -179,84 +179,12 @@ impl App {
             Section::Data => {
                 self.modal = Some(Modal::Confirm(Confirm::new(
                     "Reset settings?",
-                    "Delete your user settings (default engine, VM targets, global locations)?",
+                    "Delete your user settings (default event, jobs at once, global locations)?",
                     "Reset",
                     Danger::ResetSettings,
                 )));
             }
         }
-    }
-
-    fn choose_engine(&mut self, sel: usize) {
-        let Some(info) = self.engines.get(sel).cloned() else {
-            return;
-        };
-        if !info.is_ready() {
-            let hint = info
-                .note
-                .clone()
-                .unwrap_or_else(|| format!("{} is {}", info.kind.name(), info.status_label()));
-            self.say(format!("{}: {hint}", info.kind.name()), true);
-            return;
-        }
-        match self.edit_user_config(|c| c.engine = Some(info.kind.id().to_string())) {
-            Ok(()) => {
-                self.active = Some(info.kind);
-                self.say(
-                    format!("{} is now the default engine", info.kind.name()),
-                    false,
-                );
-            }
-            Err(e) => self.say(format!("Could not save settings: {e}"), true),
-        }
-    }
-
-    fn target_prompt(&mut self, sel: usize) {
-        let Some(kind) = self.engines.get(sel).map(|i| i.kind) else {
-            return;
-        };
-        if kind.family() != Family::VirtualMachine {
-            self.say(format!("{} doesn't need a target", kind.name()), true);
-            return;
-        }
-        let current = self.cfg.engine(kind.id());
-        let value = current.ssh.or(current.instance).unwrap_or_default();
-        self.modal = Some(Modal::Prompt(Prompt::new(
-            format!("{} target", kind.name()),
-            "VM/instance name, or user@host[:port] to connect over SSH. Empty resets it.",
-            &value,
-            Purpose::EngineTarget(kind),
-        )));
-    }
-
-    /// Saves a VM engine's instance name or SSH target; an SSH target asks for a key next.
-    pub(super) fn set_target(
-        &mut self,
-        kind: Kind,
-        value: &str,
-    ) -> Result<(String, Option<Modal>), String> {
-        let ssh = value.contains('@');
-        self.edit_engine(kind, |e| {
-            e.instance = (!ssh && !value.is_empty()).then(|| value.to_string());
-            e.ssh = ssh.then(|| value.to_string());
-            if !ssh {
-                e.identity = None;
-            }
-        })?;
-        let msg = match value {
-            "" => format!("{} uses its default target", kind.name()),
-            v => format!("{} will use {v}", kind.name()),
-        };
-        let next = ssh.then(|| {
-            let key = self.cfg.engine(kind.id()).identity.unwrap_or_default();
-            Modal::Prompt(Prompt::new(
-                format!("{} SSH key", kind.name()),
-                "Private key file for the SSH connection. Leave empty to use your SSH defaults.",
-                &key,
-                Purpose::EngineKey(kind),
-            ))
-        });
-        Ok((msg, next))
     }
 
     fn confirm_remove_location(&mut self, sel: usize) {
@@ -378,25 +306,20 @@ impl App {
                     padded,
                 );
             }
-            Section::Engines => {
-                if self.engines.is_empty() {
-                    let inner = block.inner(content);
-                    f.render_widget(block, content);
-                    f.render_widget(
-                        Paragraph::new(Line::styled(
-                            format!(" {} Detecting engines…", theme::spinner(self.tick / 2)),
-                            Style::new().fg(theme::WARN),
-                        )),
-                        inner,
-                    );
-                } else {
-                    let rows = self
-                        .engines
-                        .iter()
-                        .map(|i| self.engine_row(i, width))
-                        .collect();
-                    theme::render_list(f, content, block, rows, sel, s.inside);
-                }
+            Section::Docker => {
+                let (dot, color, status) = match &self.docker {
+                    None => (theme::spinner(self.tick / 2), theme::WARN, "checking…"),
+                    Some(i) if i.is_ready() => ("●", OK, i.status_label()),
+                    Some(i) => ("○", theme::BAD, i.status_label()),
+                };
+                let row = theme::row(
+                    Span::styled(dot, Style::new().fg(color)),
+                    engine::NAME,
+                    status.to_string(),
+                    width,
+                    Style::new(),
+                );
+                theme::render_list(f, content, block, vec![row], sel, s.inside);
             }
             Section::Locations => {
                 let mut rows: Vec<Line> = self
@@ -479,16 +402,7 @@ impl App {
         }
         match section {
             Section::Guide => {}
-            Section::Engines => {
-                hints.push(("enter", "make default"));
-                if self
-                    .engines
-                    .get(s.sel)
-                    .is_some_and(|i| i.kind.family() == Family::VirtualMachine)
-                {
-                    hints.push(("t", "set target"));
-                }
-            }
+            Section::Docker => hints.push(("enter", "check again")),
             Section::Locations => hints.extend([
                 ("enter", "select"),
                 ("a", "add"),
@@ -505,24 +419,19 @@ impl App {
     fn item_help(&self, section: Section, sel: usize) -> String {
         match section {
             Section::Guide => "↑↓ to scroll, ⌫ to go back to the sections.".into(),
-            Section::Engines => match self.engines.get(sel) {
+            Section::Docker => match &self.docker {
                 Some(info) => {
                     let version = info.version.as_ref().map(|v| format!(" v{v}")).unwrap_or_default();
-                    let note = info.note.clone().unwrap_or_default();
-                    let action = if info.is_ready() {
-                        "Enter makes it the default."
-                    } else {
-                        "Not usable yet."
-                    };
-                    format!("{}{version}: {}. {note} {action}", info.kind.name(), info.status_label())
+                    let note = info.note.as_ref().map(|n| format!(": {n}")).unwrap_or_default();
+                    format!("Docker{version} is {}{note}. Enter checks again.", info.status_label())
                 }
-                None => String::new(),
+                None => "Checking whether Docker is installed and running…".into(),
             },
             Section::Locations => match self.locations.get(sel) {
                 Some((loc, _)) => match loc.source {
                     Source::Auto => format!("{} is always searched.", tilde(&loc.path)),
                     Source::Project => format!(
-                        "{}: listed in this project's .maverick.toml. Enter or d removes it.",
+                        "{}: listed in this project's .atk.toml. Enter or d removes it.",
                         tilde(&loc.path)
                     ),
                     Source::Global => format!(
@@ -544,7 +453,7 @@ impl App {
                 None => "This system has no user data folder, so runs aren't saved.".into(),
             },
             Section::Data => match Config::user_path() {
-                Some(p) => format!("Deletes {}. Project settings in .maverick.toml are kept.", tilde(&p)),
+                Some(p) => format!("Deletes {}. Project settings in .atk.toml are kept.", tilde(&p)),
                 None => "Deletes your user settings.".into(),
             },
         }
@@ -573,21 +482,23 @@ impl App {
             .map(|s| tilde(s.dir()))
             .unwrap_or_else(|| "unavailable".into());
         vec![
-            t("Maverick runs your CI/CD workflows on this machine, offline, inside a"),
-            t("container, a virtual machine, or its built-in sandbox."),
+            t("ATK (Actions Toolkit) runs your CI/CD workflows on this machine, each job in"),
+            t("its own Docker container, instead of on paid hosted runners."),
             t(""),
             h("Commands"),
-            kv("maverick", "this page: settings and the guide".into()),
-            kv(
-                "workflows",
-                "your workflow catalog and the history of runs".into(),
-            ),
+            kv("atk", "your workflow catalog and the history of runs".into()),
+            kv("atk settings", "this page: settings and the guide".into()),
+            kv("atk run <workflow>", "run without the TUI (--detach to background it)".into()),
+            kv("atk watch <id>", "follow a run until it ends".into()),
+            kv("atk status <id>", "a run's jobs, steps and failures".into()),
+            kv("atk mcp", "let AI agents run, watch and review workflows".into()),
+            kv("atk --help", "every command".into()),
             t(""),
             h("Getting started"),
-            t("  1. Engines: choose where runs happen."),
-            t("  2. Workflow locations: .github/workflows and .maverick/workflows are always"),
+            t("  1. Docker: install it and make sure it is running."),
+            t("  2. Workflow locations: .github/workflows and .atk/workflows are always"),
             t("     searched. Add other folders or files for this project or every project."),
-            t("  3. Run `workflows`, open Catalog, pick a workflow or job, press Enter."),
+            t("  3. Run `atk`, open Catalog, pick a workflow or job, press Enter."),
             t(""),
             h("Keys"),
             kv("↑ ↓", "move".into()),
@@ -604,7 +515,7 @@ impl App {
             kv("settings", config),
             kv(
                 "project settings",
-                ".maverick.toml in the project root".into(),
+                ".atk.toml in the project root".into(),
             ),
             kv(
                 "secrets",
@@ -678,7 +589,7 @@ mod tests {
         let screen = render(&mut app, 110, 24);
         assert!(screen.contains("project  pipelines"), "{screen}");
         assert_eq!(app.workflows.len(), 1);
-        let saved = std::fs::read_to_string(root.join(".maverick.toml")).unwrap();
+        let saved = std::fs::read_to_string(root.join(".atk.toml")).unwrap();
         assert!(saved.contains("pipelines"), "{saved}");
 
         let row = app

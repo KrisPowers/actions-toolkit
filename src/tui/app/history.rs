@@ -14,7 +14,7 @@ use crate::history::{self, Outcome, RunRecord, Store};
 use crate::runner::Status;
 use crate::tui::dialog::Confirm;
 use crate::tui::run_view::RunView;
-use crate::tui::theme::{self, BAD, OK};
+use crate::tui::theme::{self, BAD, OK, WARN};
 use crate::util::fmt_duration;
 
 pub struct History {
@@ -47,6 +47,8 @@ fn outcome_icon(outcome: Outcome) -> Span<'static> {
         Outcome::Success => Span::styled("✓", Style::new().fg(OK)),
         Outcome::Failure => Span::styled("✗", Style::new().fg(BAD)),
         Outcome::Cancelled => Span::styled("■", Style::new().fg(Color::Magenta)),
+        Outcome::Interrupted => Span::styled("!", Style::new().fg(WARN)),
+        Outcome::Running => Span::styled("●", Style::new().fg(WARN)),
     }
 }
 
@@ -201,15 +203,16 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{demo_app, press, render, wait_for_run};
+    use super::super::tests::{demo_app, docker_ready, press, render, wait_for_run};
     use super::super::{Modal, Screen, Start};
-    use crate::engine::Kind;
     use ratatui::crossterm::event::KeyCode;
 
     #[test]
     fn runs_show_up_in_history_and_can_be_reopened_and_deleted() {
         let (mut app, _dir) = demo_app(Start::Workflows);
-        app.active = Some(Kind::Native);
+        if !docker_ready(&app) {
+            return;
+        }
         let path = app.workflows[0].path.clone();
         let run = app.start_run(&path, Some("build".into()), "push").unwrap();
         app.stack.push(run);
@@ -220,7 +223,7 @@ mod tests {
         press(&mut app, KeyCode::Enter); // Runs
         let screen = render(&mut app, 110, 24);
         assert!(screen.contains("Runs 1"), "{screen}");
-        assert!(screen.contains("Maverick Native · push"), "{screen}");
+        assert!(screen.contains("Docker · push"), "{screen}");
 
         press(&mut app, KeyCode::Enter); // reopen
         let screen = render(&mut app, 110, 24);

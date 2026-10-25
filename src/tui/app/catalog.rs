@@ -109,7 +109,7 @@ impl App {
                 Line::raw(""),
                 Line::styled(" No workflows found.", theme::bold()),
                 Line::styled(
-                    " Add a folder or file to search under Workflow locations in `maverick`.",
+                    " Add a folder or file to search under Workflow locations in `atk settings`.",
                     theme::dim(),
                 ),
             ];
@@ -247,7 +247,7 @@ impl App {
                     Line::from(vec![
                         label("needs"),
                         Span::raw(if needs.is_empty() {
-                            "—".into()
+                            "none".into()
                         } else {
                             needs.join(", ")
                         }),
@@ -278,15 +278,16 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{demo_app, press, render, wait_for_run};
+    use super::super::tests::{demo_app, docker_ready, press, render, wait_for_run};
     use super::super::{Screen, Start};
-    use crate::engine::Kind;
     use ratatui::crossterm::event::KeyCode;
 
     #[test]
     fn catalog_lists_and_runs_a_job() {
         let (mut app, store_dir) = demo_app(Start::Workflows);
-        app.active = Some(Kind::Native);
+        if !docker_ready(&app) {
+            return;
+        }
         press(&mut app, KeyCode::Enter); // Catalog
         let screen = render(&mut app, 110, 24);
         assert!(screen.contains("Catalog"), "{screen}");

@@ -1,5 +1,6 @@
-//! A run: jobs, steps of the selected job, and its logs. Live runs save themselves to the
-//! history when they end; saved runs can be reopened read-only.
+//! A run: jobs, steps of the selected job, and its logs. Live runs record themselves in the
+//! history as they go, so other `atk` commands can follow them; saved runs can be reopened
+//! read-only.
 
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
@@ -16,7 +17,7 @@ use ratatui::Frame;
 
 use super::theme::{self, ACCENT, BAD, DIM, OK, WARN};
 use crate::engine::Engine;
-use crate::history::{self, JobRecord, LogLine, Outcome, RunRecord, StepRecord, Store};
+use crate::history::{self, LogLine, Outcome, Recorder, RunMeta, RunRecord, Store};
 use crate::runner::{self, LogKind, RunEvent, RunOptions, Status};
 use crate::util::{fmt_duration, Cancel};
 use crate::workflow::plan::RunPlan;
@@ -28,14 +29,6 @@ pub enum RunAction {
     Rerun,
     /// The user asked to stop a run that is still going; confirm first.
     ConfirmCancel,
-}
-
-/// Where a live run came from, so it can be saved to the history and re-run.
-pub struct RunMeta {
-    pub project: PathBuf,
-    pub workflow: PathBuf,
-    pub job: Option<String>,
-    pub store: Option<Store>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -67,15 +60,12 @@ pub struct RunView {
     pub event: String,
     pub workflow: PathBuf,
     pub job: Option<String>,
-    project: PathBuf,
-    store: Option<Store>,
-    id: String,
+    /// Keeps the history up to date while a live run goes.
+    recorder: Option<Recorder>,
     /// Unix time the run started.
     started_at: u64,
     /// Set for runs reopened from the history.
     replay: bool,
-    saved: bool,
-    save_error: Option<String>,
     jobs: Vec<JobView>,
     rx: Option<Receiver<RunEvent>>,
     cancel: Cancel,
@@ -109,6 +99,7 @@ impl RunView {
         engine: Arc<dyn Engine>,
         opts: Arc<RunOptions>,
         meta: RunMeta,
+        store: Option<Store>,
     ) -> Self {
         let jobs = plan
             .jobs
@@ -133,22 +124,19 @@ impl RunView {
             .collect();
         let cancel = Cancel::new();
         let title = plan.title.clone();
-        let engine_name = engine.kind().name().to_string();
-        let event = opts.event.clone();
+        let (engine_name, event) = (meta.engine.clone(), meta.event.clone());
+        let (workflow, job) = (meta.workflow.clone(), meta.job.clone());
+        let recorder = store.map(|s| Recorder::begin(s, history::new_id(), &plan, meta));
         let (rx, handle) = runner::spawn(plan, engine, opts, cancel.clone());
         Self {
             title,
             engine: engine_name,
             event,
-            workflow: meta.workflow,
-            job: meta.job,
-            project: meta.project,
-            store: meta.store,
-            id: history::new_id(),
+            workflow,
+            job,
+            recorder,
             started_at: history::now(),
             replay: false,
-            saved: false,
-            save_error: None,
             jobs,
             rx: Some(rx),
             cancel,
@@ -216,13 +204,9 @@ impl RunView {
             event: record.event.clone(),
             workflow: record.workflow.clone(),
             job: record.job.clone(),
-            project: record.project.clone(),
-            store: None,
-            id: record.id.clone(),
+            recorder: None,
             started_at: record.started,
             replay: true,
-            saved: true,
-            save_error: None,
             jobs,
             rx: None,
             cancel,
@@ -244,16 +228,9 @@ impl RunView {
         }
     }
 
-    /// Writes the run to the history (once).
+    /// Writes the final record to the history (once).
     fn save(&mut self) {
-        let Some(store) = self.store.clone() else {
-            return;
-        };
-        if self.saved {
-            return;
-        }
-        self.saved = true;
-        let (success, took) = self.finished.unwrap_or((false, self.started.elapsed()));
+        let success = self.finished.is_some_and(|(ok, _)| ok);
         let outcome = if success {
             Outcome::Success
         } else if self.cancel.is_cancelled() {
@@ -261,61 +238,12 @@ impl RunView {
         } else {
             Outcome::Failure
         };
-        // Anything still pending or running when the run stopped counts as cancelled.
-        let settle = |s: Status| if s.is_done() { s } else { Status::Cancelled };
-        let millis = |started: Option<Instant>, took: Option<Duration>| {
-            took.or(started.map(|s| s.elapsed()))
-                .map(|d| d.as_millis() as u64)
-        };
-        let record = RunRecord {
-            id: self.id.clone(),
-            project: self.project.clone(),
-            title: self.title.clone(),
-            workflow: self.workflow.clone(),
-            job: self.job.clone(),
-            engine: self.engine.clone(),
-            event: self.event.clone(),
-            started: self.started_at,
-            millis: took.as_millis() as u64,
-            outcome,
-            jobs: self
-                .jobs
-                .iter()
-                .map(|j| JobRecord {
-                    name: j.name.clone(),
-                    status: settle(j.status),
-                    millis: millis(j.started, j.took),
-                    steps: j
-                        .steps
-                        .iter()
-                        .map(|s| StepRecord {
-                            name: s.name.clone(),
-                            status: settle(s.status),
-                            millis: millis(s.started, s.took),
-                        })
-                        .collect(),
-                })
-                .collect(),
-        };
-        let logs: Vec<LogLine> = self
-            .jobs
-            .iter()
-            .enumerate()
-            .flat_map(|(job, j)| {
-                j.logs.iter().map(move |(step, kind, text)| LogLine {
-                    job,
-                    step: *step,
-                    kind: *kind,
-                    text: text.clone(),
-                })
-            })
-            .collect();
-        if let Err(e) = store.save(&record, &logs) {
-            self.save_error = Some(format!("Could not save this run to the history: {e:#}"));
+        if let Some(rec) = &mut self.recorder {
+            rec.finish(outcome);
         }
     }
 
-    /// Cancels a run that is still going and saves it as cancelled, for when maverick exits.
+    /// Cancels a run that is still going and saves it as cancelled, for when ATK exits.
     pub fn abandon(&mut self) {
         if self.finished.is_none() {
             self.cancel();
@@ -341,6 +269,9 @@ impl RunView {
         let events: Vec<RunEvent> = rx.try_iter().collect();
         let mut finished = false;
         for event in events {
+            if let Some(rec) = &mut self.recorder {
+                rec.apply(&event);
+            }
             match event {
                 RunEvent::Job { job, status } => {
                     let j = &mut self.jobs[job];
@@ -386,6 +317,9 @@ impl RunView {
         }
         if finished {
             self.save();
+        } else if self.recorder.as_mut().is_some_and(Recorder::tick) {
+            // `atk cancel` (or an agent) asked for this run to stop.
+            self.cancel();
         }
     }
 
@@ -591,7 +525,7 @@ impl RunView {
     fn draw_header(&self, f: &mut Frame, area: Rect) {
         let left = Line::from(vec![
             Span::styled(
-                " ◆ maverick ",
+                " ◆ atk ",
                 Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
             ),
             Span::styled("› ", theme::dim()),
@@ -679,7 +613,7 @@ impl RunView {
     }
 
     fn footer(&self) -> Line<'static> {
-        if let Some(err) = &self.save_error {
+        if let Some(err) = self.recorder.as_ref().and_then(Recorder::error) {
             return Line::styled(format!(" {err}"), Style::new().fg(BAD));
         }
         let mut pairs = vec![("↑↓", "select"), ("tab", "panel")];

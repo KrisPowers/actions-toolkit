@@ -22,14 +22,14 @@ use ratatui::{DefaultTerminal, Frame};
 
 use super::dialog::{Answer, Confirm, Prompt};
 use super::input::InputAction;
-use super::run_view::{RunAction, RunMeta, RunView};
+use super::run_view::{RunAction, RunView};
 use super::theme::{self, ACCENT, BAD, OK, WARN};
 use super::FRAME;
-use crate::config::{Config, EngineConfig};
-use crate::engine::{self, Availability, EngineInfo, Family, Kind};
-use crate::history::Store;
+use crate::config::Config;
+use crate::engine::{self, EngineInfo};
+use crate::history::{RunMeta, Store};
 use crate::runner::RunOptions;
-use crate::workflow::{self, plan::RunPlan, Location, Source, WorkflowFile};
+use crate::workflow::{self, Location, Source, WorkflowFile};
 
 /// Events a run can simulate.
 pub const EVENTS: [&str; 5] = [
@@ -43,9 +43,9 @@ pub const EVENTS: [&str; 5] = [
 /// The first screen to show.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Start {
-    /// `maverick`: settings and the guide.
+    /// `atk settings`: settings and the guide.
     Settings,
-    /// `workflows`: the catalog / runs menu.
+    /// `atk`: the catalog / runs menu.
     Workflows,
 }
 
@@ -69,10 +69,6 @@ enum Nav {
 /// What a text prompt's answer is for.
 enum Purpose {
     AddLocation(Source),
-    /// Instance name or `user@host[:port]` for a VM engine.
-    EngineTarget(Kind),
-    /// SSH key for a VM engine reached over SSH.
-    EngineKey(Kind),
     Parallel,
 }
 
@@ -98,10 +94,9 @@ pub struct App {
     workflows: Vec<WorkflowFile>,
     /// Every searched location and how many workflows it holds (`None` if it doesn't exist).
     locations: Vec<(Location, Option<usize>)>,
-    engines: Vec<EngineInfo>,
-    detect_rx: Option<Receiver<Vec<EngineInfo>>>,
-    /// Engine runs use: the configured default, else the first ready of Docker/Podman/Native.
-    active: Option<Kind>,
+    /// Docker's status, once detected.
+    docker: Option<EngineInfo>,
+    detect_rx: Option<Receiver<EngineInfo>>,
     event: String,
     stack: Vec<Screen>,
     modal: Option<Modal>,
@@ -119,13 +114,12 @@ impl App {
         let cfg = Config::load(&root)?;
         let mut app = Self {
             root,
-            active: cfg.engine.as_deref().and_then(Kind::parse),
             event: cfg.event.clone().unwrap_or_else(|| "push".into()),
             cfg,
             store,
             workflows: Vec::new(),
             locations: Vec::new(),
-            engines: Vec::new(),
+            docker: None,
             detect_rx: None,
             stack: Vec::new(),
             modal: None,
@@ -134,7 +128,7 @@ impl App {
             quit: false,
         };
         app.reload_workflows();
-        app.detect_engines();
+        app.detect_docker();
         let first = match start {
             Start::Settings => Screen::Settings(settings::Settings::default()),
             Start::Workflows => Screen::Menu(menu::Menu::new(app.store.as_ref(), &app.root)),
@@ -178,11 +172,10 @@ impl App {
         }
     }
 
-    fn detect_engines(&mut self) {
+    fn detect_docker(&mut self) {
         let (tx, rx) = mpsc::channel();
-        let cfg = self.cfg.clone();
         thread::spawn(move || {
-            let _ = tx.send(engine::detect_all(&cfg));
+            let _ = tx.send(engine::detect());
         });
         self.detect_rx = Some(rx);
     }
@@ -195,25 +188,9 @@ impl App {
             }
         }
         if let Some(rx) = &self.detect_rx {
-            if let Ok(mut infos) = rx.try_recv() {
-                infos.sort_by_key(|i| {
-                    (
-                        availability_order(&i.availability),
-                        family_order(i.kind.family()),
-                    )
-                });
-                self.engines = infos;
+            if let Ok(info) = rx.try_recv() {
+                self.docker = Some(info);
                 self.detect_rx = None;
-                self.active = self
-                    .cfg
-                    .engine
-                    .as_deref()
-                    .and_then(Kind::parse)
-                    .or_else(|| {
-                        [Kind::Docker, Kind::Podman, Kind::Native]
-                            .into_iter()
-                            .find(|k| self.engines.iter().any(|i| i.kind == *k && i.is_ready()))
-                    });
             }
         }
         if self
@@ -235,7 +212,7 @@ impl App {
             .any(|s| matches!(s, Screen::Run(r) if !r.is_finished()))
     }
 
-    /// Stops and saves any run still going, for when maverick exits.
+    /// Stops and saves any run still going, for when ATK exits.
     fn abandon_runs(&mut self) {
         for screen in &mut self.stack {
             if let Screen::Run(run) = screen {
@@ -244,46 +221,32 @@ impl App {
         }
     }
 
-    /// Starts `workflow` (or one `job` of it) on the active engine.
+    /// Starts `workflow` (or one `job` of it) in Docker.
     fn start_run(&self, path: &Path, job: Option<String>, event: &str) -> Result<Screen, String> {
-        let Some(kind) = self.active else {
-            return Err(if self.detect_rx.is_some() {
-                "Still detecting engines, try again in a moment".into()
-            } else {
-                "No engine is ready. Pick one in settings (run `maverick`)".into()
-            });
-        };
-        let (wf, name) = match self.workflows.iter().find(|f| f.path == path) {
-            Some(file) => (
-                file.parsed
-                    .clone()
-                    .map_err(|e| format!("{} is invalid: {}", file.file_name, first_line(&e)))?,
-                file.display_name(),
-            ),
-            None => {
-                let wf = workflow::read(path)?;
-                let name = wf.name.clone().unwrap_or_else(|| {
-                    path.file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default()
-                });
-                (wf, name)
+        match &self.docker {
+            None => return Err("Still checking Docker, try again in a moment".into()),
+            Some(info) if !info.is_ready() => {
+                let hint = info.note.clone().unwrap_or_default();
+                return Err(format!("Docker is {}: {hint}", info.status_label()));
             }
-        };
-        let plan = RunPlan::build(&[(wf, name)], job.as_deref()).map_err(|e| format!("{e:#}"))?;
-        let engine = engine::build(kind, &self.cfg).map_err(|e| format!("{e:#}"))?;
+            Some(_) => {}
+        }
+        let plan = workflow::plan_for(path, job.as_deref())?;
+        let engine = engine::build().map_err(|e| format!("{e:#}"))?;
         let opts = RunOptions::new(&self.root, &self.cfg, event);
         let meta = RunMeta {
             project: self.root.clone(),
             workflow: path.to_path_buf(),
             job,
-            store: self.store.clone(),
+            event: event.to_string(),
+            engine: engine.name().to_string(),
         };
         Ok(Screen::Run(Box::new(RunView::start(
             Arc::new(plan),
             engine,
             Arc::new(opts),
             meta,
+            self.store.clone(),
         ))))
     }
 
@@ -293,23 +256,6 @@ impl App {
         edit(&mut user);
         user.save_user().map_err(|e| e.to_string())?;
         self.cfg = Config::load(&self.root).map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    /// Changes one engine's settings in the user config and re-detects engines.
-    fn edit_engine(
-        &mut self,
-        kind: Kind,
-        edit: impl FnOnce(&mut EngineConfig),
-    ) -> Result<(), String> {
-        self.edit_user_config(|user| {
-            let entry = user.engines.entry(kind.id().to_string()).or_default();
-            edit(entry);
-            if entry.instance.is_none() && entry.ssh.is_none() && entry.identity.is_none() {
-                user.engines.remove(kind.id());
-            }
-        })?;
-        self.detect_engines();
         Ok(())
     }
 
@@ -446,9 +392,7 @@ impl App {
             },
             Modal::Prompt(mut prompt) => {
                 let base = match prompt.purpose {
-                    Purpose::AddLocation(Source::Global) | Purpose::EngineKey(_) => {
-                        dirs::home_dir()
-                    }
+                    Purpose::AddLocation(Source::Global) => dirs::home_dir(),
                     Purpose::AddLocation(_) => Some(self.root.clone()),
                     _ => None,
                 };
@@ -481,17 +425,6 @@ impl App {
     ) -> Result<(String, Option<Modal>), String> {
         match purpose {
             Purpose::AddLocation(source) => self.add_location(*source, value).map(|m| (m, None)),
-            Purpose::EngineTarget(kind) => self.set_target(*kind, value),
-            Purpose::EngineKey(kind) => {
-                let home = dirs::home_dir().unwrap_or_default();
-                if !value.is_empty() && !workflow::resolve(value, &home).is_file() {
-                    return Err(format!("{value} is not a file"));
-                }
-                self.edit_engine(*kind, |e| {
-                    e.identity = (!value.is_empty()).then(|| value.to_string())
-                })?;
-                Ok((format!("{} SSH settings saved", kind.name()), None))
-            }
             Purpose::Parallel => {
                 let parallel = match value {
                     "" | "auto" => None,
@@ -566,10 +499,9 @@ impl App {
             }
         }
         self.cfg = Config::load(&self.root).map_err(|e| e.to_string())?;
-        self.active = None;
         self.event = self.cfg.event.clone().unwrap_or_else(|| "push".into());
         self.reload_workflows();
-        self.detect_engines();
+        self.detect_docker();
         Ok("Settings reset to defaults".into())
     }
 
@@ -609,13 +541,18 @@ impl App {
     }
 
     fn draw_header(&self, f: &mut Frame, area: Rect, crumbs: &[&str]) {
-        let engine = match self.active {
-            Some(k) => Span::styled(format!("● {}", k.name()), Style::new().fg(OK)),
-            None if self.detect_rx.is_some() => Span::styled(
+        let engine = match &self.docker {
+            Some(info) if info.is_ready() => {
+                Span::styled(format!("● {}", engine::NAME), Style::new().fg(OK))
+            }
+            Some(info) => Span::styled(
+                format!("○ {} {}", engine::NAME, info.status_label()),
+                Style::new().fg(BAD),
+            ),
+            None => Span::styled(
                 format!("{} detecting…", theme::spinner(self.tick / 2)),
                 Style::new().fg(WARN),
             ),
-            None => Span::styled("○ no engine", Style::new().fg(BAD)),
         };
         let right = Line::from(vec![
             Span::styled("event ", theme::dim()),
@@ -625,7 +562,7 @@ impl App {
             Span::raw(" "),
         ]);
         let mut left = vec![Span::styled(
-            " ◆ maverick",
+            " ◆ atk",
             Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
         )];
         for c in crumbs {
@@ -656,57 +593,6 @@ impl App {
             return;
         }
         f.render_widget(Paragraph::new(theme::hints(hints)), area);
-    }
-
-    /// An engine as a list row: status dot, name (★ if active), type and status.
-    fn engine_row(&self, info: &EngineInfo, width: usize) -> Line<'static> {
-        let (dot, color) = match info.availability {
-            Availability::Ready => ("●", OK),
-            Availability::NotRunning | Availability::NeedsSetup => ("◐", WARN),
-            Availability::Missing => ("○", theme::DIM),
-        };
-        let mut name = info.kind.name().to_string();
-        if Some(info.kind) == self.active {
-            name.push_str(" ★");
-        }
-        let right = format!(
-            "{:<4} {}",
-            match info.kind.family() {
-                Family::Container => "ctr",
-                Family::VirtualMachine => "vm",
-                Family::BuiltIn => "host",
-            },
-            info.status_label()
-        );
-        let style = if info.availability == Availability::Missing {
-            theme::dim()
-        } else {
-            Style::new()
-        };
-        theme::row(
-            Span::styled(dot, Style::new().fg(color)),
-            &name,
-            right,
-            width,
-            style,
-        )
-    }
-}
-
-fn family_order(f: Family) -> u8 {
-    match f {
-        Family::Container => 0,
-        Family::VirtualMachine => 1,
-        Family::BuiltIn => 2,
-    }
-}
-
-fn availability_order(a: &Availability) -> u8 {
-    match a {
-        Availability::Ready => 0,
-        Availability::NotRunning => 1,
-        Availability::NeedsSetup => 2,
-        Availability::Missing => 3,
     }
 }
 
@@ -750,7 +636,7 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        if std::env::var("MAVERICK_PRINT").is_ok() {
+        if std::env::var("ATK_PRINT").is_ok() {
             println!("{screen}\n");
         }
         screen
@@ -760,7 +646,7 @@ mod tests {
         app.on_key(KeyEvent::new(code, KeyModifiers::NONE));
     }
 
-    /// An app for the demo project with a throwaway history folder, engines detected.
+    /// An app for the demo project with a throwaway history folder, Docker detected.
     pub fn demo_app(start: Start) -> (App, tempfile::TempDir) {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/demo");
         let dir = tempfile::tempdir().unwrap();
@@ -774,9 +660,18 @@ mod tests {
         (app, dir)
     }
 
+    /// Whether Docker can run jobs here; tests that need it skip themselves otherwise.
+    pub fn docker_ready(app: &App) -> bool {
+        let ready = app.docker.as_ref().is_some_and(EngineInfo::is_ready);
+        if !ready {
+            eprintln!("skipping: Docker is not available");
+        }
+        ready
+    }
+
     /// Updates the app until the run on top of the stack finishes.
     pub fn wait_for_run(app: &mut App) {
-        let deadline = Instant::now() + Duration::from_secs(60);
+        let deadline = Instant::now() + Duration::from_secs(300);
         while Instant::now() < deadline {
             app.update();
             match app.stack.last() {
@@ -798,7 +693,9 @@ mod tests {
     #[test]
     fn quitting_during_a_run_asks_first() {
         let (mut app, _dir) = demo_app(Start::Workflows);
-        app.active = Some(Kind::Native);
+        if !docker_ready(&app) {
+            return;
+        }
         let path = app.workflows[0].path.clone();
         let run = app.start_run(&path, Some("build".into()), "push").unwrap();
         app.stack.push(run);
