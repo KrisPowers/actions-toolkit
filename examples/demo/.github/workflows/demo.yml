@@ -7,7 +7,7 @@ on:
         default: Hello
 
 env:
-  APP: maverick-demo
+  APP: atk-demo
 
 jobs:
   build:
@@ -19,8 +19,8 @@ jobs:
       - name: Compute version
         id: meta
         run: |
-          echo "version=1.2.3" >> "$MAVERICK_OUTPUT"
-          echo "BUILD_MODE=release" >> "$MAVERICK_ENV"
+          echo "version=1.2.3" >> "$ATK_OUTPUT"
+          echo "BUILD_MODE=release" >> "$ATK_ENV"
       - name: Use env from previous step
         run: |
           echo "building $APP in $BUILD_MODE mode"
@@ -30,7 +30,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/bin"
           printf '#!/bin/sh\necho custom-tool says hi\n' > "$RUNNER_TEMP/bin/custom-tool"
           chmod +x "$RUNNER_TEMP/bin/custom-tool"
-          echo "$RUNNER_TEMP/bin" >> "$MAVERICK_PATH"
+          echo "$RUNNER_TEMP/bin" >> "$ATK_PATH"
       - name: Call the tool
         run: custom-tool
       - name: Masked secret
@@ -58,7 +58,7 @@ jobs:
         continue-on-error: true
         run: exit 3
       - name: Only on main
-        if: maverick.ref == 'refs/heads/does-not-exist'
+        if: atk.ref == 'refs/heads/does-not-exist'
         run: echo "should be skipped"
 
   report:

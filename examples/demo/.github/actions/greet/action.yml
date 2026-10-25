@@ -16,4 +16,4 @@ runs:
       shell: bash
       run: |
         echo "${{ inputs.greeting }}, ${{ inputs.who }}!"
-        echo "message=${{ inputs.greeting }}, ${{ inputs.who }}" >> "$MAVERICK_OUTPUT"
+        echo "message=${{ inputs.greeting }}, ${{ inputs.who }}" >> "$ATK_OUTPUT"
