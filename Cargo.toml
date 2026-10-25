@@ -1,6 +1,6 @@
 [package]
 name = "actions-toolkit"
-version = "0.1.0"
+version = "2.0.0"
 edition = "2021"
 rust-version = "1.82"
 description = "Actions Toolkit (ATK): run CI/CD workflows like GitHub Actions locally in Docker, from a TUI, plain commands, or AI agents."
