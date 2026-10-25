@@ -998,7 +998,7 @@ fn parse_file_commands(text: &str) -> Vec<(String, String)> {
     while let Some(line) = lines.next() {
         let heredoc = line
             .find("<<")
-            .filter(|&i| line.find('=').map_or(true, |e| i < e));
+            .filter(|&i| line.find('=').is_none_or(|e| i < e));
         if let Some(i) = heredoc {
             let key = line[..i].trim().to_string();
             let delim = line[i + 2..].trim();
