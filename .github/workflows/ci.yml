@@ -1,6 +1,7 @@
 name: CI
 on:
   push:
+    branches: [main]
   pull_request:
 
 env:
@@ -29,5 +30,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # Tests that run jobs need Docker; only the Linux runner has it, the others skip them.
       - run: cargo test
       - run: cargo build --release
