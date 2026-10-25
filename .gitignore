@@ -1,34 +1,3 @@
-# Rust
-/target/
-**/*.rs.bk
-Cargo.lock.bak
-
-# Local release builds
-/dist/
-/actions-toolkit-*.zip
-/actions-toolkit-*.zip.sha256
-/actions-toolkit-*.tar.gz
-/actions-toolkit-*.tar.gz.sha256
-
-# Node / UI
-/ui/node_modules/
-/ui/dist/
-/ui/.vite/
-npm-debug.log*
-
-# Runtime data
-/data/
-*.db
-*.db-shm
-*.db-wal
-
-# Env / secrets
-.env
-.env.local
-*.key
-
-# Editors / OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+/target
+.maverick.local.toml
+.secrets
