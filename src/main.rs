@@ -1,5 +1,5 @@
-//! `maverick`: settings and the guide.
+//! `atk`: the workflow catalog and run history, or any subcommand.
 
 fn main() -> std::process::ExitCode {
-    maverick::main(maverick::Start::Settings)
+    atk::main()
 }

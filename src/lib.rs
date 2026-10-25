@@ -1,10 +1,14 @@
-//! Maverick: run CI/CD workflows locally in containers, VMs, or a built-in sandbox. The
-//! `maverick` and `workflows` binaries are thin entry points into [`main`].
+//! Actions Toolkit (ATK): run CI/CD workflows locally, each job in its own Docker container,
+//! from a terminal UI, plain commands, or an AI agent. The `atk` binary is a thin entry
+//! point into [`main`].
 
 mod cli;
 mod config;
 mod engine;
+mod headless;
 mod history;
+mod mcp;
+mod report;
 mod runner;
 mod tui;
 mod util;
@@ -12,11 +16,9 @@ mod workflow;
 
 use std::process::ExitCode;
 
-pub use tui::Start;
-
-/// Parses the command line and opens the TUI on `start`.
-pub fn main(start: Start) -> ExitCode {
-    match cli::run(start) {
+/// Parses the command line and runs the command, or opens the TUI.
+pub fn main() -> ExitCode {
+    match cli::run() {
         Ok(code) => code,
         Err(err) => {
             eprintln!("error: {err:#}");

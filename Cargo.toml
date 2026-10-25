@@ -1,16 +1,20 @@
 [package]
-name = "maverick"
+name = "actions-toolkit"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
-description = "Run CI/CD workflows (like GitHub Actions) locally in isolated environments: Docker, VMs, or a built-in engine."
+rust-version = "1.82"
+description = "Actions Toolkit (ATK): run CI/CD workflows like GitHub Actions locally in Docker, from a TUI, plain commands, or AI agents."
 license = "MIT"
 readme = "README.md"
-keywords = ["ci", "github-actions", "tui", "docker", "workflow"]
+keywords = ["ci", "github-actions", "tui", "docker", "mcp"]
 categories = ["command-line-utilities", "development-tools"]
 
+[lib]
+name = "atk"
+path = "src/lib.rs"
+
 [[bin]]
-name = "maverick"
+name = "atk"
 path = "src/main.rs"
 
 [dependencies]
@@ -24,7 +28,6 @@ ratatui = "0.29"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
-tar = "0.4"
 tempfile = "3"
 toml = "0.8"
 which = "6"
