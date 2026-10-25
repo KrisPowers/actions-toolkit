@@ -113,10 +113,7 @@ pub fn review(store: &Store, record: &RunRecord) -> Value {
             if step.status != Status::Failure {
                 continue;
             }
-            let lines: Vec<&LogLine> = logs
-                .iter()
-                .filter(|l| l.job == j && l.step == s)
-                .collect();
+            let lines: Vec<&LogLine> = logs.iter().filter(|l| l.job == j && l.step == s).collect();
             let errors: Vec<&str> = lines
                 .iter()
                 .filter(|l| l.kind == LogKind::Error)

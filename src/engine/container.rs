@@ -129,14 +129,7 @@ impl Engine for ContainerEngine {
         let _ = util::capture(rm, Duration::from_secs(30));
 
         let mut cmd = self.cmd();
-        cmd.args([
-            "run",
-            "-d",
-            "--name",
-            &name,
-            "--label",
-            "dev.atk.run=1",
-        ]);
+        cmd.args(["run", "-d", "--name", &name, "--label", "dev.atk.run=1"]);
         cmd.arg("--mount").arg(format!(
             "type=bind,source={},target={WORKSPACE}",
             workspace_host.display()

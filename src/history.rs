@@ -566,7 +566,9 @@ mod tests {
         store.append_logs("r", &[line("one")]).unwrap();
         let (first, offset) = store.logs_from("r", 0);
         assert_eq!(first.len(), 1);
-        store.append_logs("r", &[line("two"), line("three")]).unwrap();
+        store
+            .append_logs("r", &[line("two"), line("three")])
+            .unwrap();
         let (rest, _) = store.logs_from("r", offset);
         assert_eq!(
             rest.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(),

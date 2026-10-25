@@ -486,12 +486,21 @@ impl App {
             t("its own Docker container, instead of on paid hosted runners."),
             t(""),
             h("Commands"),
-            kv("atk", "your workflow catalog and the history of runs".into()),
+            kv(
+                "atk",
+                "your workflow catalog and the history of runs".into(),
+            ),
             kv("atk settings", "this page: settings and the guide".into()),
-            kv("atk run <workflow>", "run without the TUI (--detach to background it)".into()),
+            kv(
+                "atk run <workflow>",
+                "run without the TUI (--detach to background it)".into(),
+            ),
             kv("atk watch <id>", "follow a run until it ends".into()),
             kv("atk status <id>", "a run's jobs, steps and failures".into()),
-            kv("atk mcp", "let AI agents run, watch and review workflows".into()),
+            kv(
+                "atk mcp",
+                "let AI agents run, watch and review workflows".into(),
+            ),
             kv("atk --help", "every command".into()),
             t(""),
             h("Getting started"),
@@ -513,10 +522,7 @@ impl App {
             t(""),
             h("Files"),
             kv("settings", config),
-            kv(
-                "project settings",
-                ".atk.toml in the project root".into(),
-            ),
+            kv("project settings", ".atk.toml in the project root".into()),
             kv(
                 "secrets",
                 ".secrets in the project root (NAME=value per line)".into(),

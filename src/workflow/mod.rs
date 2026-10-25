@@ -135,7 +135,10 @@ pub fn find(root: &Path, query: &str) -> Result<PathBuf, String> {
     let matches: Vec<&WorkflowFile> = files
         .iter()
         .filter(|f| {
-            let stem = f.path.file_stem().map(|s| s.to_string_lossy().to_lowercase());
+            let stem = f
+                .path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_lowercase());
             f.file_name.to_lowercase() == q
                 || stem.as_deref() == Some(q.as_str())
                 || f.display_name().to_lowercase() == q

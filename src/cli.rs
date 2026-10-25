@@ -257,8 +257,9 @@ fn key_value(s: &str) -> Result<(String, String), String> {
 pub fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
     let start = match &cli.dir {
-        Some(d) => crate::util::canonical(d)
-            .with_context(|| format!("{} does not exist", d.display()))?,
+        Some(d) => {
+            crate::util::canonical(d).with_context(|| format!("{} does not exist", d.display()))?
+        }
         None => env::current_dir()?,
     };
     let root = workflow::find_root(&start);
@@ -504,7 +505,9 @@ fn foreground(root: &Path, req: &RunRequest, id: String, json: bool) -> Result<E
             print_json_line(&done);
         }
         Some((store, record)) => print_summary(store, &record),
-        None if json => print_json_line(&json!({ "type": "finished", "outcome": outcome.as_str() })),
+        None if json => {
+            print_json_line(&json!({ "type": "finished", "outcome": outcome.as_str() }))
+        }
         None => println!("{} {}", outcome_icon(outcome), outcome.as_str()),
     }
     Ok(exit_code(outcome))
@@ -616,7 +619,11 @@ fn runs(root: &Path, limit: usize, json: bool) -> Result<ExitCode> {
         println!("No runs yet for {}.", root.display());
     }
     for r in &runs {
-        let job = r.job.as_ref().map(|j| format!(" › {j}")).unwrap_or_default();
+        let job = r
+            .job
+            .as_ref()
+            .map(|j| format!(" › {j}"))
+            .unwrap_or_default();
         println!(
             "{} {}  {}{job}  {} · {} · {}",
             outcome_icon(r.outcome),
@@ -658,7 +665,12 @@ fn status(root: &Path, id: &str, json: bool) -> Result<ExitCode> {
             .unwrap_or_default()
     );
     for job in &record.jobs {
-        println!("  {} {}  {}", icon(job.status), job.name, millis(job.millis));
+        println!(
+            "  {} {}  {}",
+            icon(job.status),
+            job.name,
+            millis(job.millis)
+        );
         if job.status != Status::Success {
             for step in &job.steps {
                 println!(
@@ -729,8 +741,12 @@ fn watch(root: &Path, id: &str, filter: &LogFilter, json: bool) -> Result<ExitCo
     loop {
         let (lines, next) = store.logs_from(&record.id, offset);
         offset = next;
-        let lines =
-            report::filter_logs(&record, lines, filter.job.as_deref(), filter.step.as_deref())?;
+        let lines = report::filter_logs(
+            &record,
+            lines,
+            filter.job.as_deref(),
+            filter.step.as_deref(),
+        )?;
         print_lines(&record, &lines, json);
         if record.outcome.is_done() {
             break;
@@ -756,7 +772,11 @@ fn cancel(root: &Path, id: &str) -> Result<ExitCode> {
     let store = store()?;
     let record = store.find(root, id)?;
     if record.outcome.is_done() {
-        println!("Run {} already ended ({})", record.id, record.outcome.as_str());
+        println!(
+            "Run {} already ended ({})",
+            record.id,
+            record.outcome.as_str()
+        );
         return Ok(ExitCode::SUCCESS);
     }
     store.request_cancel(&record.id)?;

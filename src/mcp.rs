@@ -154,7 +154,9 @@ pub fn export(format: Format) -> Value {
 }
 
 fn str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
-    args.get(key).and_then(Value::as_str).filter(|s| !s.is_empty())
+    args.get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
 }
 
 fn num_arg(args: &Value, key: &str) -> Option<u64> {
@@ -170,8 +172,7 @@ fn store() -> Result<Store> {
 pub fn call(default_root: &Path, name: &str, args: &Value) -> Result<Value> {
     let root = match str_arg(args, "project") {
         Some(p) => workflow::find_root(
-            &crate::util::canonical(Path::new(p))
-                .with_context(|| format!("{p} does not exist"))?,
+            &crate::util::canonical(Path::new(p)).with_context(|| format!("{p} does not exist"))?,
         ),
         None => default_root.to_path_buf(),
     };
@@ -212,7 +213,11 @@ pub fn call(default_root: &Path, name: &str, args: &Value) -> Result<Value> {
                 event: Some(record.event),
                 ..Default::default()
             };
-            start(&record.project, &req, num_arg(args, "wait_seconds").unwrap_or(0))
+            start(
+                &record.project,
+                &req,
+                num_arg(args, "wait_seconds").unwrap_or(0),
+            )
         }
         "wait_for_run" => {
             let store = store()?;
@@ -271,14 +276,18 @@ pub fn call(default_root: &Path, name: &str, args: &Value) -> Result<Value> {
             let store = store()?;
             let record = find_run(&store)?;
             if record.outcome.is_done() {
-                return Ok(json!({ "id": record.id, "outcome": record.outcome.as_str(), "cancelled": false }));
+                return Ok(
+                    json!({ "id": record.id, "outcome": record.outcome.as_str(), "cancelled": false }),
+                );
             }
             store.request_cancel(&record.id)?;
             Ok(json!({ "id": record.id, "cancelled": true }))
         }
         "docker_status" => {
             let d = engine::detect();
-            Ok(json!({ "ready": d.is_ready(), "status": d.status_label(), "version": d.version, "note": d.note }))
+            Ok(
+                json!({ "ready": d.is_ready(), "status": d.status_label(), "version": d.version, "note": d.note }),
+            )
         }
         other => bail!("unknown tool `{other}` (see `atk tools`)"),
     }
@@ -401,7 +410,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(init["result"]["protocolVersion"], "2025-03-26");
-        assert!(handle(&root, &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).is_none());
+        assert!(handle(
+            &root,
+            &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })
+        )
+        .is_none());
 
         let call = handle(
             &root,
@@ -412,7 +425,11 @@ mod tests {
         let text = call["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("Demo"), "{text}");
 
-        let unknown = handle(&root, &json!({ "jsonrpc": "2.0", "id": 3, "method": "nope" })).unwrap();
+        let unknown = handle(
+            &root,
+            &json!({ "jsonrpc": "2.0", "id": 3, "method": "nope" }),
+        )
+        .unwrap();
         assert_eq!(unknown["error"]["code"], -32601);
     }
 }
