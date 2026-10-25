@@ -41,16 +41,26 @@ pub(super) fn detect() -> EngineInfo {
         };
     };
     let version = version_of(&bin, &["--version"]);
-    // `info` talks to the daemon, so it tells us whether containers can actually run.
-    let alive = util::probe(&bin, &["info", "--format", "{{json .}}"]).is_some_and(|o| o.success);
+    // `info` talks to the daemon, so it tells us whether containers can actually run, and
+    // whether they are Linux containers, which every job image is.
+    let os = util::probe(&bin, &["info", "--format", "{{.OSType}}"])
+        .filter(|o| o.success)
+        .map(|o| o.stdout.trim().to_string());
+    let (availability, note) = match os.as_deref() {
+        None => (
+            Availability::NotRunning,
+            "start Docker Desktop (or the docker daemon)",
+        ),
+        Some("linux") => (Availability::Ready, ""),
+        Some(_) => (
+            Availability::WrongMode,
+            "switch Docker Desktop to Linux containers",
+        ),
+    };
     EngineInfo {
-        availability: if alive {
-            Availability::Ready
-        } else {
-            Availability::NotRunning
-        },
+        availability,
         version,
-        note: (!alive).then(|| "start Docker Desktop (or the docker daemon)".into()),
+        note: (!note.is_empty()).then(|| note.into()),
     }
 }
 
