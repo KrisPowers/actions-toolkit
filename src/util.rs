@@ -2,7 +2,7 @@
 
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -223,40 +223,6 @@ pub fn probe<S: AsRef<OsStr>>(program: S, args: &[&str]) -> Option<Captured> {
     capture(cmd, Duration::from_secs(6)).ok()
 }
 
-/// Runs `cmd` while `feed` writes to its stdin. Stdout is discarded.
-pub fn pipe_into(
-    mut cmd: Command,
-    feed: impl FnOnce(&mut dyn Write) -> Result<()>,
-) -> Result<Captured> {
-    let program = cmd.get_program().to_string_lossy().into_owned();
-    let mut child = cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .with_context(|| format!("failed to start `{program}`"))?;
-    let stderr = child.stderr.take();
-    let err_reader = thread::spawn(move || {
-        let mut s = String::new();
-        if let Some(mut e) = stderr {
-            let _ = e.read_to_string(&mut s);
-        }
-        s
-    });
-    let fed = {
-        let mut stdin = child.stdin.take().context("stdin unavailable")?;
-        feed(&mut stdin)
-    };
-    let status = child.wait()?;
-    let stderr = err_reader.join().unwrap_or_default();
-    fed.with_context(|| format!("streaming data to `{program}` failed: {}", stderr.trim()))?;
-    Ok(Captured {
-        success: status.success(),
-        stdout: String::new(),
-        stderr,
-    })
-}
-
 fn walker(src: &Path, respect_ignores: bool) -> ignore::Walk {
     let mut builder = ignore::WalkBuilder::new(src);
     builder.hidden(false).follow_links(false);
@@ -329,24 +295,6 @@ fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Writes a tar stream of `src` into `out`.
-pub fn tar_dir(src: &Path, out: &mut dyn Write, respect_ignores: bool) -> Result<()> {
-    let mut builder = tar::Builder::new(out);
-    builder.follow_symlinks(false);
-    for entry in walker(src, respect_ignores) {
-        let entry = entry?;
-        let rel = entry.path().strip_prefix(src)?;
-        if rel.as_os_str().is_empty() {
-            continue;
-        }
-        // tar paths always use forward slashes, even when built on Windows.
-        let name = rel.to_string_lossy().replace('\\', "/");
-        builder.append_path_with_name(entry.path(), name)?;
-    }
-    builder.finish()?;
-    Ok(())
-}
-
 /// Removes ANSI escape sequences so logs render cleanly inside the TUI.
 pub fn strip_ansi(s: &str) -> String {
     if !s.contains('\x1b') {
@@ -384,9 +332,15 @@ pub fn strip_ansi(s: &str) -> String {
     out
 }
 
-/// Quotes a value for POSIX `sh`.
-pub fn shell_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', r"'\''"))
+/// An absolute, symlink-free form of `path`, without the `\\?\` prefix Windows adds, since
+/// Docker and people can't use that form.
+pub fn canonical(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    let full = path.canonicalize()?;
+    let text = full.to_string_lossy();
+    Ok(match text.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with("UNC") => rest.into(),
+        _ => full.clone(),
+    })
 }
 
 /// Turns arbitrary text into a short `[a-z0-9-]` slug usable in container names and paths.
@@ -459,10 +413,5 @@ mod tests {
             Some("9.1.0")
         );
         assert_eq!(extract_version("no version here"), None);
-    }
-
-    #[test]
-    fn quotes() {
-        assert_eq!(shell_quote("it's"), r"'it'\''s'");
     }
 }

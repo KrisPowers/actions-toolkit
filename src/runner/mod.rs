@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -80,9 +81,16 @@ impl RunOptions {
                 })
                 .max(1),
             git: GitInfo::detect(root),
-            run_id: (now.as_secs() % 1_000_000_000).to_string(),
+            run_id: next_run_id(now.as_millis() as u64).to_string(),
         }
     }
+}
+
+/// A numeric `github.run_id`, unique within this process even for runs started together,
+/// since it also names the run's containers.
+fn next_run_id(millis: u64) -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    (millis % 10_000_000_000) * 100 + COUNTER.fetch_add(1, Ordering::Relaxed) % 100
 }
 
 fn parse_dotenv(text: &str) -> Vec<(String, String)> {
@@ -370,7 +378,7 @@ pub fn resolve_image(
         None => bail!("job has no `runs-on`"),
         Some(label) => {
             log(format!(
-                "No image mapped for runs-on `{label}`; using {fallback} (map one with -P {label}=IMAGE)"
+                "No image mapped for runs-on `{label}`; using {fallback} (map one with --image {label}=IMAGE)"
             ));
             Ok(fallback)
         }

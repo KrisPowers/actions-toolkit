@@ -9,7 +9,7 @@ use super::model::ActionDef;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ActionRef {
-    /// `actions/checkout`: the workspace is already provisioned by maverick.
+    /// `actions/checkout`: the workspace is already provisioned by ATK.
     Checkout,
     /// A well-known action that has no local equivalent yet; skipped with an explanation.
     Unsupported(&'static str),
@@ -56,13 +56,13 @@ pub fn parse(uses: &str) -> Result<ActionRef> {
     })
 }
 
-/// Finds a local copy of an `owner/repo@ref` action. Maverick never downloads anything, so
-/// these must be placed by hand under `.maverick/actions/` in the project or the user config
+/// Finds a local copy of an `owner/repo@ref` action. ATK never downloads anything, so
+/// these must be placed by hand under `.atk/actions/` in the project or the user config
 /// directory, either as `owner/repo@ref` or `owner/repo`.
 pub fn locate(root: &Path, owner: &str, repo: &str, git_ref: &str) -> Option<PathBuf> {
-    let mut bases = vec![root.join(".maverick").join("actions")];
+    let mut bases = vec![root.join(".atk").join("actions")];
     if let Some(dir) = dirs::config_dir() {
-        bases.push(dir.join("maverick").join("actions"));
+        bases.push(dir.join("atk").join("actions"));
     }
     bases.iter().find_map(|base| {
         let owner_dir = base.join(owner);

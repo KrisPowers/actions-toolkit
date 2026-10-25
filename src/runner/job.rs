@@ -148,11 +148,7 @@ fn setup(cx: &JobContext, pj: &PlannedJob, em: &Emitter) -> Result<Box<dyn Sessi
         );
     }
     let engine = &cx.engine;
-    em.log(
-        0,
-        LogKind::System,
-        format!("Engine: {}", engine.kind().name()),
-    );
+    em.log(0, LogKind::System, format!("Engine: {}", engine.name()));
     if !pj.runs_on.is_empty() {
         em.log(
             0,
@@ -161,7 +157,7 @@ fn setup(cx: &JobContext, pj: &PlannedJob, em: &Emitter) -> Result<Box<dyn Sessi
         );
     }
     let event = json!({ "event_name": cx.opts.event });
-    let data = json!({ "matrix": pj.matrix, "maverick": event, "github": event });
+    let data = json!({ "matrix": pj.matrix, "atk": event, "github": event });
     let ctx = Ctx::new(&data, JobState::default());
     let spec = pj.job.container.as_ref().map(|c| c.spec());
 
@@ -176,34 +172,23 @@ fn setup(cx: &JobContext, pj: &PlannedJob, em: &Emitter) -> Result<Box<dyn Sessi
         pull: cx.opts.pull,
         cancel: cx.cancel.clone(),
     };
-    if engine.uses_images() {
-        let image = match &spec {
-            Some(s) => expr::interpolate(&s.image, &ctx).map_err(|e| anyhow!(e))?,
-            None => resolve_image(&cx.opts, &pj.runs_on, &mut |l| {
-                em.log(0, LogKind::Warning, l)
-            })?,
-        };
-        em.log(0, LogKind::System, format!("Image: {image}"));
-        req.image = Some(image);
-        if let Some(s) = &spec {
-            for (k, v) in &s.env {
-                req.container_env.push((
-                    k.clone(),
-                    expr::interpolate_yaml(v, &ctx).map_err(|e| anyhow!(e))?,
-                ));
-            }
-            req.volumes = s.volumes.clone();
-            req.options = s.options.clone();
+    let image = match &spec {
+        Some(s) => expr::interpolate(&s.image, &ctx).map_err(|e| anyhow!(e))?,
+        None => resolve_image(&cx.opts, &pj.runs_on, &mut |l| {
+            em.log(0, LogKind::Warning, l)
+        })?,
+    };
+    em.log(0, LogKind::System, format!("Image: {image}"));
+    req.image = Some(image);
+    if let Some(s) = &spec {
+        for (k, v) in &s.env {
+            req.container_env.push((
+                k.clone(),
+                expr::interpolate_yaml(v, &ctx).map_err(|e| anyhow!(e))?,
+            ));
         }
-    } else if spec.is_some() {
-        em.log(
-            0,
-            LogKind::Warning,
-            format!(
-                "`container:` is ignored by the {} engine",
-                engine.kind().name()
-            ),
-        );
+        req.volumes = s.volumes.clone();
+        req.options = s.options.clone();
     }
     let started = Instant::now();
     let session = engine.start(&req, &mut |l| em.log(0, LogKind::System, l))?;
@@ -240,9 +225,9 @@ struct JobRun<'a> {
     pj: &'a PlannedJob,
     em: Emitter,
     session: Box<dyn Session>,
-    /// Workflow + job env, plus anything appended to `$MAVERICK_ENV`.
+    /// Workflow + job env, plus anything appended to `$ATK_ENV`.
     env: IndexMap<String, String>,
-    /// Entries appended to `$MAVERICK_PATH`, most recent first.
+    /// Entries appended to `$ATK_PATH`, most recent first.
     paths: Vec<String>,
     steps: Map<String, Value>,
     failed: bool,
@@ -298,7 +283,7 @@ impl<'a> JobRun<'a> {
             "action_path": "",
         });
         let runner = json!({
-            "name": "maverick",
+            "name": "atk",
             "os": info.os,
             "arch": info.arch,
             "temp": info.temp,
@@ -364,7 +349,7 @@ impl<'a> JobRun<'a> {
             github["action_path"] = json!(p);
         }
         json!({
-            "maverick": github,
+            "atk": github,
             "github": github,
             "env": env,
             "matrix": self.pj.matrix,
@@ -640,7 +625,7 @@ impl<'a> JobRun<'a> {
         self.exec_with_files(ui, shell_argv(shell, &path), env, cwd, timeout)
     }
 
-    /// Runs a command with the step file protocol (`$MAVERICK_ENV`, `$MAVERICK_OUTPUT`, ...).
+    /// Runs a command with the step file protocol (`$ATK_ENV`, `$ATK_OUTPUT`, ...).
     fn exec_with_files(
         &mut self,
         ui: usize,
@@ -754,15 +739,15 @@ impl<'a> JobRun<'a> {
             ("STEP_SUMMARY", files.summary.clone()),
             ("STATE", files.state.clone()),
         ];
-        // `MAVERICK_*` is the native naming; the `GITHUB_*` aliases let workflow files written
+        // `ATK_*` is the native naming; the `GITHUB_*` aliases let workflow files written
         // in that format run unchanged.
         let mut env: Vec<(String, String)> = vec![
             ("CI".into(), "true".into()),
-            ("MAVERICK".into(), "true".into()),
+            ("ATK".into(), "true".into()),
             ("GITHUB_ACTIONS".into(), "true".into()),
         ];
         for (name, value) in vars {
-            env.push((format!("MAVERICK_{name}"), value.clone()));
+            env.push((format!("ATK_{name}"), value.clone()));
             env.push((format!("GITHUB_{name}"), value));
         }
         env.extend(
@@ -771,7 +756,7 @@ impl<'a> JobRun<'a> {
                 ("RUNNER_ARCH", info.arch.clone()),
                 ("RUNNER_TEMP", info.temp.clone()),
                 ("RUNNER_TOOL_CACHE", info.tool_cache.clone()),
-                ("RUNNER_NAME", "maverick".into()),
+                ("RUNNER_NAME", "atk".into()),
                 ("RUNNER_ENVIRONMENT", "local".into()),
             ]
             .into_iter()
@@ -795,7 +780,7 @@ impl<'a> JobRun<'a> {
                 self.em.log(
                     ui,
                     LogKind::System,
-                    "Workspace is already provisioned by maverick; nothing to check out",
+                    "Workspace is already provisioned by ATK; nothing to check out",
                 );
                 return Ok((Status::Success, Map::new()));
             }
@@ -828,8 +813,8 @@ impl<'a> JobRun<'a> {
                         ui,
                         LogKind::Warning,
                         format!(
-                            "Skipping {uses}: maverick runs offline and has no local copy \
-                             (put one in .maverick/actions/{owner}/{repo})"
+                            "Skipping {uses}: ATK runs offline and has no local copy \
+                             (put one in .atk/actions/{owner}/{repo})"
                         ),
                     );
                     return Ok((Status::Skipped, Map::new()));
@@ -869,7 +854,7 @@ impl<'a> JobRun<'a> {
                     expr::to_str(v),
                 );
             }
-            env.insert("MAVERICK_ACTION_PATH".into(), env_dir.clone());
+            env.insert("ATK_ACTION_PATH".into(), env_dir.clone());
             env.insert("GITHUB_ACTION_PATH".into(), env_dir.clone());
             env.insert(
                 "GITHUB_ACTION".into(),
@@ -898,7 +883,7 @@ impl<'a> JobRun<'a> {
         env: IndexMap<String, String>,
     ) -> Result<(Status, Map<String, Value>)> {
         let mut env = env;
-        env.insert("MAVERICK_ACTION_PATH".into(), action_dir.clone());
+        env.insert("ATK_ACTION_PATH".into(), action_dir.clone());
         env.insert("GITHUB_ACTION_PATH".into(), action_dir.clone());
         let scope = Scope {
             nested: true,
@@ -1006,7 +991,7 @@ fn handle_output(em: &Emitter, ui: usize, line: String, outputs: &mut Map<String
     }
 }
 
-/// Parses `$MAVERICK_ENV` / `$MAVERICK_OUTPUT` files: `KEY=value` and `KEY<<DELIM ... DELIM` blocks.
+/// Parses `$ATK_ENV` / `$ATK_OUTPUT` files: `KEY=value` and `KEY<<DELIM ... DELIM` blocks.
 fn parse_file_commands(text: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut lines = text.lines();

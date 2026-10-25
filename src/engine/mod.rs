@@ -1,160 +1,35 @@
-//! Isolation engines: where a job's steps actually execute.
+//! Where a job's steps actually execute: one Docker container per job.
 //!
-//! Every engine hands out a [`Session`]: an isolated environment holding a copy of the
+//! The engine hands out a [`Session`]: an isolated environment holding a copy of the
 //! project, in which the runner can execute commands and exchange small files.
 
 mod container;
-mod native;
-mod vm;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use anyhow::{bail, Result};
 
-use crate::config::Config;
 use crate::util::{self, Cancel, ExecOutcome};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Kind {
-    Docker,
-    Podman,
-    Lima,
-    Multipass,
-    Wsl,
-    Parallels,
-    Tart,
-    VirtualBox,
-    VMware,
-    Qemu,
-    HyperV,
-    Native,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Family {
-    Container,
-    VirtualMachine,
-    BuiltIn,
-}
-
-impl Kind {
-    pub const ALL: [Kind; 12] = [
-        Kind::Docker,
-        Kind::Podman,
-        Kind::Lima,
-        Kind::Multipass,
-        Kind::Wsl,
-        Kind::Parallels,
-        Kind::Tart,
-        Kind::VirtualBox,
-        Kind::VMware,
-        Kind::Qemu,
-        Kind::HyperV,
-        Kind::Native,
-    ];
-
-    pub fn id(self) -> &'static str {
-        match self {
-            Kind::Docker => "docker",
-            Kind::Podman => "podman",
-            Kind::Lima => "lima",
-            Kind::Multipass => "multipass",
-            Kind::Wsl => "wsl",
-            Kind::Parallels => "parallels",
-            Kind::Tart => "tart",
-            Kind::VirtualBox => "virtualbox",
-            Kind::VMware => "vmware",
-            Kind::Qemu => "qemu",
-            Kind::HyperV => "hyperv",
-            Kind::Native => "native",
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Kind::Docker => "Docker",
-            Kind::Podman => "Podman",
-            Kind::Lima => "Lima",
-            Kind::Multipass => "Multipass",
-            Kind::Wsl => "WSL",
-            Kind::Parallels => "Parallels",
-            Kind::Tart => "Tart",
-            Kind::VirtualBox => "VirtualBox",
-            Kind::VMware => "VMware",
-            Kind::Qemu => "QEMU",
-            Kind::HyperV => "Hyper-V",
-            Kind::Native => "Maverick Native",
-        }
-    }
-
-    pub fn family(self) -> Family {
-        match self {
-            Kind::Docker | Kind::Podman => Family::Container,
-            Kind::Native => Family::BuiltIn,
-            _ => Family::VirtualMachine,
-        }
-    }
-
-    /// Whether this engine can exist on the current OS at all.
-    pub fn on_this_host(self) -> bool {
-        let windows_only = matches!(self, Kind::Wsl | Kind::HyperV);
-        let mac_only = matches!(self, Kind::Parallels | Kind::Tart);
-        (!windows_only || cfg!(windows)) && (!mac_only || cfg!(target_os = "macos"))
-    }
-
-    pub fn parse(s: &str) -> Option<Kind> {
-        let s = s.trim().to_ascii_lowercase();
-        Self::ALL
-            .into_iter()
-            .find(|k| k.id() == s)
-            .or(match s.as_str() {
-                "hyper-v" => Some(Kind::HyperV),
-                "vbox" => Some(Kind::VirtualBox),
-                "builtin" | "built-in" | "maverick" | "host" => Some(Kind::Native),
-                _ => None,
-            })
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Availability {
     Ready,
     NotRunning,
-    NeedsSetup,
     Missing,
 }
 
+/// What `detect` found out about Docker on this machine.
 #[derive(Clone, Debug)]
 pub struct EngineInfo {
-    pub kind: Kind,
     pub availability: Availability,
     pub version: Option<String>,
-    /// Extra context: how to fix it, or which instance/target is used.
+    /// How to fix it when it isn't ready.
     pub note: Option<String>,
 }
 
 impl EngineInfo {
-    fn new(
-        kind: Kind,
-        availability: Availability,
-        version: Option<String>,
-        note: impl Into<Option<String>>,
-    ) -> Self {
-        Self {
-            kind,
-            availability,
-            version,
-            note: note.into(),
-        }
-    }
-
-    fn missing(kind: Kind) -> Self {
-        Self::new(kind, Availability::Missing, None, None)
-    }
-
     pub fn is_ready(&self) -> bool {
         self.availability == Availability::Ready
     }
@@ -163,58 +38,35 @@ impl EngineInfo {
         match self.availability {
             Availability::Ready => "ready",
             Availability::NotRunning => "not running",
-            Availability::NeedsSetup => "needs setup",
             Availability::Missing => "not installed",
         }
     }
 }
 
-pub fn detect(kind: Kind, cfg: &Config) -> EngineInfo {
-    match kind.family() {
-        Family::Container => container::detect(kind),
-        Family::VirtualMachine => vm::detect(kind, cfg),
-        Family::BuiltIn => native::detect(),
-    }
+/// Every run happens in Docker; this is its display name.
+pub const NAME: &str = "Docker";
+
+/// Checks whether Docker is installed and its daemon answers.
+pub fn detect() -> EngineInfo {
+    container::detect()
 }
 
-/// Probes every engine relevant to this OS in parallel.
-pub fn detect_all(cfg: &Config) -> Vec<EngineInfo> {
-    let handles: Vec<_> = Kind::ALL
-        .into_iter()
-        .filter(|k| k.on_this_host())
-        .map(|k| {
-            let cfg = cfg.clone();
-            thread::spawn(move || detect(k, &cfg))
-        })
-        .collect();
-    handles.into_iter().filter_map(|h| h.join().ok()).collect()
-}
-
-/// Instantiates an engine, failing with an actionable message if it isn't usable.
-pub fn build(kind: Kind, cfg: &Config) -> Result<Arc<dyn Engine>> {
-    let info = detect(kind, cfg);
+/// Instantiates the Docker engine, failing with an actionable message if it isn't usable.
+pub fn build() -> Result<Arc<dyn Engine>> {
+    let info = detect();
     if !info.is_ready() {
         let hint = info
             .note
             .as_ref()
             .map(|n| format!(" ({n})"))
             .unwrap_or_default();
-        bail!("{} is {}{hint}", kind.name(), info.status_label());
+        bail!("{NAME} is {}{hint}", info.status_label());
     }
-    Ok(match kind.family() {
-        Family::Container => Arc::new(container::ContainerEngine::new(kind)?),
-        Family::VirtualMachine => Arc::new(vm::VmEngine::new(kind, cfg)?),
-        Family::BuiltIn => Arc::new(native::NativeEngine),
-    })
+    Ok(Arc::new(container::ContainerEngine::new()?))
 }
 
 pub trait Engine: Send + Sync {
-    fn kind(&self) -> Kind;
-
-    /// Whether jobs need a container image (resolved from `runs-on`).
-    fn uses_images(&self) -> bool {
-        self.kind().family() == Family::Container
-    }
+    fn name(&self) -> &'static str;
 
     /// Provisions an isolated environment containing a copy of `req.source`.
     fn start(&self, req: &SessionRequest, log: &mut dyn FnMut(String)) -> Result<Box<dyn Session>>;

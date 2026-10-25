@@ -36,7 +36,7 @@ pub enum LogKind {
     Output,
     /// Echo of the script being run.
     Command,
-    /// Messages from maverick itself.
+    /// Messages from ATK itself.
     System,
     /// Start of a step (used in the combined log view).
     Header,
