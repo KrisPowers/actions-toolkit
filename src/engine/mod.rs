@@ -17,6 +17,8 @@ use crate::util::{self, Cancel, ExecOutcome};
 pub enum Availability {
     Ready,
     NotRunning,
+    /// Running, but with Windows containers, which can't run the Linux job images.
+    WrongMode,
     Missing,
 }
 
@@ -38,6 +40,7 @@ impl EngineInfo {
         match self.availability {
             Availability::Ready => "ready",
             Availability::NotRunning => "not running",
+            Availability::WrongMode => "using Windows containers",
             Availability::Missing => "not installed",
         }
     }
