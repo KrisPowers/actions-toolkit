@@ -1,24 +1,34 @@
-# Actions Toolkit - ATK
+# Actions Toolkit (ATK)
 
-A self-hosted, local alternative to GitHub Actions. ATK runs your CI/CD workflows **on your own
-machine** instead of GitHub-hosted runners, so you stop paying for Actions minutes while keeping a
-workflow-file-driven, trigger-based pipeline you already know.
+Run your CI/CD workflows on your own machine instead of paying for hosted runner minutes. ATK
+finds the workflow files in your project, runs a workflow or a single job with every job in its
+own **Docker** container, and lets you watch every step live. It works offline and needs no
+account, server or hosted service.
 
-- **Rust backend** (axum + SQLite) serves a REST/WebSocket API and executes workflow jobs on the
-  host, mirroring GitHub Actions' execution model: as Docker containers for jobs that declare a
-  `container:` image, or through a built-in native sandbox (a "Shard") for jobs that don't.
-- **React/TypeScript UI** (served by the same binary) gives you configuration, live logs, run
-  history, and analytics, plus GitHub issue/PR/release management.
-- **Two ways to author workflows**: a full YAML code editor (Monaco), or a drag-and-drop visual
-  builder (React Flow) for triggers, jobs, steps, and conditions. Both edit the same underlying
-  workflow definition; saving from visual mode regenerates the YAML, so hand-written comments and
-  formatting don't survive a visual-mode save.
+There are three ways to drive it, all over the same runs and the same history:
+
+- **A terminal UI**: run `atk` and pick a workflow.
+- **Plain commands**: `atk run ci`, `atk watch`, `atk status`, with `--json` for scripts.
+- **AI agents**: `atk mcp` lets Claude, OpenAI or Ollama based agents run, watch and review
+  workflows (see [AI agents](docs/ai-agents.md)).
+
+```
+ ◆ atk › workflows › catalog   ~/code/my-app                    event push   engine ● Docker
+╭ Catalog ─────────────────────────────────────────────────────────────────────────────────╮
+│ ▾ CI                                                                               ci.yml│
+│   ├ lint                                                                   ubuntu-latest│
+│   ├ test                                                               ×3  ubuntu-latest│
+│ ▾ Release                                                           global · release.yml │
+╰──────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓ move   enter run   e event   r rescan   ⌫ back   q quit
+```
 
 ## Install
 
-The backend embeds the built UI into a single binary, so installing gets you both:
+ATK needs [Docker](https://docs.docker.com/engine/install/) (Docker Engine or Docker Desktop)
+installed and running. Then:
 
-```bash
+```sh
 curl -fsSL https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.sh | sh
 ```
 
@@ -28,205 +38,181 @@ On Windows (PowerShell):
 irm https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.ps1 | iex
 ```
 
-Or via Homebrew (macOS and Linux):
+Or via Homebrew, or from source with a Rust toolchain:
 
-```bash
+```sh
 brew install https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/Formula/actions-toolkit.rb
+cargo install --path .
 ```
 
-Either way, the installer also runs `actions-toolkit init` once, which creates the data directory
-(an OS-standard per-user location, e.g. `~/.local/share/actions-toolkit`) and initializes its
-SQLite database with default settings, before you ever run `start`. Then you get a single
-`actions-toolkit` command:
+Either way you get one command, `atk`. Check your setup with `atk doctor`.
 
-```bash
-actions-toolkit start   # or: actions-toolkit listen
+## Usage
+
+Every command works on the project in the current folder; add `-C <folder>` for another one.
+
+| Command | What it does |
+| --- | --- |
+| `atk` | The terminal UI: your workflow catalog and the history of runs |
+| `atk settings` | The terminal UI's settings and guide |
+| `atk list` | This project's workflows and their jobs |
+| `atk validate [workflow]` | Check workflow files for errors without running them |
+| `atk run <workflow>` | Run a workflow in the foreground, streaming its logs |
+| `atk run <workflow> --detach` | Start it in the background and print its run id |
+| `atk runs` | Past and running runs, newest first |
+| `atk status [id]` | A run's jobs and steps, and the output of whatever failed |
+| `atk logs [id]` | A run's logs (`--job`, `--step`, `--tail N`) |
+| `atk watch [id]` | Follow a run until it ends; exits with the run's result |
+| `atk cancel [id]` | Stop a run that is still going |
+| `atk rerun [id]` | Run a past run's workflow again |
+| `atk delete <id>` / `atk clear --yes` | Remove one run, or every finished run, from the history |
+| `atk config` | Show settings; `atk config set event pull_request`, `atk config unset ...` |
+| `atk locations` | Where workflows are searched; `atk locations add pipelines` |
+| `atk doctor` | Whether Docker is ready, and where ATK keeps its files |
+| `atk mcp` / `atk tools` / `atk call` | The AI agent tools, see [AI agents](docs/ai-agents.md) |
+
+A `<workflow>` is its path, its file name (with or without `.yml`) or its `name:`. A run id can
+be the full id, a unique start of one, or `last`, which is also the default.
+
+`atk run` options:
+
+| Option | Meaning |
+| --- | --- |
+| `-j, --job <id>` | Run only this job (all its matrix variants), treating its `needs` as done |
+| `-e, --event <name>` | Event to simulate: `push`, `pull_request`, `workflow_dispatch`, ... |
+| `--input NAME=VALUE` | A `workflow_dispatch` input |
+| `--var NAME=VALUE` | A value for `vars.NAME` |
+| `--image LABEL=IMAGE` | The image for jobs with `runs-on: LABEL` |
+| `--pull` | Always pull images |
+| `--bind` | Mount the project into containers instead of copying it |
+| `-d, --detach` | Run in the background |
+| `--json` | Print events as JSON lines |
+
+Exit codes: `0` success, `1` failure (or an error), `130` cancelled. `atk watch` exits the same
+way, so a script can start a run with `--detach` and wait for it later.
+
+Runs are recorded while they go, wherever they were started: a run started in the TUI can be
+followed with `atk watch` in another terminal, and `atk cancel` stops a run the TUI or an agent
+started.
+
+### The terminal UI
+
+`atk` opens a two-option menu:
+
+- **Catalog**: every workflow found for this project and its jobs. `enter` runs the workflow
+  (all jobs) or a single job and opens the live run view. `e` changes the simulated event for
+  this session.
+- **Runs**: past runs of this project, newest first. `enter` reopens a run with all its logs,
+  `r` runs it again, `d` deletes it, `x` clears the history.
+
+| Key | Action |
+| --- | --- |
+| `↑↓` | Move |
+| `enter` / `→` | Select or open |
+| `⌫` / `←` | Back (leaving the first screen quits) |
+| `q` / `ctrl-c` | Quit |
+
+In the run view:
+
+| Key | Action |
+| --- | --- |
+| `↑↓` / `j k` | Move within the focused panel |
+| `tab` / `← →` | Switch between Jobs, Steps and Logs |
+| `enter` (Steps) | Show only that step's logs (again to clear) |
+| `a` | Show all logs for the job |
+| `pgup` / `pgdn`, `g` / `G` | Scroll logs, jump to top / follow |
+| `c` | Cancel the run |
+| `r` | Run it again (once finished) |
+| `⌫` | Back (asks to cancel first if still running) |
+
+`atk settings` has the guide, Docker's status, workflow locations, run options (the default
+event and how many jobs run at once) and history cleanup. Actions that can't be undone ask
+first; "Cancel" is selected by default.
+
+## Where workflows are found
+
+ATK finds the project root from the folder you start it in, then searches:
+
+| Location | Set by |
+| --- | --- |
+| `.github/workflows/` and `.atk/workflows/` | Always searched |
+| Folders or files listed for this project | `atk locations add` or settings (saved to `.atk.toml`) |
+| Folders or files listed for every project | `atk locations add --global` or settings (your user config) |
+
+Any `.yml`/`.yaml` file with `jobs:` in an added location is listed; other YAML files there are
+ignored.
+
+## How jobs run
+
+Each job gets one container, started from its `runs-on` image and kept alive for the whole job,
+with every step run inside it via `docker exec`. The container works on a **copy** of your
+project (respecting `.gitignore`), so runs can't touch your working files unless you pass
+`--bind`. Containers are labelled `dev.atk.run=1` and removed when the job ends.
+
+`runs-on` labels map to images: `ubuntu-latest` and `ubuntu-24.04` use `ubuntu:24.04`, and
+`ubuntu-22.04` / `ubuntu-20.04` use the matching tag. A job's `container:` always takes
+precedence. Map your own with `atk config set image.ubuntu-latest node:20-bookworm`, or in
+config:
+
+```toml
+[images]
+ubuntu-latest = "node:20-bookworm"
 ```
 
-This starts the backend API and serves the UI from the same process. By default it listens on
-`:7890`; if that port is already taken, it automatically tries the next few ports up and logs
-whichever one it actually bound to, so a busy default port won't stop it from starting. Pass
-`--port <n>` (or `--bind-addr <addr>`) to change it; the value is saved to the database, so a
-later plain `start` remembers it.
+## Configuration
 
-No prebuilt binary for your OS/architecture yet? Build from source, see [Development](#development)
-below.
+User config lives in your config folder (`~/.config/atk/config.toml` on Linux,
+`~/Library/Application Support/atk/config.toml` on macOS, `%APPDATA%\atk\config.toml` on
+Windows). A project can add `.atk.toml` at its root, which overrides it. `atk config set` and
+the settings screen write both for you; the full format is:
 
-## Prerequisites
+```toml
+event = "push"             # event runs simulate
+parallel = 4               # jobs at once
+workflows = ["pipelines"]  # extra workflow locations
 
-- [Rust](https://rustup.rs/) (stable toolchain) and [Node.js](https://nodejs.org/) 20+/npm, only
-  if building from source
-- [Docker](https://www.docker.com/) running locally, only if a workflow's job declares a
-  `container:` image. Jobs without one run through the built-in Shard sandbox (native Linux
-  namespaces/cgroups/seccomp or a Windows AppContainer) instead, with no Docker involved at all.
-- A GitHub account that can install the shared actions-toolkit App (see below) on whichever repos
-  you want to connect. No token to generate ahead of time.
+[vars]                     # vars.NAME
+REGION = "eu"
 
-## How it works
+[images]
+ubuntu-latest = "ubuntu:24.04"
+```
 
-1. On first run, a setup wizard walks you through creating an admin account, then a "Connect
-   GitHub" button that sends you to GitHub to authorize the shared actions-toolkit App. No token
-   to generate or paste, and nothing is ever written to an env file.
-2. Pick which repos to connect from the App installation's accessible-repos list (or extend the
-   installation from GitHub's own settings if a repo you want isn't listed yet).
-3. Connecting a repo automatically creates its webhook on GitHub, there's no manual payload
-   URL/secret step. GitHub still needs a real public URL to reach the webhook, though, since
-   actions-toolkit runs on your own machine, so pick one of the exposure methods on the repo's
-   Webhooks page (a one-click Cloudflare Tunnel or Tailscale Funnel, or your own port forward).
-4. Define workflows (`on:` triggers, `jobs:`, `steps:`) either as YAML or visually.
-5. When a matching event arrives (or you click "Run now"), actions-toolkit checks out your repo,
-   starts each job (a Docker container if it declares one, a Shard sandbox otherwise), runs each
-   step, streams logs live to the UI, and captures any declared artifacts, all on your own
-   hardware.
+Run history is kept in your data folder (`~/.local/share/atk/runs` on Linux,
+`~/Library/Application Support/atk/runs` on macOS, `%APPDATA%\atk\runs` on Windows).
 
-<p align="center">
-  <img src="docs/diagrams/overview.svg" alt="Diagram: a GitHub webhook flows through actions-toolkit's control plane, which opens a Bucket, which spawns a Shell, which runs each job as either a Docker container or a Shard sandbox, streaming logs and status to the UI the whole way." width="100%">
-</p>
+Secrets go in a `.secrets` file at the project root (`NAME=value` per line, keep it out of git)
+and are available as `secrets.NAME`. Their values are replaced with `***` in all output.
 
-One GitHub connection covers every repo the App installation grants access to; there's no
-per-repo credential to manage, and the underlying token is never entered, displayed, or stored as
-an environment variable.
+## Workflow format
 
-If you're upgrading an existing install that was still using the old personal-access-token flow,
-Settings will show a persistent "Reconnect" banner after upgrading. Your existing token keeps
-working exactly as before until you click it; reconnecting swaps it for an App connection with no
-other downtime.
+ATK runs workflows written in the widely used `jobs:` / `steps:` YAML format:
 
-## GitHub App
+- `on` triggers, `env` and `defaults.run` at every level, `if:` with the full expression
+  language (`contains`, `startsWith`, `format`, `toJSON`, `fromJSON`, `success()`,
+  `failure()`, `always()`, `cancelled()`, ...)
+- `needs` with outputs and results, parallel jobs, `strategy.matrix` with `include`/`exclude`,
+  `fail-fast`
+- `run` steps with `bash`, `sh`, `pwsh`, `powershell`, `cmd`, `python` and custom shells;
+  `working-directory`, `continue-on-error`, `timeout-minutes`
+- Step files: append `NAME=value` to `$ATK_ENV` (env for later steps), `$ATK_OUTPUT` (step
+  outputs) or a folder to `$ATK_PATH`. `$GITHUB_ENV`, `$GITHUB_OUTPUT` and `$GITHUB_PATH` are
+  aliases, so existing files work unchanged.
+- Log commands: `::error::`, `::warning::`, `::group::`, `::add-mask::`
+- Local actions (`uses: ./path`), composite and Node. `owner/repo@ref` actions are never
+  downloaded: put a copy in `.atk/actions/owner/repo` (project) or in your config folder under
+  `atk/actions/owner/repo` (global), otherwise the step is skipped with a warning.
 
-actions-toolkit authenticates to GitHub through a single shared GitHub App,
-[`actionstoolkit`](https://github.com/settings/apps/actionstoolkit), owned by the project
-maintainer. Its client ID is public and compiled into the binary (see `.env.example` and
-`crates/atk-config/src/lib.rs`), so nothing needs registering per install; every instance authorizes through the
-same App via the "Connect GitHub" button in Settings, and each user gets their own token scoped to
-exactly what they personally approve, an install of the App on the repos they choose. Override
-`GITHUB_APP_CLIENT_ID` (and register your own App) only if you're running a fork you want
-authenticating independently of the shared one.
-
-There's one connection per instance, not per repo: every connected repo authenticates through
-whichever single App connection this instance holds, so disconnecting it in Settings pauses
-workflow dispatch, webhook processing, and issue/PR/release actions for every connected repo until
-it's reconnected.
+Not yet supported: Docker-based actions, `services:`, reusable workflows (`jobs.<id>.uses`),
+dynamic matrices, caching and artifacts (these steps are skipped with a warning).
 
 ## Development
 
-```bash
-# Backend (terminal 1), serves the API on :7890 (or the next free port), run from the repo root
-cargo run -- start
-
-# UI (terminal 2), Vite dev server on :5173, proxies /api and /webhooks to :7890
-cd ui
-npm install
-npm run dev
+```sh
+cargo test                                  # tests that run jobs need Docker, others skip them
+cargo clippy --all-targets -- -D warnings
+cargo run -- -C examples/demo               # a workflow that exercises most features
 ```
-
-Open `http://localhost:5173`. On first run the setup wizard walks you through creating an admin
-account and connecting GitHub via the App.
-
-### Production build
-
-The backend embeds the UI's built assets into a single binary via `rust-embed`, so the UI must
-be built first:
-
-```bash
-cd ui
-npm install
-npm run build
-
-cd ..
-cargo build --release
-./target/release/actions-toolkit init    # creates the data dir + database, safe to skip (start does it too)
-./target/release/actions-toolkit start
-```
-
-Then open `http://<host>:7890`. Port and bind address are set with `start --port`/`--bind-addr`
-(persisted to the database for next time); bind address, Docker host override, and max concurrent
-jobs can also be changed from the Settings page in the UI. `.env.example` covers the remaining
-advanced overrides: a custom data directory, and recovery of the JWT/encryption secrets.
-
-## Architecture
-
-```
-core/                  Binary crate: axum HTTP/WebSocket API, app state, auth handlers,
-                        Docker/Shard job orchestration, GitHub client glue. Depends on
-                        every crate below.
-crates/atk-crypto/      Encryption-at-rest primitives (PATs, webhook secrets)
-crates/atk-auth/        JWT signing, password hashing
-crates/atk-config/      CLI args and resolved on-disk config, no other internal deps
-crates/atk-db/          SQLite pool, models, and the query layer (sqlx), plus migrations/
-crates/atk-workflow/    Workflow YAML parsing, expression eval, trigger matching, validation
-crates/atk-github/      GitHub REST API surface: checkout, releases, issues, webhooks, OAuth
-crates/atk-bucket/      The Shard sandbox backend (Linux namespaces/cgroups/seccomp, Windows
-                        AppContainer), plus the reaper that cleans it up
-crates/atk-rcp/         Run Control Protocol framing/transport a Shell uses to talk to its Bucket
-ui/                     React + TypeScript UI (Vite, Tailwind): dashboard, repo/workflow
-                        management, dual-mode workflow editor (Monaco + React Flow), live
-                        logs, analytics
-mcp/                    MCP server exposing actions-toolkit to AI agents (see mcp/README.md)
-docs/                   Additional guides beyond this README
-install.sh, install.ps1,   cURL/PowerShell installers, Homebrew formula, and the script that
-Formula/, scripts/         refreshes the formula's checksums after a release
-```
-
-`core` depends on every crate under `crates/`, never the other way around; each `crates/atk-*`
-crate is a focused, independently-testable slice with no dependency on app state. See
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full dependency graph and why the split
-lands where it does.
-
-Workflow YAML is a scoped-down, GitHub-Actions-flavored syntax: `on:` triggers (`push`,
-`pull_request`, `release`, `workflow_dispatch`), `jobs:` with a `container:` image and `needs:`
-dependencies, and `steps:` with `run:` (shell) or `uses: docker://image` (container action). Job
-containers stay alive for the duration of the job so multiple steps can `exec` into them
-sequentially, just like GitHub's own runners. `if:` conditions support `==`, `!=`, `&&`, `||`,
-`contains()`, `always()`/`success()`/`failure()`, and `needs.<job>.result`/`github.event_name`
-lookups, a deliberately scoped-down subset of the full GitHub Actions expression language.
-
-### Buckets: how a job runs without Docker
-
-A job that doesn't declare a `container:` image still needs isolation, its own filesystem view,
-its own process tree, and a hard resource ceiling, without paying for a container runtime.
-actions-toolkit builds that natively out of three layered pieces:
-
-- **Bucket** — one per triggering webhook delivery (every workflow it matches shares it). Holds
-  the SQLite pool, the ephemeral encryption key, the resource-cache leases, and an RCP ("Run
-  Control Protocol") server. Nothing downstream ever opens the database directly; they all
-  round-trip through this.
-- **Shell** — one subprocess per workflow run, spawned by a Bucket (or scheduled onto a remote
-  Agent for a `runs_on` this machine can't satisfy). Drives the job DAG and talks to its Bucket
-  only over RCP, whether that's a local named pipe on the same machine or TCP to a Bucket on
-  another one.
-- **Shard** — one ephemeral OS sandbox per `run:` step, created and torn down by the Shell that
-  owns it. Linux namespaces/cgroups/seccomp on Linux, an AppContainer + Job Object on Windows,
-  same effect either way: the step can't see or touch anything outside its workspace and a
-  curated, read-only slice of the host toolchain. That slice only covers base OS directories by
-  default; a toolchain installed under a user profile (cargo, nvm, pyenv, etc.) needs its path
-  added explicitly under Settings → Bucket / sandbox → Extra host paths, or `run:` steps that
-  invoke it will fail with a "not recognized"/"command not found" error.
-
-<p align="center">
-  <img src="docs/diagrams/bucket-architecture.svg" alt="Diagram: a Bucket owns the database pool, encryption key, resource cache, and RCP server; it spawns one Shell per workflow run, either locally or on a remote Agent over TCP; each Shell runs its jobs as Docker containers or Shard sandboxes; the Shard sandbox is backed by Linux namespaces/cgroups/seccomp or Windows AppContainer/Job Objects depending on the host OS; a periodic reaper cleans up anything a crash left behind." width="100%">
-</p>
-
-A few things worth calling out from that diagram:
-
-- **A Shell never touches SQLite.** Every status update, log line, secret lookup, and artifact
-  record is an RCP request/response round-trip back to its Bucket, which is what lets a Shell run
-  on a completely different machine (a remote Agent) without that machine ever holding a database
-  connection or the encryption key.
-- **Docker and Shard are interchangeable per job**, decided purely by whether that job's YAML
-  declares a `container:` image. A run can mix both across its jobs.
-- **A Shard's isolation is real, not just naming.** On Linux, the step's process tree lives inside
-  fresh user/mount/PID/UTS/IPC/net namespaces, `pivot_root`ed into a skeleton where anything not
-  explicitly bind-mounted resolves to `ENOENT`, running under a seccomp allow-list with every
-  capability dropped. On Windows, the equivalent is an AppContainer token (default-deny on
-  filesystem, registry, and network unless a SID is explicitly granted) plus a Job Object
-  (`KILL_ON_JOB_CLOSE` guarantees teardown even if the parent process crashes).
-- **Cleanup doesn't depend on anything exiting cleanly.** A periodic reaper sweeps every 30
-  seconds and reconciles again on startup, force-removing any Bucket, Shell, or Shard a crash left
-  running, and expiring anything past its TTL (six hours by default).
-- **Multi-machine is the same code path, not a special case.** A Shell scheduled onto a remote
-  Agent runs the exact same `__shell-run` entry point a local Shell does; the only difference is
-  which RCP listener it dials.
 
 ## License
 

@@ -21,9 +21,9 @@ fetch_sha() {
 }
 
 echo "Fetching checksums for v${version}..."
-macos_arm_sha="$(fetch_sha actions-toolkit-macos-aarch64)"
-macos_x86_sha="$(fetch_sha actions-toolkit-macos-x86_64)"
-linux_x86_sha="$(fetch_sha actions-toolkit-linux-x86_64)"
+macos_arm_sha="$(fetch_sha atk-macos-aarch64)"
+macos_x86_sha="$(fetch_sha atk-macos-x86_64)"
+linux_x86_sha="$(fetch_sha atk-linux-x86_64)"
 
 tmp="$(mktemp)"
 

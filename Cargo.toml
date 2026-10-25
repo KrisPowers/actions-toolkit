@@ -1,8 +1,39 @@
-[workspace]
-resolver = "2"
-members = ["core", "crates/*"]
-
-[workspace.package]
+[package]
+name = "actions-toolkit"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.82"
+description = "Actions Toolkit (ATK): run CI/CD workflows like GitHub Actions locally in Docker, from a TUI, plain commands, or AI agents."
 license = "MIT"
+readme = "README.md"
+keywords = ["ci", "github-actions", "tui", "docker", "mcp"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+name = "atk"
+path = "src/lib.rs"
+
+[[bin]]
+name = "atk"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.5", features = ["derive"] }
+ctrlc = "3.4"
+dirs = "5"
+ignore = "0.4"
+indexmap = { version = "2", features = ["serde"] }
+ratatui = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml = "0.9"
+tempfile = "3"
+toml = "0.8"
+which = "6"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

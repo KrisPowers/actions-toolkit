@@ -1,17 +1,17 @@
 #!/usr/bin/env sh
-# Installs the actions-toolkit CLI (backend + embedded UI in one binary).
+# Installs the Actions Toolkit CLI, `atk`.
 #
 #   curl -fsSL https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.sh | sh
 #
 # Env overrides:
-#   ACTIONS_TOOLKIT_VERSION     release tag to install, e.g. v0.1.0 (default: latest)
-#   ACTIONS_TOOLKIT_INSTALL_DIR directory to install the binary into (default: $HOME/.local/bin)
+#   ATK_VERSION     release tag to install, e.g. v0.1.0 (default: latest)
+#   ATK_INSTALL_DIR directory to install the binary into (default: $HOME/.local/bin)
 set -eu
 
 REPO="KrisPowers/actions-toolkit"
-BIN_NAME="actions-toolkit"
-INSTALL_DIR="${ACTIONS_TOOLKIT_INSTALL_DIR:-$HOME/.local/bin}"
-VERSION="${ACTIONS_TOOLKIT_VERSION:-latest}"
+BIN_NAME="atk"
+INSTALL_DIR="${ATK_INSTALL_DIR:-$HOME/.local/bin}"
+VERSION="${ATK_VERSION:-latest}"
 
 os="$(uname -s)"
 case "$os" in
@@ -39,7 +39,7 @@ if [ "$platform" = "linux" ] && [ "$arch" = "aarch64" ]; then
   exit 1
 fi
 
-asset="actions-toolkit-${platform}-${arch}"
+asset="atk-${platform}-${arch}"
 if [ "$VERSION" = "latest" ]; then
   url="https://github.com/${REPO}/releases/latest/download/${asset}.tar.gz"
 else
@@ -49,7 +49,7 @@ fi
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
-echo "Downloading actions-toolkit (${platform}-${arch}, ${VERSION})..."
+echo "Downloading atk (${platform}-${arch}, ${VERSION})..."
 if ! curl -fsSL "$url" -o "$tmp_dir/$asset.tar.gz"; then
   echo "error: download failed from $url" >&2
   echo "Check available versions at https://github.com/${REPO}/releases" >&2
@@ -62,10 +62,7 @@ mkdir -p "$INSTALL_DIR"
 mv "$tmp_dir/$asset/$BIN_NAME" "$INSTALL_DIR/$BIN_NAME"
 chmod +x "$INSTALL_DIR/$BIN_NAME"
 
-echo "Installed actions-toolkit to $INSTALL_DIR/$BIN_NAME"
-
-echo "Initializing data directory..."
-"$INSTALL_DIR/$BIN_NAME" init
+echo "Installed atk to $INSTALL_DIR/$BIN_NAME"
 
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
@@ -77,4 +74,4 @@ case ":$PATH:" in
 esac
 
 echo ""
-echo "Run '$BIN_NAME start' (or '$BIN_NAME listen') to launch actions-toolkit."
+echo "ATK runs every job in Docker. Run 'atk doctor' to check your setup, then 'atk' in a project."
