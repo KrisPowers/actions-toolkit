@@ -49,8 +49,14 @@ fn project(workflow: &str) -> tempfile::TempDir {
     dir
 }
 
+/// Whether Docker can run jobs. Linux CI always has it, so there a missing Docker is a
+/// failure rather than a skip: release tests must never pass by not running.
 fn docker(home: &Path) -> bool {
-    let ready = run(home, &["doctor"]).status.success();
+    let doctor = run(home, &["doctor"]);
+    let ready = doctor.status.success();
+    if !ready && cfg!(target_os = "linux") && std::env::var_os("CI").is_some() {
+        panic!("Docker should be ready on Linux CI: {}", text(&doctor));
+    }
     if !ready {
         eprintln!("skipping: Docker is not available");
     }
