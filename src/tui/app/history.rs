@@ -196,7 +196,7 @@ impl App {
                 ("x", "clear all"),
             ]);
         }
-        hints.extend([("⌫", "back"), ("q", "quit")]);
+        hints.extend([("esc", "back"), ("q", "quit")]);
         hints
     }
 }

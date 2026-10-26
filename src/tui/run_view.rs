@@ -622,7 +622,7 @@ impl RunView {
         }
         pairs.extend([("a", "all logs"), ("pgup/pgdn", "scroll"), ("f", "follow")]);
         if self.is_finished() {
-            pairs.extend([("r", "run again"), ("⌫", "back")]);
+            pairs.extend([("r", "run again"), ("esc", "back")]);
         } else {
             pairs.push(("c", "cancel"));
         }

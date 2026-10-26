@@ -397,7 +397,7 @@ impl App {
 
         let mut hints = vec![("↑↓", "move")];
         if !s.inside {
-            hints.extend([("enter", "open"), ("⌫", "back"), ("q", "quit")]);
+            hints.extend([("enter", "open"), ("esc", "back"), ("q", "quit")]);
             return hints;
         }
         match section {
@@ -411,14 +411,14 @@ impl App {
             ]),
             Section::Options | Section::Data => hints.push(("enter", "change")),
         }
-        hints.extend([("⌫", "back"), ("q", "quit")]);
+        hints.extend([("esc", "back"), ("q", "quit")]);
         hints
     }
 
     /// One-line explanation of the selected item.
     fn item_help(&self, section: Section, sel: usize) -> String {
         match section {
-            Section::Guide => "↑↓ to scroll, ⌫ to go back to the sections.".into(),
+            Section::Guide => "↑↓ to scroll, Esc to go back to the sections.".into(),
             Section::Docker => match &self.docker {
                 Some(info) => {
                     let version = info.version.as_ref().map(|v| format!(" v{v}")).unwrap_or_default();
@@ -507,12 +507,15 @@ impl App {
             t("  1. Docker: install it and make sure it is running."),
             t("  2. Workflow locations: .github/workflows and .atk/workflows are always"),
             t("     searched. Add other folders or files for this project or every project."),
-            t("  3. Run `atk`, open Catalog, pick a workflow or job, press Enter."),
+            t("  3. Run `atk`, open Catalog, pick a workflow or job, press r to run it."),
             t(""),
             h("Keys"),
             kv("↑ ↓", "move".into()),
             kv("Enter / →", "select or open".into()),
-            kv("⌫ / ←", "back (leaving the first screen quits)".into()),
+            kv(
+                "Esc / Backspace",
+                "back (leaving the first screen quits)".into(),
+            ),
             kv("q / Ctrl-C", "quit".into()),
             t(""),
             h("Confirmations and text fields"),

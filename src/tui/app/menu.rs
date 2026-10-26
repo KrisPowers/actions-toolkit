@@ -110,7 +110,7 @@ impl App {
         vec![
             ("↑↓", "choose"),
             ("enter", "open"),
-            ("⌫", "back"),
+            ("esc", "back"),
             ("q", "quit"),
         ]
     }
