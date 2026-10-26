@@ -16,6 +16,11 @@ Review the diff and commit `Formula/actions-toolkit.rb`.
 
 ## Install URL
 
-`https://atk.krispowers.dev` is a Cloudflare Worker (`site/`) that serves `install.sh` and
-`install.ps1` from `main`, so script changes go live on merge with no redeploy. Only a change
-to `site/` itself needs `wrangler deploy` from that folder.
+`https://atk.krispowers.dev` is three Cloudflare Redirect Rules on the krispowers.dev zone (no
+Worker, no hosting), checked in this order:
+
+1. User agent contains `PowerShell`: 302 to `https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.ps1`
+2. User agent starts with `curl/` or `Wget/`: 302 to `https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.sh`
+3. Anything else: 302 to `https://github.com/KrisPowers/actions-toolkit`
+
+The scripts are read from `main`, so changes go live on merge.
