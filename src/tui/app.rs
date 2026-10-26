@@ -648,7 +648,7 @@ mod tests {
 
     /// An app for the demo project with a throwaway history folder, Docker detected.
     pub fn demo_app(start: Start) -> (App, tempfile::TempDir) {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/demo");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo");
         let dir = tempfile::tempdir().unwrap();
         let store = Store::at(dir.path().to_path_buf());
         let mut app = App::with_store(root, start, Some(store)).unwrap();
