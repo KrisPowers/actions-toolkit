@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Installs the Actions Toolkit CLI, `atk`.
 #
-#   curl -fsSL https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.sh | sh
+#   curl -fsSL https://atk.krispowers.dev | sh
 #
 # Env overrides:
 #   ATK_VERSION     release tag to install, e.g. v0.1.0 (default: latest)
