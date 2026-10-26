@@ -46,7 +46,7 @@ irm https://atk.krispowers.dev | iex
 Or via Homebrew, or from source with a Rust toolchain:
 
 ```sh
-brew tap krispowers/atk https://atk.krispowers.dev/brew
+brew tap krispowers/atk https://github.com/KrisPowers/actions-toolkit
 brew install atk
 cargo install --path .
 ```
@@ -350,12 +350,11 @@ first: a tag that fails it publishes nothing.
 
 Pushing a `v*` tag runs the release workflow: the release tests first, then `atk` binaries for
 macOS (arm64, x86_64), Linux (x86_64) and Windows (x86_64), attached to a GitHub Release with
-`.sha256` checksums. Afterwards, `scripts/bump-formula.sh <version>` updates the Homebrew formula
-in the tap repo, KrisPowers/homebrew-atk.
+`.sha256` checksums. Afterwards, `scripts/bump-formula.sh <version>` updates the Homebrew formula,
+`Formula/atk.rb`. This repo is the tap.
 
-`atk.krispowers.dev` is a set of Cloudflare Redirect Rules (no Worker or hosting): `/brew/...` goes
-to the tap repo, PowerShell gets `install.ps1`, curl and wget get `install.sh`, browsers get this
-repo, all from `main`.
+`atk.krispowers.dev` is a set of Cloudflare Redirect Rules (no Worker or hosting): PowerShell
+gets `install.ps1`, curl and wget get `install.sh`, browsers get this repo, all from `main`.
 
 ## License
 
