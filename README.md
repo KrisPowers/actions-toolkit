@@ -212,8 +212,12 @@ dynamic matrices, caching and artifacts (these steps are skipped with a warning)
 ```sh
 cargo test                                  # tests that run jobs need Docker, others skip them
 cargo clippy --all-targets -- -D warnings
-cargo run -- -C examples/demo               # a workflow that exercises most features
+cargo run -- -C tests/fixtures/demo         # a workflow that exercises most features
 ```
+
+`tests/release.rs` drives the built `atk` binary end to end (commands, `--json` output, MCP,
+Docker runs, failure reviews, detached runs). It runs on every PR, and every release runs it
+first: a tag that fails it publishes nothing.
 
 ## License
 

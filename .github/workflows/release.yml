@@ -6,7 +6,17 @@ on:
       - "v*"
 
 jobs:
+  # Release quality tests (tests/release.rs) run against Docker before anything is built.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-targets
+
   build:
+    needs: test
     strategy:
       fail-fast: false
       matrix:

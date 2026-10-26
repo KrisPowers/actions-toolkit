@@ -50,7 +50,7 @@ jobs:
         run: echo "node=${{ matrix.node }} label=${{ matrix.label }} version=${{ needs.build.outputs.version }}"
       - name: Local composite action
         id: greet
-        uses: ./.github/actions/greet
+        uses: ./.atk/actions/greet
         with:
           who: matrix ${{ matrix.node }}
       - run: echo "action said '${{ steps.greet.outputs.message }}'"

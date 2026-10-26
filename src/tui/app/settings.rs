@@ -561,7 +561,7 @@ mod tests {
 
     #[test]
     fn settings_open_on_the_guide() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/demo");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo");
         let mut app = App::with_store(root, Start::Settings, None).unwrap();
         let screen = render(&mut app, 110, 30);
         assert!(screen.contains("Settings"), "{screen}");

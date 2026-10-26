@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn speaks_json_rpc() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/demo");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo");
         let init = handle(
             &root,
             &json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2025-03-26" } }),
