@@ -512,7 +512,10 @@ impl App {
             h("Keys"),
             kv("↑ ↓", "move".into()),
             kv("Enter / →", "select or open".into()),
-            kv("Esc / Backspace", "back (leaving the first screen quits)".into()),
+            kv(
+                "Esc / Backspace",
+                "back (leaving the first screen quits)".into(),
+            ),
             kv("q / Ctrl-C", "quit".into()),
             t(""),
             h("Confirmations and text fields"),

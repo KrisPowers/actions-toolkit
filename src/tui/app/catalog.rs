@@ -252,7 +252,13 @@ impl App {
     }
 
     fn catalog_row(&self, c: &Catalog, row: &Row, width: usize) -> Line<'static> {
-        let fold_icon = |fold: Fold| if c.folded.contains(&fold) { "▸" } else { "▾" };
+        let fold_icon = |fold: Fold| {
+            if c.folded.contains(&fold) {
+                "▸"
+            } else {
+                "▾"
+            }
+        };
         match row {
             Row::Workflow(i) => {
                 let file = &self.workflows[*i];
