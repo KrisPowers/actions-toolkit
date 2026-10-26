@@ -41,7 +41,8 @@ irm https://atk.krispowers.dev | iex
 Or via Homebrew, or from source with a Rust toolchain:
 
 ```sh
-brew install https://atk.krispowers.dev/actions-toolkit.rb
+brew tap krispowers/atk https://atk.krispowers.dev/brew
+brew install atk
 cargo install --path .
 ```
 
