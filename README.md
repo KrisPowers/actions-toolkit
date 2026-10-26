@@ -13,14 +13,19 @@ There are three ways to drive it, all over the same runs and the same history:
   workflows (see [AI agents](#ai-agents)).
 
 ```
- ◆ atk › workflows › catalog   ~/code/my-app                    event push   engine ● Docker
-╭ Catalog ─────────────────────────────────────────────────────────────────────────────────╮
-│ ▾ CI                                                                               ci.yml│
-│   ├ lint                                                                   ubuntu-latest│
-│   ├ test                                                               ×3  ubuntu-latest│
-│ ▾ Release                                                           global · release.yml │
-╰──────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓ move   enter run   e event   r rescan   ⌫ back   q quit
+ ◆ atk › workflows › catalog   ~/code/my-app                        event push   engine ● Docker
+╭ Catalog ─────────────────────────────────────╮╭ Details ─────────────────────────────────────╮
+│ ▾ CI                                   ci.yml││ test                                         │
+│   ▾ lint                        ubuntu-latest││ job test in CI                               │
+│     · Run actions/checkout@v4                ││                                              │
+│     · Lint                                   ││ runs-on   ubuntu-latest                      │
+│   ▾ test                    ×3  ubuntu-latest││ needs     lint                               │
+│     · Run actions/checkout@v4                ││ matrix    3                                  │
+│     · Test                                   ││ steps     2                                  │
+│ ▸ Release                global · release.yml││                                              │
+│                                              ││ r: run just this job as `push`               │
+╰──────────────────────────────────────────────╯╰──────────────────────────────────────────────╯
+ ↑↓ move   enter collapse   c collapse all   r run   e event   f5 rescan   esc back   q quit
 ```
 
 ## Install
@@ -100,9 +105,11 @@ started.
 
 `atk` opens a two-option menu:
 
-- **Catalog**: every workflow found for this project and its jobs. `enter` runs the workflow
-  (all jobs) or a single job and opens the live run view. `e` changes the simulated event for
-  this session.
+- **Catalog**: every workflow found for this project, its jobs and their steps, with the
+  selection's details beside the list. `enter` (or `← →`) collapses and expands a workflow or
+  job, `c` collapses or expands everything, and `r` runs the selected workflow (all jobs) or job
+  (a step runs its job) and opens the live run view. `e` changes the simulated event for this
+  session and `f5` rescans for workflow files.
 - **Runs**: past runs of this project, newest first. `enter` reopens a run with all its logs,
   `r` runs it again, `d` deletes it, `x` clears the history.
 
@@ -110,7 +117,7 @@ started.
 | --- | --- |
 | `↑↓` | Move |
 | `enter` / `→` | Select or open |
-| `⌫` / `←` | Back (leaving the first screen quits) |
+| `esc` / `backspace` | Back (leaving the first screen quits) |
 | `q` / `ctrl-c` | Quit |
 
 In the run view:
@@ -124,7 +131,7 @@ In the run view:
 | `pgup` / `pgdn`, `g` / `G` | Scroll logs, jump to top / follow |
 | `c` | Cancel the run |
 | `r` | Run it again (once finished) |
-| `⌫` | Back (asks to cancel first if still running) |
+| `esc` / `backspace` | Back (asks to cancel first if still running) |
 
 `atk settings` has the guide, Docker's status, workflow locations, run options (the default
 event and how many jobs run at once) and history cleanup. Actions that can't be undone ask
