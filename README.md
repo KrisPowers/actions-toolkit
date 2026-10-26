@@ -38,6 +38,13 @@ On Windows (PowerShell):
 irm https://atk.krispowers.dev | iex
 ```
 
+Or via Homebrew, or from source with a Rust toolchain:
+
+```sh
+brew install https://atk.krispowers.dev/actions-toolkit.rb
+cargo install --path .
+```
+
 Either way you get one command, `atk`. Check your setup with `atk doctor`.
 
 ## Usage
