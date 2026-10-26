@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
-# Updates Formula/actions-toolkit.rb to a new release version and its published sha256 checksums.
+# Updates the Homebrew tap formula (KrisPowers/homebrew-atk, Formula/atk.rb) to a new release version and its published sha256 checksums.
 # Run this after the "Release" GitHub Actions workflow has finished publishing a tag's assets.
 #
-#   scripts/bump-formula.sh 0.2.0
+#   scripts/bump-formula.sh 0.2.0 [path/to/homebrew-atk/Formula/atk.rb]
 set -eu
 
 if [ "${1:-}" = "" ]; then
@@ -12,7 +12,7 @@ fi
 
 version="$1"
 repo="KrisPowers/actions-toolkit"
-formula="$(dirname "$0")/../Formula/actions-toolkit.rb"
+formula="${2:-$(dirname "$0")/../../homebrew-atk/Formula/atk.rb}"
 
 fetch_sha() {
   asset="$1"
@@ -40,5 +40,5 @@ awk -v ver="$version" -v arm="$macos_arm_sha" -v x86="$macos_x86_sha" -v linux="
 
 mv "$tmp" "$formula"
 
-echo "Updated Formula/actions-toolkit.rb to v${version}."
+echo "Updated $formula to v${version}."
 echo "Review the diff, then commit it."
