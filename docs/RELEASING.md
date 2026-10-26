@@ -13,3 +13,9 @@ scripts/bump-formula.sh 0.2.0
 ```
 
 Review the diff and commit `Formula/actions-toolkit.rb`.
+
+## Install URL
+
+`https://atk.krispowers.dev` is a Cloudflare Worker (`site/`) that serves `install.sh` and
+`install.ps1` from `main`, so script changes go live on merge with no redeploy. Only a change
+to `site/` itself needs `wrangler deploy` from that folder.

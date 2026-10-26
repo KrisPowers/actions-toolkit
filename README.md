@@ -29,13 +29,13 @@ ATK needs [Docker](https://docs.docker.com/engine/install/) (Docker Engine or Do
 installed and running. Then:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.sh | sh
+curl -fsSL https://atk.krispowers.dev | sh
 ```
 
 On Windows (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.ps1 | iex
+irm https://atk.krispowers.dev | iex
 ```
 
 Or via Homebrew, or from source with a Rust toolchain:

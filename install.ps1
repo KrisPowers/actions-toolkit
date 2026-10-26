@@ -1,6 +1,6 @@
 # Installs the Actions Toolkit CLI, `atk`.
 #
-#   irm https://raw.githubusercontent.com/KrisPowers/actions-toolkit/main/install.ps1 | iex
+#   irm https://atk.krispowers.dev | iex
 #
 # Env overrides:
 #   ATK_VERSION     release tag to install, e.g. v0.1.0 (default: latest)

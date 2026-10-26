@@ -1,0 +1,4 @@
+name = "atk-install"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+routes = [{ pattern = "atk.krispowers.dev", custom_domain = true }]
