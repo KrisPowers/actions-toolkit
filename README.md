@@ -364,7 +364,8 @@ Docker, so the container needs the Docker socket, and the folder it copies works
 mounted at the same path inside and out:
 
 ```sh
-docker run -d -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/atk:/tmp/atk   -v ~:/host:ro -v repos:/projects -v atk:/data -v ./key:/run/truebrew/key:ro atk
+docker run -d -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/atk:/tmp/atk \
+  -v ~:/host:ro -v repos:/projects -v atk:/data -v ./key:/run/truebrew/key:ro atk
 ```
 
 ## Development
