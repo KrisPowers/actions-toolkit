@@ -162,14 +162,17 @@ enum Cmd {
         #[arg(default_value = "{}")]
         args: String,
     },
-    /// Serve the AI tools over HTTP for a dashboard, for the projects in one folder
+    /// Serve the AI tools over HTTP for a dashboard, with projects it chooses
     Serve {
         /// Address to listen on
         #[arg(long, default_value = "127.0.0.1:8080")]
         listen: String,
-        /// Folder whose subfolders are the projects
+        /// Folder repositories are cloned into
         #[arg(long, value_name = "DIR")]
         projects: PathBuf,
+        /// Folder whose subfolders can be chosen as projects
+        #[arg(long, value_name = "DIR")]
+        browse: Option<PathBuf>,
         /// File holding the bearer key every API request must carry
         #[arg(long, value_name = "FILE")]
         key_file: Option<PathBuf>,
@@ -304,8 +307,9 @@ pub fn run() -> Result<ExitCode> {
         Cmd::Serve {
             listen,
             projects,
+            browse,
             key_file,
-        } => serve::run(&listen, &projects, key_file).map(|_| ExitCode::SUCCESS),
+        } => serve::run(&listen, &projects, browse, key_file).map(|_| ExitCode::SUCCESS),
         Cmd::Tools { format } => {
             print_json(&mcp::export(format));
             Ok(ExitCode::SUCCESS)

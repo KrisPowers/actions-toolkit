@@ -17,9 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/*
 COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=build /src/target/release/atk /usr/local/bin/atk
-# Run history and settings live in /data; projects are the folders in /projects.
+# Run history, settings and the chosen projects live in /data. Repositories are
+# cloned into /projects; folders mounted at /host can be chosen as projects.
 ENV XDG_DATA_HOME=/data XDG_CONFIG_HOME=/data/config TMPDIR=/tmp/atk
 VOLUME /data
 EXPOSE 8080
 # tini collects the background runs once they finish.
-ENTRYPOINT ["tini", "--", "atk", "serve", "--listen", "0.0.0.0:8080", "--projects", "/projects", "--key-file", "/run/truebrew/key"]
+ENTRYPOINT ["tini", "--", "atk", "serve", "--listen", "0.0.0.0:8080", "--projects", "/projects", "--browse", "/host", "--key-file", "/run/truebrew/key"]
