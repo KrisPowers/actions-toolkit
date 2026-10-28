@@ -61,7 +61,10 @@ fn handle(ctx: &Ctx, mut req: Request) {
     } else {
         let mut text = String::new();
         let read = req.as_reader().take(MAX_BODY).read_to_string(&mut text);
-        match read.map_err(anyhow::Error::from).and_then(|_| route(ctx, &method, &url, &text)) {
+        match read
+            .map_err(anyhow::Error::from)
+            .and_then(|_| route(ctx, &method, &url, &text))
+        {
             Ok(v) => (200, v),
             Err(e) => (400, json!({ "error": format!("{e:#}") })),
         }
