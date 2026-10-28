@@ -4,7 +4,7 @@
 # Jobs run in sibling containers on the host's Docker, through the mounted socket.
 # Their workspaces are bind-mounted by path, so the folder ATK copies them into
 # (TMPDIR) must be mounted at the same path inside and out: `-v /tmp/atk:/tmp/atk`.
-FROM rust:1.88-slim-bookworm AS build
+FROM rust:1-slim-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
