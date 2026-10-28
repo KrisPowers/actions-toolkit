@@ -69,13 +69,15 @@ pub fn run(
     browse: Option<PathBuf>,
     key_file: Option<PathBuf>,
 ) -> Result<()> {
-    std::fs::create_dir_all(repos)
-        .with_context(|| format!("cannot create {}", repos.display()))?;
+    std::fs::create_dir_all(repos).with_context(|| format!("cannot create {}", repos.display()))?;
     let repos = crate::util::canonical(repos)?;
     let browse = match browse {
         Some(b) if b.is_dir() => Some(crate::util::canonical(&b)?),
         Some(b) => {
-            eprintln!("warning: {} is not a folder, so none can be browsed", b.display());
+            eprintln!(
+                "warning: {} is not a folder, so none can be browsed",
+                b.display()
+            );
             None
         }
         None => None,
@@ -179,12 +181,9 @@ fn route(ctx: &Ctx, method: &Method, url: &str, query: &str, body: &str) -> Resu
             let obj = object(body)?;
             let added = match (string(&obj, "path"), string(&obj, "repo")) {
                 (Some(path), None) => add_folder(ctx, &path)?,
-                (None, Some(repo)) => add_repo(
-                    ctx,
-                    &repo,
-                    string(&obj, "branch"),
-                    string(&obj, "token"),
-                )?,
+                (None, Some(repo)) => {
+                    add_repo(ctx, &repo, string(&obj, "branch"), string(&obj, "token"))?
+                }
                 _ => bail!("give either a `path` or a `repo`"),
             };
             Ok(view(&added))
@@ -278,9 +277,8 @@ fn unique_name(base: &str, taken: &[Project], dir: Option<&Path>) -> String {
     } else {
         clean
     };
-    let free = |n: &str| {
-        !taken.iter().any(|p| p.name == n) && dir.is_none_or(|d| !d.join(n).exists())
-    };
+    let free =
+        |n: &str| !taken.iter().any(|p| p.name == n) && dir.is_none_or(|d| !d.join(n).exists());
     let mut name = clean.clone();
     let mut i = 2;
     while !free(&name) {
@@ -292,7 +290,10 @@ fn unique_name(base: &str, taken: &[Project], dir: Option<&Path>) -> String {
 
 /// Resolves a folder below the browse folder, refusing anything outside it.
 fn browse_path(ctx: &Ctx, rel: &str) -> Result<PathBuf> {
-    let root = ctx.browse.as_ref().context("no folders are shared with ATK")?;
+    let root = ctx
+        .browse
+        .as_ref()
+        .context("no folders are shared with ATK")?;
     let rel = Path::new(rel.trim_matches('/'));
     if rel.components().any(|c| !matches!(c, Component::Normal(_))) {
         bail!("not a folder under the shared folders");
@@ -385,7 +386,10 @@ fn add_repo(
         return Err(e);
     }
     // The token isn't kept: the clone remembers the plain address.
-    git(&["-C", &dest_str, "remote", "set-url", "origin", repo], None)?;
+    git(
+        &["-C", &dest_str, "remote", "set-url", "origin", repo],
+        None,
+    )?;
     let p = Project {
         name,
         path: dest,
@@ -412,7 +416,10 @@ fn pull(ctx: &Ctx, name: &str, token: Option<String>) -> Result<()> {
     let dir = p.path.to_string_lossy().into_owned();
     let url = auth_url(repo, token.as_deref());
     let refspec = p.branch.clone().unwrap_or_else(|| "HEAD".into());
-    git(&["-C", &dir, "fetch", "--depth", "1", &url, &refspec], token.as_deref())?;
+    git(
+        &["-C", &dir, "fetch", "--depth", "1", &url, &refspec],
+        token.as_deref(),
+    )?;
     git(&["-C", &dir, "reset", "--hard", "FETCH_HEAD"], None)
 }
 
@@ -435,7 +442,10 @@ fn remove(ctx: &Ctx, name: &str) -> Result<()> {
 /// workflows and whether it's a Git repository.
 fn browse(ctx: &Ctx, rel: &str) -> Result<Value> {
     let dir = browse_path(ctx, rel)?;
-    let root = ctx.browse.as_ref().context("no folders are shared with ATK")?;
+    let root = ctx
+        .browse
+        .as_ref()
+        .context("no folders are shared with ATK")?;
     let rel_of = |p: &Path| {
         p.strip_prefix(root)
             .unwrap_or(p)
@@ -516,7 +526,10 @@ mod tests {
 
     #[test]
     fn decodes_query_values() {
-        assert_eq!(query_param("path=OneDrive%2FDocuments+x&y=1", "path"), "OneDrive/Documents x");
+        assert_eq!(
+            query_param("path=OneDrive%2FDocuments+x&y=1", "path"),
+            "OneDrive/Documents x"
+        );
         assert_eq!(query_param("y=1", "path"), "");
         assert_eq!(decode("100%"), "100%");
     }
@@ -541,6 +554,9 @@ mod tests {
             auth_url("https://github.com/a/b.git", Some("t0k")),
             "https://x-access-token:t0k@github.com/a/b.git"
         );
-        assert_eq!(auth_url("https://github.com/a/b.git", None), "https://github.com/a/b.git");
+        assert_eq!(
+            auth_url("https://github.com/a/b.git", None),
+            "https://github.com/a/b.git"
+        );
     }
 }
