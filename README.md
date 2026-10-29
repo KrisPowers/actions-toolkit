@@ -334,35 +334,6 @@ atk status last --json              # the review: jobs, steps, failures
 atk logs last --job test --step "Run tests" --tail 50 --json
 ```
 
-## Dashboard service
-
-`atk serve` puts the same tools behind an HTTP API, so a dashboard (such as
-[truebrew](https://github.com/KrisPowers/truebrew)) can build its tables of workflows and
-runs and start runs from a form. It serves the projects that are folders of one directory:
-
-```sh
-atk serve --listen 0.0.0.0:8080 --projects /projects --key-file /run/truebrew/key
-```
-
-Every route but `/health` needs `Authorization: Bearer <key>`, where the key is the contents
-of `--key-file`; without a key file they refuse every request.
-
-| Route | What it does |
-| --- | --- |
-| `GET /health` | `{"ok": true}` |
-| `GET /api/projects` | The project folders, and whether each has workflows |
-| `GET /api/tools` | The tool definitions, as `atk tools` prints them |
-| `POST /api/call/<tool>` | Runs one tool (see [The tools](#the-tools)) with a JSON object of arguments; `project` is a folder name, not a path |
-
-The `Dockerfile` runs it in a container. Jobs run as sibling containers on the host's
-Docker, so the container needs the Docker socket, and the folder it copies workspaces into
-mounted at the same path inside and out:
-
-```sh
-docker run -d -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/atk:/tmp/atk \
-  -v ~/code:/projects -v atk:/data -v ./key:/run/truebrew/key:ro atk
-```
-
 ## Development
 
 ```sh
