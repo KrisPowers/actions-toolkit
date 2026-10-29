@@ -20,7 +20,6 @@ use crate::history::{self, LogLine, Outcome, RunRecord, Store};
 use crate::mcp;
 use crate::report;
 use crate::runner::{LogKind, RunEvent, Status};
-use crate::serve;
 use crate::tui::{self, Start};
 use crate::util::fmt_duration;
 use crate::workflow::{self, plan::RunPlan, Source};
@@ -162,21 +161,6 @@ enum Cmd {
         #[arg(default_value = "{}")]
         args: String,
     },
-    /// Serve the AI tools over HTTP for a dashboard, with projects it chooses
-    Serve {
-        /// Address to listen on
-        #[arg(long, default_value = "127.0.0.1:8080")]
-        listen: String,
-        /// Folder repositories are cloned into
-        #[arg(long, value_name = "DIR")]
-        projects: PathBuf,
-        /// Folder whose subfolders can be chosen as projects
-        #[arg(long, value_name = "DIR")]
-        browse: Option<PathBuf>,
-        /// File holding the bearer key every API request must carry
-        #[arg(long, value_name = "FILE")]
-        key_file: Option<PathBuf>,
-    },
 }
 
 #[derive(Args)]
@@ -304,12 +288,6 @@ pub fn run() -> Result<ExitCode> {
         Cmd::Config { action, json } => config(&root, action, json),
         Cmd::Locations { action, json } => locations(&root, action, json),
         Cmd::Mcp => mcp::serve(root).map(|_| ExitCode::SUCCESS),
-        Cmd::Serve {
-            listen,
-            projects,
-            browse,
-            key_file,
-        } => serve::run(&listen, &projects, browse, key_file).map(|_| ExitCode::SUCCESS),
         Cmd::Tools { format } => {
             print_json(&mcp::export(format));
             Ok(ExitCode::SUCCESS)

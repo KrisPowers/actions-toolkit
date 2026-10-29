@@ -334,40 +334,6 @@ atk status last --json              # the review: jobs, steps, failures
 atk logs last --job test --step "Run tests" --tail 50 --json
 ```
 
-## Dashboard service
-
-`atk serve` puts the same tools behind an HTTP API, so a dashboard (such as
-[truebrew](https://github.com/KrisPowers/truebrew)) can choose projects, build its tables of
-workflows and runs, and start runs from a form. A project is a folder under `--browse` or a
-Git repository it clones into `--projects`; the chosen ones are kept in ATK's data folder.
-
-```sh
-atk serve --listen 0.0.0.0:8080 --projects /projects --browse /host --key-file /run/truebrew/key
-```
-
-Every route but `/health` needs `Authorization: Bearer <key>`, where the key is the contents
-of `--key-file`; without a key file they refuse every request.
-
-| Route | What it does |
-| --- | --- |
-| `GET /health` | `{"ok": true}` |
-| `GET /api/projects` | The chosen projects: name, folder or repository, and whether each has workflows |
-| `POST /api/projects` | Adds one: `{"path": "<folder under --browse>"}`, or `{"repo": "https://...", "branch": "...", "token": "..."}` to clone (the token is used once, never kept) |
-| `POST /api/projects/pull` | `{"name", "token"?}`: brings a cloned repository up to date |
-| `POST /api/projects/remove` | `{"name"}`: forgets a project, deleting its clone |
-| `GET /api/browse?path=<folder>` | The folders in a folder under `--browse`, each with whether it has workflows |
-| `GET /api/tools` | The tool definitions, as `atk tools` prints them |
-| `POST /api/call/<tool>` | Runs one tool (see [The tools](#the-tools)) with a JSON object of arguments; `project` is a project's name |
-
-The `Dockerfile` runs it in a container. Jobs run as sibling containers on the host's
-Docker, so the container needs the Docker socket, and the folder it copies workspaces into
-mounted at the same path inside and out:
-
-```sh
-docker run -d -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/atk:/tmp/atk \
-  -v ~:/host:ro -v repos:/projects -v atk:/data -v ./key:/run/truebrew/key:ro atk
-```
-
 ## Development
 
 ```sh

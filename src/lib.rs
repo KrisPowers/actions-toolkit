@@ -10,7 +10,6 @@ mod history;
 mod mcp;
 mod report;
 mod runner;
-mod serve;
 mod tui;
 mod util;
 mod workflow;
