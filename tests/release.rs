@@ -276,7 +276,10 @@ fn docker_actions_run_in_their_own_container() {
     assert!(out.status.success(), "{}", text(&out));
 
     let logs = text(&run(h.path(), &["-C", DOCKER, "logs", "last"]));
-    assert!(logs.contains("docker action says hi to docker-hi"), "{logs}");
+    assert!(
+        logs.contains("docker action says hi to docker-hi"),
+        "{logs}"
+    );
     assert!(logs.contains("image step got hi"), "{logs}");
 }
 
