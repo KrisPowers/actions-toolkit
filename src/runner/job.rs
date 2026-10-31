@@ -815,17 +815,13 @@ impl<'a> JobRun<'a> {
                 path,
                 git_ref,
             } => {
+                // A step that can't run must not let the job pass as if it had.
                 let Some(host_root) = action::locate(&self.cx.opts.root, &owner, &repo, &git_ref)
                 else {
-                    self.em.log(
-                        ui,
-                        LogKind::Warning,
-                        format!(
-                            "Skipping {uses}: ATK runs offline and has no local copy \
-                             (put one in .atk/actions/{owner}/{repo})"
-                        ),
+                    bail!(
+                        "{uses} can't run: ATK runs offline and has no local copy \
+                         (put one in .atk/actions/{owner}/{repo})"
                     );
-                    return Ok((Status::Skipped, Map::new()));
                 };
                 let env_root = info.join(
                     &info.join(
@@ -871,15 +867,7 @@ impl<'a> JobRun<'a> {
             let argv = vec!["node".to_string(), info.join(&env_dir, &main)];
             return self.exec_with_files(ui, argv, env, info.workspace.clone(), timeout);
         }
-        self.em.log(
-            ui,
-            LogKind::Warning,
-            format!(
-                "Skipping {uses}: `{}` actions are not supported yet",
-                def.runs.using
-            ),
-        );
-        Ok((Status::Skipped, Map::new()))
+        bail!("{uses} can't run: `{}` actions are not supported yet", def.runs.using)
     }
 
     fn run_composite(
