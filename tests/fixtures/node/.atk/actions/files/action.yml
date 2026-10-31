@@ -1,0 +1,8 @@
+name: Files
+description: A Node action that writes every step file the way @actions/core does
+outputs:
+  greeting:
+    description: A value set through the output file
+runs:
+  using: node20
+  main: index.js

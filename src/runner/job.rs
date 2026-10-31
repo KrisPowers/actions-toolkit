@@ -645,9 +645,17 @@ impl<'a> JobRun<'a> {
             summary: file("summary"),
             state: file("state"),
         };
-        // File names are unique per command, so creating the directory is enough: `>>` creates
-        // the rest, and missing files read back as empty. (One write keeps VM round-trips low.)
-        self.session.write_file(&files.env, b"")?;
+        // Shells create the files with `>>`, but `@actions/core` refuses to write to a file
+        // that doesn't exist yet, so every step file must exist before the command runs.
+        for f in [
+            &files.env,
+            &files.output,
+            &files.path,
+            &files.summary,
+            &files.state,
+        ] {
+            self.session.write_file(f, b"")?;
+        }
 
         let mut env: IndexMap<String, String> = self.base_env(&files).into_iter().collect();
         env.extend(self.env.clone());

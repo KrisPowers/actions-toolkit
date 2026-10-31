@@ -343,8 +343,8 @@ cargo run -- -C tests/fixtures/demo         # a workflow that exercises most fea
 ```
 
 `tests/release.rs` drives the built `atk` binary end to end (commands, `--json` output, MCP,
-Docker runs, failure reviews, detached runs). It runs on every PR, and every release runs it
-first: a tag that fails it publishes nothing.
+Docker runs, Node actions, failure reviews, detached runs). It runs on every PR, and every
+release runs it first: a tag that fails it publishes nothing.
 
 ## Releasing
 
