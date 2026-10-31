@@ -1,0 +1,14 @@
+name: Node action
+on: push
+
+jobs:
+  files:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write step files from Node
+        id: files
+        uses: ./.atk/actions/files
+      - name: Read them back
+        run: |
+          test "${{ steps.files.outputs.greeting }}" = "hello from node"
+          node-tool

@@ -9,6 +9,7 @@ use std::process::{Command, Output, Stdio};
 use serde_json::Value;
 
 const DEMO: &str = "tests/fixtures/demo";
+const NODE: &str = "tests/fixtures/node";
 
 /// `atk` with its run history and settings isolated in `home`.
 fn atk(home: &Path) -> Command {
@@ -231,6 +232,22 @@ fn reports_a_failing_step() {
         failure["output_tail"].to_string().contains("about to fail"),
         "{failure}"
     );
+}
+
+#[test]
+fn node_actions_write_step_files() {
+    let h = home();
+    if !docker(h.path()) {
+        return;
+    }
+    let out = run(
+        h.path(),
+        &["-C", NODE, "run", "ci", "--image", "ubuntu-latest=node:20"],
+    );
+    assert!(out.status.success(), "{}", text(&out));
+
+    let logs = text(&run(h.path(), &["-C", NODE, "logs", "last"]));
+    assert!(logs.contains("node-tool is on PATH"), "{logs}");
 }
 
 #[test]
