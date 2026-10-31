@@ -277,7 +277,9 @@ impl Session for ContainerSession {
             }
             ActionImage::Build(dockerfile) => dockerfile,
         };
-        let context = dockerfile.parent().context("the Dockerfile has no folder")?;
+        let context = dockerfile
+            .parent()
+            .context("the Dockerfile has no folder")?;
         let tag = format!(
             "action:{:016x}",
             util::hash(dockerfile.to_string_lossy().as_bytes())
