@@ -5,6 +5,7 @@
 //! `toJSON`, `fromJSON`, `success()`, `always()`, ...).
 
 use std::cmp::Ordering;
+use std::path::PathBuf;
 
 use serde_json::{Map, Number, Value};
 use serde_yaml::Value as Yaml;
@@ -27,11 +28,17 @@ impl JobState {
 pub struct Ctx<'a> {
     pub data: &'a Value,
     pub state: JobState,
+    /// Host folder `hashFiles()` reads; without one it returns an empty string.
+    pub files: Option<PathBuf>,
 }
 
 impl<'a> Ctx<'a> {
     pub fn new(data: &'a Value, state: JobState) -> Self {
-        Self { data, state }
+        Self {
+            data,
+            state,
+            files: None,
+        }
     }
 }
 
@@ -524,8 +531,13 @@ fn call(name: &str, args: &[Expr], ctx: &Ctx) -> Result<Value, String> {
             need(1)?;
             serde_json::from_str(&to_str(&arg(0))).map_err(|e| format!("fromJSON: {e}"))?
         }
-        // File hashing is only used for cache keys, and caching is not supported locally.
-        "hashfiles" => Value::String(String::new()),
+        "hashfiles" => {
+            let patterns: Vec<String> = vals.iter().map(to_str).collect();
+            Value::String(match &ctx.files {
+                Some(root) => crate::util::hash_files(root, &patterns),
+                None => String::new(),
+            })
+        }
         _ => return Err(format!("unknown function `{name}`")),
     })
 }

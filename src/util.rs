@@ -369,6 +369,41 @@ pub fn hash(bytes: &[u8]) -> u64 {
     })
 }
 
+/// `hashFiles()`: a hash of the files under `root` matching the glob `patterns` (`!pattern`
+/// excludes), or an empty string when none match.
+pub fn hash_files(root: &Path, patterns: &[String]) -> String {
+    let mut globs = ignore::overrides::OverrideBuilder::new(root);
+    for p in patterns {
+        let (not, p) = p.strip_prefix('!').map_or(("", p.as_str()), |p| ("!", p));
+        // Anchored at the workspace, as in GitHub, instead of matching at any depth.
+        let p = p.trim_start_matches("./").trim_start_matches('/');
+        if globs.add(&format!("{not}/{p}")).is_err() {
+            return String::new();
+        }
+    }
+    let Ok(globs) = globs.build() else {
+        return String::new();
+    };
+    let mut files: Vec<_> = ignore::WalkBuilder::new(root)
+        .standard_filters(false)
+        .overrides(globs)
+        .filter_entry(|e| e.file_name() != ".git")
+        .build()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
+        .map(|e| e.into_path())
+        .collect();
+    if files.is_empty() {
+        return String::new();
+    }
+    files.sort();
+    let hashes: Vec<u8> = files
+        .iter()
+        .flat_map(|f| hash(&fs::read(f).unwrap_or_default()).to_le_bytes())
+        .collect();
+    format!("{:016x}", hash(&hashes))
+}
+
 pub fn fmt_duration(d: Duration) -> String {
     let secs = d.as_secs();
     if secs < 60 {
@@ -404,6 +439,26 @@ mod tests {
     #[test]
     fn slugs() {
         assert_eq!(slug("Test (ubuntu-latest, 18)"), "test-ubuntu-latest-18");
+    }
+
+    #[test]
+    fn hashes_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("Cargo.lock"), "a").unwrap();
+        fs::create_dir(root.join("sub")).unwrap();
+        fs::write(root.join("sub/Cargo.lock"), "b").unwrap();
+        let of = |p: &[&str]| {
+            let p: Vec<String> = p.iter().map(|s| s.to_string()).collect();
+            hash_files(root, &p)
+        };
+        let top = of(&["Cargo.lock"]);
+        assert_eq!(top.len(), 16);
+        assert_ne!(top, of(&["**/Cargo.lock"]));
+        assert_eq!(of(&["**/Cargo.lock", "!sub/**"]), top);
+        assert_eq!(of(&["missing"]), "");
+        fs::write(root.join("Cargo.lock"), "c").unwrap();
+        assert_ne!(of(&["Cargo.lock"]), top);
     }
 
     #[test]

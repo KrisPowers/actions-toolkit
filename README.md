@@ -207,6 +207,11 @@ ATK runs workflows written in the widely used `jobs:` / `steps:` YAML format:
   outputs) or a folder to `$ATK_PATH`. `$GITHUB_ENV`, `$GITHUB_OUTPUT` and `$GITHUB_PATH` are
   aliases, so existing files work unchanged.
 - Log commands: `::error::`, `::warning::`, `::group::`, `::add-mask::`
+- `actions/cache` (and `actions/cache/restore`, `actions/cache/save`) with `path`, `key`,
+  `restore-keys`, `lookup-only`, `fail-on-cache-miss` and the `cache-hit` output, keyed with
+  `hashFiles()`. Entries are kept per project in your cache folder (`~/.cache/atk/cache` on
+  Linux, `~/Library/Caches/atk/cache` on macOS, `%LOCALAPPDATA%\atk\cache` on Windows) and
+  saved when the job succeeds, so the next run skips the downloads.
 - Docker actions: `uses: docker://image` steps (`with.entrypoint` and `with.args`) and
   `runs.using: docker` actions with a `Dockerfile` or `docker://` image, `args`, `env`,
   `entrypoint` and `pre-entrypoint`. Each runs in its own container on the job's workspace.
@@ -216,7 +221,7 @@ ATK runs workflows written in the widely used `jobs:` / `steps:` YAML format:
   running its checks.
 
 Not yet supported: `services:`, reusable workflows (`jobs.<id>.uses`),
-dynamic matrices, caching and artifacts (these steps are skipped with a warning).
+dynamic matrices and artifacts (these steps are skipped with a warning).
 
 ## AI agents
 

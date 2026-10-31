@@ -276,8 +276,45 @@ fn docker_actions_run_in_their_own_container() {
     assert!(out.status.success(), "{}", text(&out));
 
     let logs = text(&run(h.path(), &["-C", DOCKER, "logs", "last"]));
-    assert!(logs.contains("docker action says hi to docker-hi"), "{logs}");
+    assert!(
+        logs.contains("docker action says hi to docker-hi"),
+        "{logs}"
+    );
     assert!(logs.contains("image step got hi"), "{logs}");
+}
+
+#[test]
+fn caches_paths_between_runs() {
+    let h = home();
+    if !docker(h.path()) {
+        return;
+    }
+    let p = project(
+        r#"on: push
+jobs:
+  cache:
+    runs-on: ubuntu-latest
+    steps:
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.demo-cache
+            build
+          key: demo-${{ runner.os }}-${{ hashFiles('seed.txt') }}
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: mkdir -p ~/.demo-cache build && echo fresh > ~/.demo-cache/value && echo out > build/file
+      - run: echo "cached $(cat ~/.demo-cache/value) $(cat build/file) hit=${{ steps.cache.outputs.cache-hit }}"
+"#,
+    );
+    std::fs::write(p.path().join("seed.txt"), "1").unwrap();
+    let dir = p.path().to_str().unwrap();
+    for hit in ["false", "true"] {
+        let out = run(h.path(), &["-C", dir, "run", "ci"]);
+        assert!(out.status.success(), "{}", text(&out));
+        let logs = text(&run(h.path(), &["-C", dir, "logs", "last"]));
+        assert!(logs.contains(&format!("cached fresh out hit={hit}")), "{logs}");
+    }
 }
 
 #[test]

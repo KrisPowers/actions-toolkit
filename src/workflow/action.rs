@@ -11,6 +11,8 @@ use super::model::ActionDef;
 pub enum ActionRef {
     /// `actions/checkout`: the workspace is already provisioned by ATK.
     Checkout,
+    /// `actions/cache`, or its `restore` or `save` half, backed by a local store.
+    Cache(CacheMode),
     /// A well-known action that has no local equivalent yet; skipped with an explanation.
     Unsupported(&'static str),
     Docker(String),
@@ -21,6 +23,14 @@ pub enum ActionRef {
         path: Option<String>,
         git_ref: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CacheMode {
+    /// Restore now, save when the job succeeds.
+    Both,
+    Restore,
+    Save,
 }
 
 pub fn parse(uses: &str) -> Result<ActionRef> {
@@ -41,9 +51,12 @@ pub fn parse(uses: &str) -> Result<ActionRef> {
     let path = parts.next().map(String::from);
     Ok(match format!("{owner}/{repo}").to_lowercase().as_str() {
         "actions/checkout" => ActionRef::Checkout,
-        "actions/cache" => ActionRef::Unsupported(
-            "caching is skipped locally; every run starts from a fresh sandbox",
-        ),
+        "actions/cache" => ActionRef::Cache(match path.as_deref() {
+            None => CacheMode::Both,
+            Some("restore") => CacheMode::Restore,
+            Some("save") => CacheMode::Save,
+            Some(_) => bail!("`{u}` is not part of actions/cache"),
+        }),
         "actions/upload-artifact" | "actions/download-artifact" => {
             ActionRef::Unsupported("artifact upload/download is not supported locally yet")
         }
@@ -111,6 +124,14 @@ mod tests {
                 path: Some("sub/dir".into()),
                 git_ref: "v1".into()
             }
+        );
+        assert_eq!(
+            parse("actions/cache@v4").unwrap(),
+            ActionRef::Cache(CacheMode::Both)
+        );
+        assert_eq!(
+            parse("actions/cache/save@v4").unwrap(),
+            ActionRef::Cache(CacheMode::Save)
         );
         assert!(parse("owner/repo").is_err());
     }

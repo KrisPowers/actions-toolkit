@@ -87,6 +87,8 @@ pub struct SessionRequest<'a> {
     pub bind: bool,
     /// Always pull images.
     pub pull: bool,
+    /// Host folder holding the project's `actions/cache` entries, shared with the job.
+    pub cache: Option<PathBuf>,
     pub cancel: Cancel,
 }
 
@@ -116,6 +118,8 @@ pub struct SessionInfo {
     pub workspace: String,
     pub temp: String,
     pub tool_cache: String,
+    /// The shared `actions/cache` folder, when there is one.
+    pub cache: Option<String>,
     pub os: &'static str,
     pub arch: String,
     /// Default `PATH` inside the environment.
@@ -129,6 +133,7 @@ impl SessionInfo {
             workspace: workspace.to_string(),
             temp: temp.to_string(),
             tool_cache: format!("{temp}/_tool"),
+            cache: None,
             os: "Linux",
             arch: "X64".into(),
             path: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(),
@@ -165,6 +170,9 @@ impl SessionInfo {
 
 pub trait Session: Send {
     fn info(&self) -> &SessionInfo;
+
+    /// The workspace as a host folder, which `hashFiles()` reads.
+    fn host_workspace(&self) -> &Path;
 
     fn exec(
         &mut self,
