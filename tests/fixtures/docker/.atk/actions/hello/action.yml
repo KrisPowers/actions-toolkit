@@ -1,0 +1,10 @@
+name: hello
+description: A Docker action built from its own Dockerfile.
+inputs:
+  greeting:
+    required: true
+runs:
+  using: docker
+  image: Dockerfile
+  args:
+    - docker-${{ inputs.greeting }}

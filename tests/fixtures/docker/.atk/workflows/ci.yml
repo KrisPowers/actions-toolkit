@@ -1,0 +1,17 @@
+name: CI
+on: push
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - id: hello
+        uses: ./.atk/actions/hello
+        with:
+          greeting: hi
+      - uses: docker://alpine:3.20
+        with:
+          entrypoint: sh
+          args: -c "echo image step got ${{ steps.hello.outputs.greeting }}"
+      - run: |
+          test "${{ steps.hello.outputs.greeting }}" = hi
+          test -f made-by-action

@@ -90,11 +90,24 @@ pub struct SessionRequest<'a> {
     pub cancel: Cancel,
 }
 
+#[derive(Default)]
 pub struct ExecRequest {
     pub argv: Vec<String>,
     pub env: Vec<(String, String)>,
     pub cwd: String,
     pub timeout: Option<Duration>,
+    /// Run in a new container from this image, sharing the job's workspace, instead of in
+    /// the job's environment (Docker actions). `argv` are then the entrypoint's arguments.
+    pub image: Option<String>,
+    pub entrypoint: Option<String>,
+}
+
+/// Where a Docker action's image comes from.
+pub enum ActionImage {
+    /// A published image, pulled when it isn't present.
+    Pull(String),
+    /// Built from this Dockerfile, with its folder as the build context.
+    Build(PathBuf),
 }
 
 /// Facts about a running session; all paths are as seen from inside the environment.
@@ -160,6 +173,14 @@ pub trait Session: Send {
         out: &mut dyn FnMut(String),
     ) -> Result<ExecOutcome>;
 
+    /// Makes a Docker action's image available and returns the name to run it by.
+    fn prepare_image(
+        &mut self,
+        image: &ActionImage,
+        cancel: &Cancel,
+        log: &mut dyn FnMut(String),
+    ) -> Result<String>;
+
     fn write_file(&mut self, path: &str, data: &[u8]) -> Result<()>;
 
     /// Reads a file; a missing file reads as empty.
@@ -183,6 +204,7 @@ fn probe_unix(session: &mut dyn Session) -> Result<(String, String, String)> {
         env: Vec::new(),
         cwd: info.workspace.clone(),
         timeout: Some(Duration::from_secs(60)),
+        ..Default::default()
     };
     let mut lines = Vec::new();
     let outcome = session.exec(&req, &Cancel::new(), &mut |l| lines.push(l))?;

@@ -122,6 +122,15 @@ pub struct ActionRuns {
     pub main: Option<String>,
     #[serde(default)]
     pub steps: Vec<Step>,
+    /// Docker actions: a Dockerfile in the action, or `docker://image`.
+    pub image: Option<String>,
+    pub entrypoint: Option<String>,
+    #[serde(rename = "pre-entrypoint")]
+    pub pre_entrypoint: Option<String>,
+    #[serde(default)]
+    pub args: Vec<Yaml>,
+    #[serde(default)]
+    pub env: IndexMap<String, Yaml>,
 }
 
 impl Workflow {

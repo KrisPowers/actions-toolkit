@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -9,9 +10,10 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail, Context, Result};
 use indexmap::IndexMap;
 use serde_json::{json, Map, Value};
+use serde_yaml::Value as Yaml;
 
 use super::{resolve_image, LogKind, RunEvent, RunOptions, Status};
-use crate::engine::{Engine, ExecRequest, Session, SessionRequest};
+use crate::engine::{ActionImage, Engine, ExecRequest, Session, SessionRequest};
 use crate::util::{self, Cancel};
 use crate::workflow::action::{self, ActionRef};
 use crate::workflow::expr::{self, Ctx, JobState};
@@ -209,6 +211,15 @@ struct Scope {
     nested: bool,
     inputs: Option<Value>,
     action_path: Option<String>,
+    env: IndexMap<String, String>,
+}
+
+/// A Docker action resolved for one step.
+struct DockerRun {
+    image: ActionImage,
+    entrypoint: Option<String>,
+    pre_entrypoint: Option<String>,
+    args: Vec<String>,
     env: IndexMap<String, String>,
 }
 
@@ -622,17 +633,21 @@ impl<'a> JobRun<'a> {
             Some(w) => info.join(&info.workspace, w),
             None => info.workspace.clone(),
         };
-        self.exec_with_files(ui, shell_argv(shell, &path), env, cwd, timeout)
+        let req = ExecRequest {
+            argv: shell_argv(shell, &path),
+            cwd,
+            timeout,
+            ..Default::default()
+        };
+        self.exec_with_files(ui, req, env)
     }
 
     /// Runs a command with the step file protocol (`$ATK_ENV`, `$ATK_OUTPUT`, ...).
     fn exec_with_files(
         &mut self,
         ui: usize,
-        argv: Vec<String>,
+        mut req: ExecRequest,
         extra_env: IndexMap<String, String>,
-        cwd: String,
-        timeout: Option<Duration>,
     ) -> Result<(Status, Map<String, Value>)> {
         let info = self.session.info().clone();
         let seq = self.next_seq();
@@ -660,7 +675,8 @@ impl<'a> JobRun<'a> {
         let mut env: IndexMap<String, String> = self.base_env(&files).into_iter().collect();
         env.extend(self.env.clone());
         env.extend(extra_env);
-        if !self.paths.is_empty() {
+        // A Docker action's image has its own PATH.
+        if !self.paths.is_empty() && req.image.is_none() {
             let base = env
                 .get("PATH")
                 .cloned()
@@ -669,13 +685,8 @@ impl<'a> JobRun<'a> {
             parts.push(base);
             env.insert("PATH".into(), parts.join(info.path_separator()));
         }
+        req.env = env.into_iter().collect();
 
-        let req = ExecRequest {
-            argv,
-            env: env.into_iter().collect(),
-            cwd,
-            timeout,
-        };
         let mut outputs = Map::new();
         let outcome = {
             let JobRun {
@@ -798,12 +809,16 @@ impl<'a> JobRun<'a> {
                 return Ok((Status::Skipped, Map::new()));
             }
             ActionRef::Docker(image) => {
-                self.em.log(
-                    ui,
-                    LogKind::Warning,
-                    format!("Skipping docker://{image}: Docker step actions are not supported yet"),
-                );
-                return Ok((Status::Skipped, Map::new()));
+                let inputs = action_inputs(&IndexMap::new(), step, ctx)?;
+                let run = DockerRun {
+                    image: ActionImage::Pull(image),
+                    entrypoint: None,
+                    pre_entrypoint: None,
+                    args: Vec::new(),
+                    env: IndexMap::new(),
+                };
+                let env = action_env(env, &inputs, step, ui);
+                return self.exec_docker(ui, run, &inputs, env, timeout);
             }
             ActionRef::Local(path) => (
                 self.cx.opts.root.join(&path),
@@ -840,10 +855,21 @@ impl<'a> JobRun<'a> {
             }
         };
         let def = action::load(&host_dir)?;
-        let inputs = action_inputs(&def, step, ctx)?;
+        let inputs = action_inputs(&def.inputs, step, ctx)?;
         let using = def.runs.using.to_ascii_lowercase();
         if using == "composite" {
             return self.run_composite(ui, &def, inputs, env_dir, env);
+        }
+        let docker = if using == "docker" {
+            Some(self.docker_run(&def, &host_dir, &inputs, &env)?)
+        } else {
+            None
+        };
+        let mut env = action_env(env, &inputs, step, ui);
+        env.insert("ATK_ACTION_PATH".into(), env_dir.clone());
+        env.insert("GITHUB_ACTION_PATH".into(), env_dir.clone());
+        if let Some(run) = docker {
+            return self.exec_docker(ui, run, &inputs, env, timeout);
         }
         if using.starts_with("node") {
             let main = def
@@ -851,23 +877,113 @@ impl<'a> JobRun<'a> {
                 .main
                 .clone()
                 .context("node action has no `runs.main`")?;
-            let mut env = env;
-            for (k, v) in &inputs {
-                env.insert(
-                    format!("INPUT_{}", k.to_uppercase().replace(' ', "_")),
-                    expr::to_str(v),
-                );
-            }
-            env.insert("ATK_ACTION_PATH".into(), env_dir.clone());
-            env.insert("GITHUB_ACTION_PATH".into(), env_dir.clone());
-            env.insert(
-                "GITHUB_ACTION".into(),
-                step.id.clone().unwrap_or_else(|| format!("__step{ui}")),
-            );
-            let argv = vec!["node".to_string(), info.join(&env_dir, &main)];
-            return self.exec_with_files(ui, argv, env, info.workspace.clone(), timeout);
+            let req = ExecRequest {
+                argv: vec!["node".to_string(), info.join(&env_dir, &main)],
+                cwd: info.workspace.clone(),
+                timeout,
+                ..Default::default()
+            };
+            return self.exec_with_files(ui, req, env);
         }
-        bail!("{uses} can't run: `{}` actions are not supported yet", def.runs.using)
+        bail!(
+            "{uses} can't run: `{}` actions are not supported yet",
+            def.runs.using
+        )
+    }
+
+    /// Resolves a Docker action's image and entrypoints, and its `args` and `env`, which see
+    /// the action's inputs.
+    fn docker_run(
+        &self,
+        def: &ActionDef,
+        dir: &Path,
+        inputs: &Map<String, Value>,
+        env: &IndexMap<String, String>,
+    ) -> Result<DockerRun> {
+        let image = def
+            .runs
+            .image
+            .as_deref()
+            .context("docker action has no `runs.image`")?;
+        let image = match image.strip_prefix("docker://") {
+            Some(name) => ActionImage::Pull(name.to_string()),
+            None => ActionImage::Build(dir.join(image)),
+        };
+        let scope = Scope {
+            inputs: Some(Value::Object(inputs.clone())),
+            ..Default::default()
+        };
+        let data = self.ctx_data(&scope, env);
+        let ctx = Ctx::new(&data, self.state());
+        let eval = |v: &Yaml| expr::interpolate_yaml(v, &ctx).map_err(|e| anyhow!(e));
+        Ok(DockerRun {
+            image,
+            entrypoint: def.runs.entrypoint.clone(),
+            pre_entrypoint: def.runs.pre_entrypoint.clone(),
+            args: def.runs.args.iter().map(&eval).collect::<Result<_>>()?,
+            env: def
+                .runs
+                .env
+                .iter()
+                .map(|(k, v)| eval(v).map(|v| (k.clone(), v)))
+                .collect::<Result<_>>()?,
+        })
+    }
+
+    fn exec_docker(
+        &mut self,
+        ui: usize,
+        run: DockerRun,
+        inputs: &Map<String, Value>,
+        env: IndexMap<String, String>,
+        timeout: Option<Duration>,
+    ) -> Result<(Status, Map<String, Value>)> {
+        // The action's own `entrypoint` and `args` win; inputs of those names stand in for
+        // actions without them, such as `docker://` steps.
+        let input = |name: &str| {
+            inputs
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                .map(|(_, v)| expr::to_str(v))
+                .filter(|v| !v.is_empty())
+        };
+        let entrypoint = run.entrypoint.or_else(|| input("entrypoint"));
+        let args = if run.args.is_empty() {
+            input("args").map(|a| split_args(&a)).unwrap_or_default()
+        } else {
+            run.args
+        };
+        let image = {
+            let JobRun {
+                session, em, cx, ..
+            } = self;
+            session.prepare_image(&run.image, &cx.cancel, &mut |l| {
+                em.log(ui, LogKind::System, l)
+            })?
+        };
+        self.em.log(
+            ui,
+            LogKind::Command,
+            format!("docker run {image} {}", args.join(" ")),
+        );
+        let mut env_all = run.env;
+        env_all.extend(env);
+        let workspace = self.session.info().workspace.clone();
+        let req = |entrypoint: Option<String>| ExecRequest {
+            argv: args.clone(),
+            cwd: workspace.clone(),
+            timeout,
+            image: Some(image.clone()),
+            entrypoint,
+            ..Default::default()
+        };
+        if let Some(pre) = run.pre_entrypoint {
+            let (status, _) = self.exec_with_files(ui, req(Some(pre)), env_all.clone())?;
+            if status != Status::Success {
+                return Ok((status, Map::new()));
+            }
+        }
+        self.exec_with_files(ui, req(entrypoint), env_all)
     }
 
     fn run_composite(
@@ -933,9 +1049,54 @@ fn event_payload(opts: &RunOptions, inputs: &Map<String, Value>) -> Value {
     payload
 }
 
-fn action_inputs(def: &ActionDef, step: &Step, ctx: &Ctx) -> Result<Map<String, Value>> {
+/// Adds what a JavaScript or Docker action reads: its inputs as `INPUT_*`, and its step id.
+fn action_env(
+    mut env: IndexMap<String, String>,
+    inputs: &Map<String, Value>,
+    step: &Step,
+    ui: usize,
+) -> IndexMap<String, String> {
+    for (k, v) in inputs {
+        env.insert(
+            format!("INPUT_{}", k.to_uppercase().replace(' ', "_")),
+            expr::to_str(v),
+        );
+    }
+    env.insert(
+        "GITHUB_ACTION".into(),
+        step.id.clone().unwrap_or_else(|| format!("__step{ui}")),
+    );
+    env
+}
+
+/// Splits a command line on whitespace, keeping quoted parts together.
+fn split_args(line: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut arg: Option<String> = None;
+    let mut quote = None;
+    for c in line.chars() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => arg.get_or_insert_with(String::new).push(c),
+            None if c == '"' || c == '\'' => {
+                quote = Some(c);
+                arg.get_or_insert_with(String::new);
+            }
+            None if c.is_whitespace() => args.extend(arg.take()),
+            None => arg.get_or_insert_with(String::new).push(c),
+        }
+    }
+    args.extend(arg);
+    args
+}
+
+fn action_inputs(
+    declared: &IndexMap<String, Yaml>,
+    step: &Step,
+    ctx: &Ctx,
+) -> Result<Map<String, Value>> {
     let mut inputs = Map::new();
-    for (name, spec) in &def.inputs {
+    for (name, spec) in declared {
         let given = step
             .with
             .iter()
@@ -1088,5 +1249,14 @@ mod tests {
             vec!["node", "/s.js", "--flag"]
         );
         assert_eq!(shell_argv("perl", "/s"), vec!["perl", "/s"]);
+    }
+
+    #[test]
+    fn docker_args() {
+        assert_eq!(
+            split_args(r#"-c "echo a  b" '' x"#),
+            vec!["-c", "echo a  b", "", "x"]
+        );
+        assert!(split_args("  ").is_empty());
     }
 }

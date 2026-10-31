@@ -9,8 +9,8 @@ use anyhow::{bail, Context, Result};
 use tempfile::TempDir;
 
 use super::{
-    apply_probe, find_binary, probe_unix, version_of, Availability, Engine, EngineInfo,
-    ExecRequest, Session, SessionInfo, SessionRequest,
+    apply_probe, find_binary, probe_unix, version_of, ActionImage, Availability, Engine,
+    EngineInfo, ExecRequest, Session, SessionInfo, SessionRequest,
 };
 use crate::util::{self, Cancel, ExecOutcome};
 
@@ -77,30 +77,37 @@ impl ContainerEngine {
     fn cmd(&self) -> Command {
         Command::new(&self.binary)
     }
+}
 
-    fn ensure_image(
-        &self,
-        image: &str,
-        pull: bool,
-        cancel: &Cancel,
-        log: &mut dyn FnMut(String),
-    ) -> Result<()> {
-        if !pull {
-            let mut inspect = self.cmd();
-            inspect.args(["image", "inspect", image]);
-            if util::capture(inspect, Duration::from_secs(30)).is_ok_and(|o| o.success) {
-                return Ok(());
-            }
+fn ensure_image(
+    binary: &Path,
+    image: &str,
+    pull: bool,
+    cancel: &Cancel,
+    log: &mut dyn FnMut(String),
+) -> Result<()> {
+    if !pull {
+        let mut inspect = Command::new(binary);
+        inspect.args(["image", "inspect", image]);
+        if util::capture(inspect, Duration::from_secs(30)).is_ok_and(|o| o.success) {
+            return Ok(());
         }
-        log(format!("Pulling image {image}"));
-        let mut cmd = self.cmd();
-        cmd.args(["pull", image]);
-        let outcome = util::stream(cmd, cancel, None, log)?;
-        if !outcome.success() {
-            bail!("failed to pull image {image}");
-        }
-        Ok(())
     }
+    log(format!("Pulling image {image}"));
+    let mut cmd = Command::new(binary);
+    cmd.args(["pull", image]);
+    let outcome = util::stream(cmd, cancel, None, log)?;
+    if !outcome.success() {
+        bail!("failed to pull image {image}");
+    }
+    Ok(())
+}
+
+fn mount(cmd: &mut Command, host: &Path, target: &str) {
+    cmd.arg("--mount").arg(format!(
+        "type=bind,source={},target={target}",
+        host.display()
+    ));
 }
 
 impl Engine for ContainerEngine {
@@ -131,7 +138,7 @@ impl Engine for ContainerEngine {
             ws
         };
 
-        self.ensure_image(&image, req.pull, &req.cancel, log)?;
+        ensure_image(&self.binary, &image, req.pull, &req.cancel, log)?;
 
         let name = format!("atk-{}", req.id);
         let mut rm = self.cmd();
@@ -140,14 +147,8 @@ impl Engine for ContainerEngine {
 
         let mut cmd = self.cmd();
         cmd.args(["run", "-d", "--name", &name, "--label", "dev.atk.run=1"]);
-        cmd.arg("--mount").arg(format!(
-            "type=bind,source={},target={WORKSPACE}",
-            workspace_host.display()
-        ));
-        cmd.arg("--mount").arg(format!(
-            "type=bind,source={},target={RUNNER}",
-            runner_host.display()
-        ));
+        mount(&mut cmd, &workspace_host, WORKSPACE);
+        mount(&mut cmd, &runner_host, RUNNER);
         cmd.args(["-w", WORKSPACE]);
         for (k, v) in &req.container_env {
             cmd.arg("-e").arg(format!("{k}={v}"));
@@ -169,6 +170,7 @@ impl Engine for ContainerEngine {
             binary: self.binary.clone(),
             name,
             bind: req.bind,
+            pull: req.pull,
             workspace_host,
             runner_host,
             info: SessionInfo::linux(WORKSPACE, RUNNER),
@@ -185,6 +187,7 @@ struct ContainerSession {
     binary: PathBuf,
     name: String,
     bind: bool,
+    pull: bool,
     workspace_host: PathBuf,
     runner_host: PathBuf,
     info: SessionInfo,
@@ -227,13 +230,69 @@ impl Session for ContainerSession {
         cancel: &Cancel,
         out: &mut dyn FnMut(String),
     ) -> Result<ExecOutcome> {
+        let Some(image) = &req.image else {
+            let mut cmd = Command::new(&self.binary);
+            cmd.args(["exec", "-w", &req.cwd]);
+            for (k, v) in &req.env {
+                cmd.arg("-e").arg(format!("{k}={v}"));
+            }
+            cmd.arg(&self.name).args(&req.argv);
+            return util::stream(cmd, cancel, req.timeout, out);
+        };
+        // A Docker action: a sibling container on the same shared directories, so workspace
+        // changes and step files land where the job's later steps see them.
+        let name = format!("{}-action", self.name);
         let mut cmd = Command::new(&self.binary);
-        cmd.args(["exec", "-w", &req.cwd]);
+        cmd.args(["run", "--rm", "--name", &name, "--label", "dev.atk.run=1"]);
+        cmd.args(["-w", &req.cwd]);
+        mount(&mut cmd, &self.workspace_host, WORKSPACE);
+        mount(&mut cmd, &self.runner_host, RUNNER);
         for (k, v) in &req.env {
             cmd.arg("-e").arg(format!("{k}={v}"));
         }
-        cmd.arg(&self.name).args(&req.argv);
-        util::stream(cmd, cancel, req.timeout, out)
+        if let Some(entrypoint) = &req.entrypoint {
+            cmd.args(["--entrypoint", entrypoint.as_str()]);
+        }
+        cmd.arg(image).args(&req.argv);
+        let outcome = util::stream(cmd, cancel, req.timeout, out)?;
+        if outcome.cancelled || outcome.timed_out {
+            // Stopping the client leaves the container running.
+            let mut rm = Command::new(&self.binary);
+            rm.args(["rm", "-f", &name]);
+            let _ = util::capture(rm, Duration::from_secs(30));
+        }
+        Ok(outcome)
+    }
+
+    fn prepare_image(
+        &mut self,
+        image: &ActionImage,
+        cancel: &Cancel,
+        log: &mut dyn FnMut(String),
+    ) -> Result<String> {
+        let dockerfile = match image {
+            ActionImage::Pull(name) => {
+                ensure_image(&self.binary, name, self.pull, cancel, log)?;
+                return Ok(name.clone());
+            }
+            ActionImage::Build(dockerfile) => dockerfile,
+        };
+        let context = dockerfile.parent().context("the Dockerfile has no folder")?;
+        let tag = format!(
+            "action:{:016x}",
+            util::hash(dockerfile.to_string_lossy().as_bytes())
+        );
+        log(format!("Building {} as {tag}", dockerfile.display()));
+        let mut cmd = Command::new(&self.binary);
+        cmd.args(["build", "-t", &tag]);
+        if self.pull {
+            cmd.arg("--pull");
+        }
+        cmd.arg("-f").arg(dockerfile).arg(context);
+        if !util::stream(cmd, cancel, None, log)?.success() {
+            bail!("failed to build {}", dockerfile.display());
+        }
+        Ok(tag)
     }
 
     fn write_file(&mut self, path: &str, data: &[u8]) -> Result<()> {
