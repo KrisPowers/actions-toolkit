@@ -867,7 +867,10 @@ impl<'a> JobRun<'a> {
             let argv = vec!["node".to_string(), info.join(&env_dir, &main)];
             return self.exec_with_files(ui, argv, env, info.workspace.clone(), timeout);
         }
-        bail!("{uses} can't run: `{}` actions are not supported yet", def.runs.using)
+        bail!(
+            "{uses} can't run: `{}` actions are not supported yet",
+            def.runs.using
+        )
     }
 
     fn run_composite(
