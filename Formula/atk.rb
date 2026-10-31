@@ -2,21 +2,21 @@ class Atk < Formula
   desc "Run GitHub Actions-style CI/CD workflows locally in Docker"
   homepage "https://github.com/KrisPowers/actions-toolkit"
   license "MIT"
-  version "1.0.0"
+  version "1.0.1"
 
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/KrisPowers/actions-toolkit/releases/download/v#{version}/atk-macos-aarch64.tar.gz"
-      sha256 "25467f3ee1b234affe6172f098bebf54705d26cc4019bcef860b2b833f553801"
+      sha256 "99fd7cc1a69b6af6ac59d8f8685f12203b536b343623c3693e95c20bfabc584b"
     else
       url "https://github.com/KrisPowers/actions-toolkit/releases/download/v#{version}/atk-macos-x86_64.tar.gz"
-      sha256 "8f121dd052af6e95a19f51b9bb50994642773f13ea836b27f6cd1c8b03f4167b"
+      sha256 "9b2baa4e803018587aee7dc5e50311c1ae63dfa0f0509289f65a0343afe44c14"
     end
   end
 
   on_linux do
     url "https://github.com/KrisPowers/actions-toolkit/releases/download/v#{version}/atk-linux-x86_64.tar.gz"
-    sha256 "921ad6c9d299f8958bd2a93274760b2c012bc334f0e6c7e57613451954c05aeb"
+    sha256 "68cca936bacef4212cf195cc8d8a2c7920c6383a817510dcc0f345f178c1a561"
   end
 
   def install
