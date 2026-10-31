@@ -10,6 +10,7 @@ use serde_json::Value;
 
 const DEMO: &str = "tests/fixtures/demo";
 const NODE: &str = "tests/fixtures/node";
+const DOCKER: &str = "tests/fixtures/docker";
 
 /// `atk` with its run history and settings isolated in `home`.
 fn atk(home: &Path) -> Command {
@@ -263,6 +264,23 @@ fn node_actions_write_step_files() {
 
     let logs = text(&run(h.path(), &["-C", NODE, "logs", "last"]));
     assert!(logs.contains("node-tool is on PATH"), "{logs}");
+}
+
+#[test]
+fn docker_actions_run_in_their_own_container() {
+    let h = home();
+    if !docker(h.path()) {
+        return;
+    }
+    let out = run(h.path(), &["-C", DOCKER, "run", "ci"]);
+    assert!(out.status.success(), "{}", text(&out));
+
+    let logs = text(&run(h.path(), &["-C", DOCKER, "logs", "last"]));
+    assert!(
+        logs.contains("docker action says hi to docker-hi"),
+        "{logs}"
+    );
+    assert!(logs.contains("image step got hi"), "{logs}");
 }
 
 #[test]

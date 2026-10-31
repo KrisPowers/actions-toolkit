@@ -207,12 +207,15 @@ ATK runs workflows written in the widely used `jobs:` / `steps:` YAML format:
   outputs) or a folder to `$ATK_PATH`. `$GITHUB_ENV`, `$GITHUB_OUTPUT` and `$GITHUB_PATH` are
   aliases, so existing files work unchanged.
 - Log commands: `::error::`, `::warning::`, `::group::`, `::add-mask::`
-- Local actions (`uses: ./path`), composite and Node. `owner/repo@ref` actions are never
+- Docker actions: `uses: docker://image` steps (`with.entrypoint` and `with.args`) and
+  `runs.using: docker` actions with a `Dockerfile` or `docker://` image, `args`, `env`,
+  `entrypoint` and `pre-entrypoint`. Each runs in its own container on the job's workspace.
+- Local actions (`uses: ./path`), composite, Node and Docker. `owner/repo@ref` actions are never
   downloaded: put a copy in `.atk/actions/owner/repo` (project) or in your config folder under
   `atk/actions/owner/repo` (global), otherwise the step fails, so a job can't pass without
   running its checks.
 
-Not yet supported: Docker-based actions, `services:`, reusable workflows (`jobs.<id>.uses`),
+Not yet supported: `services:`, reusable workflows (`jobs.<id>.uses`),
 dynamic matrices, caching and artifacts (these steps are skipped with a warning).
 
 ## AI agents
