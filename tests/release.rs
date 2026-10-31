@@ -242,14 +242,7 @@ fn node_actions_write_step_files() {
     }
     let out = run(
         h.path(),
-        &[
-            "-C",
-            NODE,
-            "run",
-            "ci",
-            "--image",
-            "ubuntu-latest=node:20",
-        ],
+        &["-C", NODE, "run", "ci", "--image", "ubuntu-latest=node:20"],
     );
     assert!(out.status.success(), "{}", text(&out));
 
