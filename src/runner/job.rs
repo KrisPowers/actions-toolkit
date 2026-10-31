@@ -2,7 +2,8 @@
 
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,7 +16,7 @@ use serde_yaml::Value as Yaml;
 use super::{resolve_image, LogKind, RunEvent, RunOptions, Status};
 use crate::engine::{ActionImage, Engine, ExecRequest, Session, SessionRequest};
 use crate::util::{self, Cancel};
-use crate::workflow::action::{self, ActionRef};
+use crate::workflow::action::{self, ActionRef, CacheMode};
 use crate::workflow::expr::{self, Ctx, JobState};
 use crate::workflow::model::{ActionDef, Step};
 use crate::workflow::plan::{step_title, PlannedJob, RunPlan};
@@ -129,6 +130,9 @@ pub(crate) fn run(cx: JobContext) -> JobResult {
     let outputs = job.outputs();
 
     job.em.step(last, Status::Running);
+    if status == Status::Success {
+        job.save_caches(last);
+    }
     {
         let JobRun { session, em, .. } = &mut job;
         session.teardown(&mut |l| em.log(last, LogKind::System, l));
@@ -172,6 +176,7 @@ fn setup(cx: &JobContext, pj: &PlannedJob, em: &Emitter) -> Result<Box<dyn Sessi
         options: None,
         bind: cx.opts.bind,
         pull: cx.opts.pull,
+        cache: cache_store(&cx.opts.root),
         cancel: cx.cancel.clone(),
     };
     let image = match &spec {
@@ -214,6 +219,19 @@ struct Scope {
     env: IndexMap<String, String>,
 }
 
+/// What an `actions/cache` step stores: `paths` under `key`.
+struct CacheEntry {
+    key: String,
+    paths: Vec<String>,
+}
+
+impl CacheEntry {
+    /// Entries only match when they hold the same paths, as in GitHub.
+    fn version(&self) -> String {
+        format!("{:016x}", util::hash(self.paths.join("\n").as_bytes()))
+    }
+}
+
 /// A Docker action resolved for one step.
 struct DockerRun {
     image: ActionImage,
@@ -249,6 +267,8 @@ struct JobRun<'a> {
     inputs: Value,
     event_path: String,
     copied_actions: HashSet<String>,
+    /// `actions/cache` entries to save when the job succeeds.
+    caches: Vec<CacheEntry>,
     seq: usize,
     deadline: Option<Instant>,
 }
@@ -323,6 +343,7 @@ impl<'a> JobRun<'a> {
             inputs: Value::Object(inputs),
             event_path,
             copied_actions: HashSet::new(),
+            caches: Vec::new(),
             seq: 0,
             deadline: Instant::now().checked_add(Duration::from_secs_f64(timeout.max(0.0) * 60.0)),
         }
@@ -333,6 +354,14 @@ impl<'a> JobRun<'a> {
             failed: self.failed,
             cancelled: self.cx.cancel.is_cancelled(),
             blocked: false,
+        }
+    }
+
+    /// An expression context over `data` whose `hashFiles()` reads the job's workspace.
+    fn ctx<'d>(&self, data: &'d Value) -> Ctx<'d> {
+        Ctx {
+            files: Some(self.session.host_workspace().to_path_buf()),
+            ..Ctx::new(data, self.state())
         }
     }
 
@@ -406,8 +435,8 @@ impl<'a> JobRun<'a> {
         let empty = IndexMap::new();
         for (k, v) in self.pj.workflow.env.iter().chain(self.pj.job.env.iter()) {
             let data = self.ctx_data(&scope, &empty);
-            let value = expr::interpolate_yaml(v, &Ctx::new(&data, self.state()))
-                .map_err(|e| anyhow!("env.{k}: {e}"))?;
+            let value =
+                expr::interpolate_yaml(v, &self.ctx(&data)).map_err(|e| anyhow!("env.{k}: {e}"))?;
             self.env.insert(k.clone(), value);
         }
         Ok(())
@@ -415,7 +444,7 @@ impl<'a> JobRun<'a> {
 
     fn outputs(&self) -> Map<String, Value> {
         let data = self.ctx_data(&Scope::default(), &IndexMap::new());
-        let ctx = Ctx::new(&data, self.state());
+        let ctx = self.ctx(&data);
         self.pj
             .job
             .outputs
@@ -431,7 +460,7 @@ impl<'a> JobRun<'a> {
 
     fn run_step(&mut self, ui: usize, step: &Step, scope: &Scope) -> Status {
         let data = self.ctx_data(scope, &IndexMap::new());
-        let ctx = Ctx::new(&data, self.state());
+        let ctx = self.ctx(&data);
         let title = step_title(step, &ctx);
         let should_run = match expr::condition(step.condition.as_ref(), &ctx) {
             Ok(b) => b,
@@ -524,7 +553,7 @@ impl<'a> JobRun<'a> {
         let mut step_env = IndexMap::new();
         {
             let data = self.ctx_data(scope, &IndexMap::new());
-            let ctx = Ctx::new(&data, self.state());
+            let ctx = self.ctx(&data);
             for (k, v) in &step.env {
                 step_env.insert(
                     k.clone(),
@@ -533,7 +562,7 @@ impl<'a> JobRun<'a> {
             }
         }
         let data = self.ctx_data(scope, &step_env);
-        let ctx = Ctx::new(&data, self.state());
+        let ctx = self.ctx(&data);
         let mut timeout = step
             .timeout_minutes
             .as_ref()
@@ -803,6 +832,7 @@ impl<'a> JobRun<'a> {
                 );
                 return Ok((Status::Success, Map::new()));
             }
+            ActionRef::Cache(mode) => return self.exec_cache(ui, mode, step, ctx, timeout),
             ActionRef::Unsupported(why) => {
                 self.em
                     .log(ui, LogKind::Warning, format!("Skipping {uses}: {why}"));
@@ -891,6 +921,158 @@ impl<'a> JobRun<'a> {
         )
     }
 
+    /// `actions/cache` and its `restore` and `save` halves. Entries live in a host folder per
+    /// project, shared with the job's container, as plain tar archives of absolute paths.
+    fn exec_cache(
+        &mut self,
+        ui: usize,
+        mode: CacheMode,
+        step: &Step,
+        ctx: &Ctx,
+        timeout: Option<Duration>,
+    ) -> Result<(Status, Map<String, Value>)> {
+        let inputs = action_inputs(&IndexMap::new(), step, ctx)?;
+        let input = |name: &str| inputs.get(name).map(expr::to_str).unwrap_or_default();
+        let lines = |name: &str| -> Vec<String> {
+            input(name)
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(String::from)
+                .collect()
+        };
+        let entry = CacheEntry {
+            key: input("key").trim().to_string(),
+            paths: lines("path"),
+        };
+        if entry.key.is_empty() || entry.paths.is_empty() {
+            bail!("actions/cache needs `path` and `key`");
+        }
+        if mode == CacheMode::Save {
+            return Ok((self.save_cache(ui, &entry)?, Map::new()));
+        }
+        let found = self.find_cache(&entry, &lines("restore-keys"));
+        let exact = found.as_ref().is_some_and(|(key, _)| *key == entry.key);
+        let mut outputs = Map::new();
+        outputs.insert("cache-hit".into(), json!(exact.to_string()));
+        outputs.insert("cache-primary-key".into(), json!(entry.key));
+        match found {
+            None if input("fail-on-cache-miss") == "true" => {
+                bail!("no cache entry for key {}", entry.key)
+            }
+            None => self.em.log(
+                ui,
+                LogKind::System,
+                format!("Cache not found for key: {}", entry.key),
+            ),
+            Some((key, archive)) => {
+                outputs.insert("cache-matched-key".into(), json!(key));
+                if input("lookup-only") == "true" {
+                    self.em
+                        .log(ui, LogKind::System, format!("Cache found for key: {key}"));
+                } else {
+                    self.em.log(
+                        ui,
+                        LogKind::System,
+                        format!("Restoring cache from key: {key}"),
+                    );
+                    let req = ExecRequest {
+                        argv: ["tar", "-xf", &archive, "-C", "/"].map(String::from).into(),
+                        cwd: self.session.info().workspace.clone(),
+                        timeout,
+                        ..Default::default()
+                    };
+                    let (status, _) = self.exec_with_files(ui, req, IndexMap::new())?;
+                    if status != Status::Success {
+                        return Ok((status, outputs));
+                    }
+                }
+            }
+        }
+        if mode == CacheMode::Both && !exact {
+            self.caches.push(entry);
+        }
+        Ok((Status::Success, outputs))
+    }
+
+    /// The entry for `key`, or else the newest one starting with the first restore key that
+    /// matches any: its key and its archive inside the job.
+    fn find_cache(&self, entry: &CacheEntry, restore_keys: &[String]) -> Option<(String, String)> {
+        let info = self.session.info();
+        let dir = info.join(info.cache.as_ref()?, &entry.version());
+        let store = cache_store(&self.cx.opts.root)?.join(entry.version());
+        let archive = |name: &str| info.join(&dir, &format!("{name}.tar"));
+        let exact = cache_file_name(&entry.key);
+        if store.join(format!("{exact}.tar")).is_file() {
+            return Some((entry.key.clone(), archive(&exact)));
+        }
+        let names: Vec<(std::time::SystemTime, String)> = fs::read_dir(&store)
+            .ok()?
+            .filter_map(Result::ok)
+            .filter_map(|e| {
+                let name = e.file_name().into_string().ok()?;
+                let name = name.strip_suffix(".tar")?.to_string();
+                Some((e.metadata().ok()?.modified().ok()?, name))
+            })
+            .collect();
+        restore_keys.iter().find_map(|k| {
+            let prefix = cache_file_name(k);
+            let (_, name) = names
+                .iter()
+                .filter(|(_, n)| n.starts_with(&prefix))
+                .max_by_key(|(t, _)| *t)?;
+            Some((decode_cache_name(name), archive(name)))
+        })
+    }
+
+    /// Archives `entry.paths` from inside the job into its store.
+    fn save_cache(&mut self, ui: usize, entry: &CacheEntry) -> Result<Status> {
+        let info = self.session.info().clone();
+        let dir = info
+            .cache
+            .as_ref()
+            .context("there is no cache folder to save to")?;
+        let archive = info.join(
+            &info.join(dir, &entry.version()),
+            &format!("{}.tar", cache_file_name(&entry.key)),
+        );
+        self.em.log(
+            ui,
+            LogKind::System,
+            format!("Saving cache for key: {}", entry.key),
+        );
+        let mut argv: Vec<String> = ["sh", "-c", SAVE_CACHE, "sh", &archive]
+            .map(String::from)
+            .into();
+        argv.extend(entry.paths.iter().cloned());
+        let req = ExecRequest {
+            argv,
+            cwd: info.workspace.clone(),
+            ..Default::default()
+        };
+        Ok(self.exec_with_files(ui, req, IndexMap::new())?.0)
+    }
+
+    /// Saves what `actions/cache` steps didn't find, as their post step does on success.
+    fn save_caches(&mut self, ui: usize) {
+        for entry in std::mem::take(&mut self.caches) {
+            let failed = match self.save_cache(ui, &entry) {
+                Ok(status) => status != Status::Success,
+                Err(e) => {
+                    self.em.log(ui, LogKind::Warning, format!("{e:#}"));
+                    true
+                }
+            };
+            if failed {
+                self.em.log(
+                    ui,
+                    LogKind::Warning,
+                    format!("Could not save cache for key: {}", entry.key),
+                );
+            }
+        }
+    }
+
     /// Resolves a Docker action's image and entrypoints, and its `args` and `env`, which see
     /// the action's inputs.
     fn docker_run(
@@ -914,7 +1096,7 @@ impl<'a> JobRun<'a> {
             ..Default::default()
         };
         let data = self.ctx_data(&scope, env);
-        let ctx = Ctx::new(&data, self.state());
+        let ctx = self.ctx(&data);
         let eval = |v: &Yaml| expr::interpolate_yaml(v, &ctx).map_err(|e| anyhow!(e));
         Ok(DockerRun {
             image,
@@ -1009,7 +1191,7 @@ impl<'a> JobRun<'a> {
             self.run_step(ui, step, &scope);
         }
         let data = self.ctx_data(&scope, &IndexMap::new());
-        let ctx = Ctx::new(&data, self.state());
+        let ctx = self.ctx(&data);
         let outputs = def
             .outputs
             .iter()
@@ -1048,6 +1230,83 @@ fn event_payload(opts: &RunOptions, inputs: &Map<String, Value>) -> Value {
     }
     payload
 }
+
+/// Where `actions/cache` keeps a project's entries on the host.
+fn cache_store(root: &Path) -> Option<PathBuf> {
+    let name = root
+        .file_name()
+        .map(|n| util::slug(&n.to_string_lossy()))
+        .unwrap_or_default();
+    let id = util::hash(root.to_string_lossy().as_bytes());
+    let dir = dirs::cache_dir()?.join("atk").join("cache");
+    Some(dir.join(format!("{name}-{id:016x}")))
+}
+
+/// A cache key as a file name: safe bytes kept, others `%XX`-escaped, so a restore key that
+/// prefixes a key also prefixes its file name. Overlong keys fall back to their hash.
+fn cache_file_name(key: &str) -> String {
+    let mut name = String::new();
+    for b in key.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.".contains(&b) {
+            name.push(char::from(b));
+        } else {
+            name.push_str(&format!("%{b:02X}"));
+        }
+    }
+    if name.len() > 200 {
+        return format!("{:016x}", util::hash(key.as_bytes()));
+    }
+    name
+}
+
+fn decode_cache_name(name: &str) -> String {
+    let bytes = name.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = bytes
+            .get(i + 1..i + 3)
+            .and_then(|h| std::str::from_utf8(h).ok());
+        match hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
+            Some(b) if bytes[i] == b'%' => {
+                out.push(b);
+                i += 3;
+            }
+            _ => {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Archives the cache paths given after the archive name, relative to `/` so they restore
+/// in place. `~` is the job's home, other relative paths are under the workspace, globs
+/// expand, and `!pattern` excludes.
+const SAVE_CACHE: &str = r#"set -e
+archive="$1"; shift
+mkdir -p "$(dirname "$archive")"
+: > "$archive.list"; : > "$archive.exclude"
+IFS='
+'
+for p in "$@"; do
+  list="$archive.list"
+  case "$p" in '!'*) list="$archive.exclude"; p="${p#!}" ;; esac
+  case "$p" in '~') p="$HOME" ;; '~/'*) p="$HOME/${p#'~/'}" ;; esac
+  case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
+  if [ "$list" = "$archive.exclude" ]; then printf '%s\n' "${p#/}" >> "$list"; continue; fi
+  for f in $p; do if [ -e "$f" ]; then printf '%s\n' "${f#/}" >> "$list"; fi; done
+done
+if [ -s "$archive.list" ]; then
+  tar -cf "$archive.tmp" -C / -X "$archive.exclude" -T "$archive.list"
+  mv "$archive.tmp" "$archive"
+  chmod a+rw "$archive" 2>/dev/null || true
+else
+  echo "No files matched the cache paths; nothing to save"
+fi
+rm -f "$archive.list" "$archive.exclude"
+"#;
 
 /// Adds what a JavaScript or Docker action reads: its inputs as `INPUT_*`, and its step id.
 fn action_env(
@@ -1249,6 +1508,15 @@ mod tests {
             vec!["node", "/s.js", "--flag"]
         );
         assert_eq!(shell_argv("perl", "/s"), vec!["perl", "/s"]);
+    }
+
+    #[test]
+    fn cache_names() {
+        let key = "cargo-Linux-1a2b/x y";
+        let name = cache_file_name(key);
+        assert_eq!(name, "cargo-Linux-1a2b%2Fx%20y");
+        assert!(name.starts_with(&cache_file_name("cargo-Linux-")));
+        assert_eq!(decode_cache_name(&name), key);
     }
 
     #[test]
