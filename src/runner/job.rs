@@ -435,8 +435,8 @@ impl<'a> JobRun<'a> {
         let empty = IndexMap::new();
         for (k, v) in self.pj.workflow.env.iter().chain(self.pj.job.env.iter()) {
             let data = self.ctx_data(&scope, &empty);
-            let value = expr::interpolate_yaml(v, &self.ctx(&data))
-                .map_err(|e| anyhow!("env.{k}: {e}"))?;
+            let value =
+                expr::interpolate_yaml(v, &self.ctx(&data)).map_err(|e| anyhow!("env.{k}: {e}"))?;
             self.env.insert(k.clone(), value);
         }
         Ok(())

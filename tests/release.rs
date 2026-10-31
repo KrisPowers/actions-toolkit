@@ -313,7 +313,10 @@ jobs:
         let out = run(h.path(), &["-C", dir, "run", "ci"]);
         assert!(out.status.success(), "{}", text(&out));
         let logs = text(&run(h.path(), &["-C", dir, "logs", "last"]));
-        assert!(logs.contains(&format!("cached fresh out hit={hit}")), "{logs}");
+        assert!(
+            logs.contains(&format!("cached fresh out hit={hit}")),
+            "{logs}"
+        );
     }
 }
 
