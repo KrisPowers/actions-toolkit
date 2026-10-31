@@ -235,6 +235,21 @@ fn reports_a_failing_step() {
 }
 
 #[test]
+fn an_action_that_cannot_run_fails_the_job() {
+    let h = home();
+    if !docker(h.path()) {
+        return;
+    }
+    let p = project(
+        "on: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: owner/missing-action@v1\n",
+    );
+    let dir = p.path().to_str().unwrap();
+    let out = run(h.path(), &["-C", dir, "run", "ci"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out));
+    assert!(text(&out).contains("no local copy"), "{}", text(&out));
+}
+
+#[test]
 fn node_actions_write_step_files() {
     let h = home();
     if !docker(h.path()) {

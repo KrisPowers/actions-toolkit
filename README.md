@@ -209,7 +209,8 @@ ATK runs workflows written in the widely used `jobs:` / `steps:` YAML format:
 - Log commands: `::error::`, `::warning::`, `::group::`, `::add-mask::`
 - Local actions (`uses: ./path`), composite and Node. `owner/repo@ref` actions are never
   downloaded: put a copy in `.atk/actions/owner/repo` (project) or in your config folder under
-  `atk/actions/owner/repo` (global), otherwise the step is skipped with a warning.
+  `atk/actions/owner/repo` (global), otherwise the step fails, so a job can't pass without
+  running its checks.
 
 Not yet supported: Docker-based actions, `services:`, reusable workflows (`jobs.<id>.uses`),
 dynamic matrices, caching and artifacts (these steps are skipped with a warning).
