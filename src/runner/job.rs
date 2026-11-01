@@ -1283,7 +1283,8 @@ fn decode_cache_name(name: &str) -> String {
 
 /// Archives the cache paths given after the archive name, relative to `/` so they restore
 /// in place. `~` is the job's home, other relative paths are under the workspace, globs
-/// expand, and `!pattern` excludes.
+/// expand, and `!pattern` excludes. Paths are stored with symlinks resolved: tar refuses
+/// to extract through a symlink to an absolute target, such as `~/.cargo` in some images.
 const SAVE_CACHE: &str = r#"set -e
 archive="$1"; shift
 mkdir -p "$(dirname "$archive")"
@@ -1295,8 +1296,10 @@ for p in "$@"; do
   case "$p" in '!'*) list="$archive.exclude"; p="${p#!}" ;; esac
   case "$p" in '~') p="$HOME" ;; '~/'*) p="$HOME/${p#'~/'}" ;; esac
   case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
-  if [ "$list" = "$archive.exclude" ]; then printf '%s\n' "${p#/}" >> "$list"; continue; fi
-  for f in $p; do if [ -e "$f" ]; then printf '%s\n' "${f#/}" >> "$list"; fi; done
+  if [ "$list" = "$archive.exclude" ]; then printf '%s\n' "${p#/}" >> "$list"; fi
+  for f in $p; do
+    if [ -e "$f" ]; then f="$(readlink -f "$f")"; printf '%s\n' "${f#/}" >> "$list"; fi
+  done
 done
 if [ -s "$archive.list" ]; then
   tar -cf "$archive.tmp" -C / -X "$archive.exclude" -T "$archive.list"
