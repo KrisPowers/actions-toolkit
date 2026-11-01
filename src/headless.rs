@@ -96,6 +96,7 @@ pub fn execute(
     opts.platforms.extend(req.images.clone());
     opts.pull = req.pull;
     opts.bind = req.bind;
+    opts.artifacts = store.as_ref().map(|s| s.artifacts_dir(&id));
 
     let mut recorder = store.map(|s| {
         let meta = RunMeta {

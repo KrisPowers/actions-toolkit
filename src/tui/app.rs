@@ -244,7 +244,7 @@ impl App {
         Ok(Screen::Run(Box::new(RunView::start(
             Arc::new(plan),
             engine,
-            Arc::new(opts),
+            opts,
             meta,
             self.store.clone(),
         ))))

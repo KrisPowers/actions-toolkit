@@ -177,6 +177,7 @@ fn setup(cx: &JobContext, pj: &PlannedJob, em: &Emitter) -> Result<Box<dyn Sessi
         bind: cx.opts.bind,
         pull: cx.opts.pull,
         cache: cache_store(&cx.opts.root),
+        artifacts: cx.opts.artifacts.clone(),
         cancel: cx.cancel.clone(),
     };
     let image = match &spec {
@@ -833,11 +834,8 @@ impl<'a> JobRun<'a> {
                 return Ok((Status::Success, Map::new()));
             }
             ActionRef::Cache(mode) => return self.exec_cache(ui, mode, step, ctx, timeout),
-            ActionRef::Unsupported(why) => {
-                self.em
-                    .log(ui, LogKind::Warning, format!("Skipping {uses}: {why}"));
-                return Ok((Status::Skipped, Map::new()));
-            }
+            ActionRef::Upload => return self.exec_upload(ui, step, ctx),
+            ActionRef::Download => return self.exec_download(ui, step, ctx),
             ActionRef::Docker(image) => {
                 let inputs = action_inputs(&IndexMap::new(), step, ctx)?;
                 let run = DockerRun {
@@ -933,14 +931,7 @@ impl<'a> JobRun<'a> {
     ) -> Result<(Status, Map<String, Value>)> {
         let inputs = action_inputs(&IndexMap::new(), step, ctx)?;
         let input = |name: &str| inputs.get(name).map(expr::to_str).unwrap_or_default();
-        let lines = |name: &str| -> Vec<String> {
-            input(name)
-                .lines()
-                .map(str::trim)
-                .filter(|l| !l.is_empty())
-                .map(String::from)
-                .collect()
-        };
+        let lines = |name: &str| input_lines(&input(name));
         let entry = CacheEntry {
             key: input("key").trim().to_string(),
             paths: lines("path"),
@@ -1071,6 +1062,151 @@ impl<'a> JobRun<'a> {
                 );
             }
         }
+    }
+
+    /// `actions/upload-artifact`: copies the matched files into the run's artifacts folder,
+    /// relative to the folder the paths share, as the action stores them.
+    fn exec_upload(
+        &mut self,
+        ui: usize,
+        step: &Step,
+        ctx: &Ctx,
+    ) -> Result<(Status, Map<String, Value>)> {
+        let inputs = action_inputs(&IndexMap::new(), step, ctx)?;
+        let input = |name: &str| {
+            let v = inputs.get(name).map(expr::to_str).unwrap_or_default();
+            v.trim().to_string()
+        };
+        let name = Some(input("name"))
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "artifact".into());
+        check_artifact_name(&name)?;
+        let paths = input_lines(&input("path"));
+        if paths.is_empty() {
+            bail!("actions/upload-artifact needs `path`");
+        }
+        let info = self.session.info().clone();
+        let (Some(host), Some(dir)) = (&self.cx.opts.artifacts, &info.artifacts) else {
+            self.em.log(
+                ui,
+                LogKind::Warning,
+                "This run has no history folder to keep artifacts in; nothing was uploaded",
+            );
+            return Ok((Status::Skipped, Map::new()));
+        };
+        let host = host.join(&name);
+        if host.exists() && input("overwrite") != "true" {
+            bail!(
+                "an artifact named `{name}` already exists in this run \
+                 (set `overwrite: true` to replace it)"
+            );
+        }
+        let hidden = input("include-hidden-files");
+        let dest = info.join(dir, &name);
+        let mut argv: Vec<String> = ["sh", "-c", UPLOAD_ARTIFACT, "sh", &dest, &hidden]
+            .map(String::from)
+            .into();
+        argv.extend(paths.iter().cloned());
+        let req = ExecRequest {
+            argv,
+            cwd: info.workspace.clone(),
+            ..Default::default()
+        };
+        let (status, out) = self.exec_with_files(ui, req, IndexMap::new())?;
+        if status != Status::Success {
+            return Ok((status, Map::new()));
+        }
+        let files: usize = out
+            .get("files")
+            .and_then(|n| expr::to_str(n).parse().ok())
+            .unwrap_or(0);
+        if files == 0 {
+            let msg = format!(
+                "No files were found with the provided path: {}. No artifacts will be uploaded.",
+                paths.join(", ")
+            );
+            match input("if-no-files-found").as_str() {
+                "error" => bail!(msg),
+                "ignore" => self.em.log(ui, LogKind::System, msg),
+                _ => self.em.log(ui, LogKind::Warning, msg),
+            }
+            return Ok((Status::Success, Map::new()));
+        }
+        self.em.log(
+            ui,
+            LogKind::System,
+            format!(
+                "Kept {files} file(s) as artifact `{name}` in {}",
+                host.display()
+            ),
+        );
+        let mut outputs = Map::new();
+        outputs.insert("artifact-url".into(), json!(host.display().to_string()));
+        Ok((Status::Success, outputs))
+    }
+
+    /// `actions/download-artifact`: copies artifacts this run uploaded into the job, one by
+    /// name into `path`, or all (or those matching `pattern`) into a folder each.
+    fn exec_download(
+        &mut self,
+        ui: usize,
+        step: &Step,
+        ctx: &Ctx,
+    ) -> Result<(Status, Map<String, Value>)> {
+        let inputs = action_inputs(&IndexMap::new(), step, ctx)?;
+        let input = |name: &str| {
+            let v = inputs.get(name).map(expr::to_str).unwrap_or_default();
+            v.trim().to_string()
+        };
+        let run_id = input("run-id");
+        if !run_id.is_empty() && run_id != self.cx.opts.run_id {
+            bail!("only this run's artifacts can be downloaded locally, not run {run_id}'s");
+        }
+        let info = self.session.info().clone();
+        let (Some(host), Some(dir)) = (&self.cx.opts.artifacts, &info.artifacts) else {
+            bail!("this run has no history folder, so it keeps no artifacts to download");
+        };
+        let name = input("name");
+        let (names, nested) = if name.is_empty() {
+            let pattern = input("pattern");
+            let mut names: Vec<String> = fs::read_dir(host)
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| e.file_name().into_string().ok())
+                .filter(|n| !n.ends_with(".partial"))
+                .filter(|n| pattern.is_empty() || wildcard(&pattern, n))
+                .collect();
+            names.sort();
+            (names, input("merge-multiple") != "true")
+        } else {
+            check_artifact_name(&name)?;
+            if !host.join(&name).is_dir() {
+                bail!("Artifact not found for name: {name}");
+            }
+            (vec![name], false)
+        };
+        if names.is_empty() {
+            self.em
+                .log(ui, LogKind::System, "No artifacts in this run to download");
+        }
+        let path = input("path");
+        let mode = if nested { "nested" } else { "flat" };
+        let mut argv: Vec<String> = ["sh", "-c", DOWNLOAD_ARTIFACT, "sh", &path, mode]
+            .map(String::from)
+            .into();
+        for n in &names {
+            self.em
+                .log(ui, LogKind::System, format!("Downloading artifact `{n}`"));
+            argv.push(info.join(dir, n));
+        }
+        let req = ExecRequest {
+            argv,
+            cwd: info.workspace.clone(),
+            ..Default::default()
+        };
+        self.exec_with_files(ui, req, IndexMap::new())
     }
 
     /// Resolves a Docker action's image and entrypoints, and its `args` and `env`, which see
@@ -1311,6 +1447,134 @@ fi
 rm -f "$archive.list" "$archive.exclude"
 "#;
 
+/// Copies the files matched by the paths given after the artifact folder and the
+/// `include-hidden-files` flag into that folder, relative to the folder the paths share (or
+/// a lone file's own folder). Paths resolve like cache paths, directories bring everything
+/// under them, and `!pattern` excludes. Writes the file count to the step's outputs.
+const UPLOAD_ARTIFACT: &str = r#"set -e
+dest="$1"; hidden="$2"; shift 2
+work="$(mktemp -d)"; tmp="$dest.partial"
+: > "$work/files"; : > "$work/exclude"; : > "$work/search"
+IFS='
+'
+for p in "$@"; do
+  neg=; case "$p" in '!'*) neg=1; p="${p#!}" ;; esac
+  case "$p" in '~') p="$HOME" ;; '~/'*) p="$HOME/${p#'~/'}" ;; esac
+  case "$p" in /*) ;; *) p="$PWD/${p#./}" ;; esac
+  while [ "$p" != / ] && [ "${p%/}" != "$p" ]; do p="${p%/}"; done
+  if [ -n "$neg" ]; then printf '%s\n' "$p" >> "$work/exclude"; continue; fi
+  sp=; rest="${p#/}"
+  while [ -n "$rest" ]; do
+    seg="${rest%%/*}"
+    case "$rest" in */*) rest="${rest#*/}" ;; *) rest= ;; esac
+    case "$seg" in *[*?[]*) break ;; esac
+    sp="$sp/$seg"
+  done
+  sp="${sp:-/}"
+  printf '%s\n' "$sp" >> "$work/search"
+  for f in $p; do
+    [ -e "$f" ] || continue
+    find -L "$f" ! -type d | while IFS= read -r m; do
+      [ -e "$m" ] || continue
+      if [ "$hidden" != true ]; then case "/${m#"$sp"}" in */.*) continue ;; esac; fi
+      printf '%s\n' "$m"
+    done >> "$work/files"
+  done
+done
+sort -u "$work/files" -o "$work/files"
+root=
+while IFS= read -r s; do
+  if [ -z "$root" ]; then root="$s"; continue; fi
+  while :; do
+    case "$s/" in "${root%/}/"*) break ;; esac
+    root="${root%/*}"; root="${root:-/}"
+  done
+done < "$work/search"
+[ -d "$root" ] || root="$(dirname "$root")"
+rm -rf "$tmp"; mkdir -p "$tmp"
+n=0
+while IFS= read -r f; do
+  skip=
+  while IFS= read -r x; do
+    case "$f" in $x|$x/*) skip=1; break ;; esac
+  done < "$work/exclude"
+  [ -z "$skip" ] || continue
+  rel="${f#"${root%/}/"}"
+  mkdir -p "$tmp/$(dirname "$rel")"
+  cp -L "$f" "$tmp/$rel"
+  n=$((n + 1))
+done < "$work/files"
+rm -rf "$work"
+if [ "$n" -gt 0 ]; then
+  rm -rf "$dest"; mv "$tmp" "$dest"
+  chmod -R a+rwX "$dest" 2>/dev/null || true
+else
+  rm -rf "$tmp"
+fi
+echo "files=$n" >> "$GITHUB_OUTPUT"
+"#;
+
+/// Copies the artifact folders given after the destination and the mode into the
+/// destination (`flat`), or into a folder per artifact under it (`nested`). The destination
+/// resolves like a cache path and defaults to the workspace.
+const DOWNLOAD_ARTIFACT: &str = r#"set -e
+out="$1"; mode="$2"; shift 2
+case "$out" in '') out="$PWD" ;; '~') out="$HOME" ;; '~/'*) out="$HOME/${out#'~/'}" ;; esac
+case "$out" in /*) ;; *) out="$PWD/${out#./}" ;; esac
+for a in "$@"; do
+  d="$out"
+  if [ "$mode" = nested ]; then d="$out/${a##*/}"; fi
+  mkdir -p "$d"
+  cp -R "$a/." "$d/"
+done
+echo "download-path=$out" >> "$GITHUB_OUTPUT"
+"#;
+
+/// Artifact names become folder names, so they can't hold path or reserved characters.
+fn check_artifact_name(name: &str) -> Result<()> {
+    if name.chars().any(|c| "\"\\/:<>|*?\r\n".contains(c))
+        || name == "."
+        || name == ".."
+        || name.ends_with(".partial")
+    {
+        bail!("`{name}` is not a valid artifact name");
+    }
+    Ok(())
+}
+
+/// Matches `text` against a pattern where `*` is any run of characters and `?` one.
+fn wildcard(pattern: &str, text: &str) -> bool {
+    let (p, t): (Vec<char>, Vec<char>) = (pattern.chars().collect(), text.chars().collect());
+    let (mut pi, mut ti, mut star, mut mark) = (0, 0, None, 0);
+    while ti < t.len() {
+        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
+            pi += 1;
+            ti += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star = Some(pi);
+            mark = ti;
+            pi += 1;
+        } else if let Some(s) = star {
+            pi = s + 1;
+            mark += 1;
+            ti = mark;
+        } else {
+            return false;
+        }
+    }
+    p[pi..].iter().all(|&c| c == '*')
+}
+
+/// A multi-line input's non-empty lines, trimmed.
+fn input_lines(value: &str) -> Vec<String> {
+    value
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect()
+}
+
 /// Adds what a JavaScript or Docker action reads: its inputs as `INPUT_*`, and its step id.
 fn action_env(
     mut env: IndexMap<String, String>,
@@ -1520,6 +1784,18 @@ mod tests {
         assert_eq!(name, "cargo-Linux-1a2b%2Fx%20y");
         assert!(name.starts_with(&cache_file_name("cargo-Linux-")));
         assert_eq!(decode_cache_name(&name), key);
+    }
+
+    #[test]
+    fn artifact_names_and_patterns() {
+        assert!(check_artifact_name("coverage-linux").is_ok());
+        for bad in ["a/b", "..", "x:y", "q?", "crash.partial"] {
+            assert!(check_artifact_name(bad).is_err(), "{bad}");
+        }
+        assert!(wildcard("atk-*", "atk-linux-x86_64"));
+        assert!(wildcard("r?port", "report"));
+        assert!(!wildcard("atk-*", "other"));
+        assert!(wildcard("*", ""));
     }
 
     #[test]

@@ -135,6 +135,7 @@ pub fn review(store: &Store, record: &RunRecord) -> Value {
     }
     let mut v = run(record);
     v["failures"] = Value::Array(failures);
+    v["artifacts"] = json!(store.artifacts(&record.id));
     v
 }
 

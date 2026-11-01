@@ -42,6 +42,8 @@ pub struct RunOptions {
     pub parallel: usize,
     pub git: GitInfo,
     pub run_id: String,
+    /// Host folder for the run's `actions/upload-artifact` files; none means they aren't kept.
+    pub artifacts: Option<PathBuf>,
 }
 
 impl RunOptions {
@@ -82,6 +84,7 @@ impl RunOptions {
                 .max(1),
             git: GitInfo::detect(root),
             run_id: next_run_id(now.as_millis() as u64).to_string(),
+            artifacts: None,
         }
     }
 }

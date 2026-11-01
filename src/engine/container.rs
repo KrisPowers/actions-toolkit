@@ -17,6 +17,7 @@ use crate::util::{self, Cancel, ExecOutcome};
 const WORKSPACE: &str = "/github/workspace";
 const RUNNER: &str = "/github/runner";
 const CACHE: &str = "/github/cache";
+const ARTIFACTS: &str = "/github/artifacts";
 
 fn locate() -> Option<PathBuf> {
     find_binary(
@@ -154,6 +155,10 @@ impl Engine for ContainerEngine {
             fs::create_dir_all(cache)?;
             mount(&mut cmd, cache, CACHE);
         }
+        if let Some(artifacts) = &req.artifacts {
+            fs::create_dir_all(artifacts)?;
+            mount(&mut cmd, artifacts, ARTIFACTS);
+        }
         cmd.args(["-w", WORKSPACE]);
         for (k, v) in &req.container_env {
             cmd.arg("-e").arg(format!("{k}={v}"));
@@ -180,6 +185,7 @@ impl Engine for ContainerEngine {
             runner_host,
             info: SessionInfo {
                 cache: req.cache.as_ref().map(|_| CACHE.to_string()),
+                artifacts: req.artifacts.as_ref().map(|_| ARTIFACTS.to_string()),
                 ..SessionInfo::linux(WORKSPACE, RUNNER)
             },
             dir: Some(dir),

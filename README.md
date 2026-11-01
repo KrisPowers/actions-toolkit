@@ -66,7 +66,7 @@ Every command works on the project in the current folder; add `-C <folder>` for 
 | `atk run <workflow>` | Run a workflow in the foreground, streaming its logs |
 | `atk run <workflow> --detach` | Start it in the background and print its run id |
 | `atk runs` | Past and running runs, newest first |
-| `atk status [id]` | A run's jobs and steps, and the output of whatever failed |
+| `atk status [id]` | A run's jobs and steps, its artifacts, and the output of whatever failed |
 | `atk logs [id]` | A run's logs (`--job`, `--step`, `--tail N`) |
 | `atk watch [id]` | Follow a run until it ends; exits with the run's result |
 | `atk cancel [id]` | Stop a run that is still going |
@@ -212,6 +212,10 @@ ATK runs workflows written in the widely used `jobs:` / `steps:` YAML format:
   `hashFiles()`. Entries are kept per project in your cache folder (`~/.cache/atk/cache` on
   Linux, `~/Library/Caches/atk/cache` on macOS, `%LOCALAPPDATA%\atk\cache` on Windows) and
   saved when the job succeeds, so the next run skips the downloads.
+- `actions/upload-artifact` (`name`, `path` with globs and `!` exclusions,
+  `if-no-files-found`, `overwrite`, `include-hidden-files`) and `actions/download-artifact`
+  (`name`, `path`, `pattern`, `merge-multiple`). Artifacts are kept with the run in the run
+  history, listed by `atk status`, and available to later jobs of the same run.
 - Docker actions: `uses: docker://image` steps (`with.entrypoint` and `with.args`) and
   `runs.using: docker` actions with a `Dockerfile` or `docker://` image, `args`, `env`,
   `entrypoint` and `pre-entrypoint`. Each runs in its own container on the job's workspace.
@@ -221,7 +225,7 @@ ATK runs workflows written in the widely used `jobs:` / `steps:` YAML format:
   running its checks.
 
 Not yet supported: `services:`, reusable workflows (`jobs.<id>.uses`),
-dynamic matrices and artifacts (these steps are skipped with a warning).
+and dynamic matrices.
 
 ## AI agents
 
