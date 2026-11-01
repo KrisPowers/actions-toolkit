@@ -361,6 +361,57 @@ fn restores_cached_paths_through_symlinks() {
 }
 
 #[test]
+fn keeps_artifacts_with_the_run() {
+    let h = home();
+    if !docker(h.path()) {
+        return;
+    }
+    let p = project(
+        r#"on: push
+jobs:
+  make:
+    runs-on: ubuntu-latest
+    steps:
+      - run: mkdir -p out/sub && echo hi > out/a.txt && echo deep > out/sub/b.txt && echo secret > out/.hidden
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: none
+          path: missing/
+          if-no-files-found: ignore
+  use:
+    runs-on: ubuntu-latest
+    needs: make
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: report
+          path: got
+      - uses: actions/download-artifact@v4
+        with:
+          path: all
+      - run: echo "got $(cat got/a.txt) $(cat got/sub/b.txt) $(cat all/report/a.txt) hidden=$(test -e got/.hidden && echo yes || echo no)"
+"#,
+    );
+    let dir = p.path().to_str().unwrap();
+    let out = run(h.path(), &["-C", dir, "run", "ci"]);
+    assert!(out.status.success(), "{}", text(&out));
+    let logs = text(&run(h.path(), &["-C", dir, "logs", "last"]));
+    assert!(logs.contains("got hi deep hi hidden=no"), "{logs}");
+
+    let status = json(&run(h.path(), &["-C", dir, "status", "last", "--json"]));
+    let artifacts = status["artifacts"].as_array().unwrap();
+    assert_eq!(artifacts.len(), 1, "{status}");
+    assert_eq!(artifacts[0]["name"], "report");
+    assert_eq!(artifacts[0]["files"], 2);
+    let kept = Path::new(artifacts[0]["path"].as_str().unwrap()).join("sub/b.txt");
+    assert_eq!(std::fs::read_to_string(kept).unwrap().trim(), "deep");
+}
+
+#[test]
 fn detached_runs_can_be_watched() {
     let h = home();
     if !docker(h.path()) {

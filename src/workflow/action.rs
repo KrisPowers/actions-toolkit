@@ -13,8 +13,10 @@ pub enum ActionRef {
     Checkout,
     /// `actions/cache`, or its `restore` or `save` half, backed by a local store.
     Cache(CacheMode),
-    /// A well-known action that has no local equivalent yet; skipped with an explanation.
-    Unsupported(&'static str),
+    /// `actions/upload-artifact`: keeps files with the run.
+    Upload,
+    /// `actions/download-artifact`: brings files kept by this run into the job.
+    Download,
     Docker(String),
     Local(String),
     Remote {
@@ -57,9 +59,8 @@ pub fn parse(uses: &str) -> Result<ActionRef> {
             Some("save") => CacheMode::Save,
             Some(_) => bail!("`{u}` is not part of actions/cache"),
         }),
-        "actions/upload-artifact" | "actions/download-artifact" => {
-            ActionRef::Unsupported("artifact upload/download is not supported locally yet")
-        }
+        "actions/upload-artifact" => ActionRef::Upload,
+        "actions/download-artifact" => ActionRef::Download,
         _ => ActionRef::Remote {
             owner: owner.to_string(),
             repo: repo.to_string(),
@@ -132,6 +133,14 @@ mod tests {
         assert_eq!(
             parse("actions/cache/save@v4").unwrap(),
             ActionRef::Cache(CacheMode::Save)
+        );
+        assert_eq!(
+            parse("actions/upload-artifact@v4").unwrap(),
+            ActionRef::Upload
+        );
+        assert_eq!(
+            parse("actions/download-artifact@v4").unwrap(),
+            ActionRef::Download
         );
         assert!(parse("owner/repo").is_err());
     }

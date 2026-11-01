@@ -97,7 +97,7 @@ impl RunView {
     pub fn start(
         plan: Arc<RunPlan>,
         engine: Arc<dyn Engine>,
-        opts: Arc<RunOptions>,
+        mut opts: RunOptions,
         meta: RunMeta,
         store: Option<Store>,
     ) -> Self {
@@ -126,8 +126,10 @@ impl RunView {
         let title = plan.title.clone();
         let (engine_name, event) = (meta.engine.clone(), meta.event.clone());
         let (workflow, job) = (meta.workflow.clone(), meta.job.clone());
-        let recorder = store.map(|s| Recorder::begin(s, history::new_id(), &plan, meta));
-        let (rx, handle) = runner::spawn(plan, engine, opts, cancel.clone());
+        let id = history::new_id();
+        opts.artifacts = store.as_ref().map(|s| s.artifacts_dir(&id));
+        let recorder = store.map(|s| Recorder::begin(s, id, &plan, meta));
+        let (rx, handle) = runner::spawn(plan, engine, Arc::new(opts), cancel.clone());
         Self {
             title,
             engine: engine_name,

@@ -682,6 +682,23 @@ fn status(root: &Path, id: &str, json: bool) -> Result<ExitCode> {
             }
         }
     }
+    let artifacts = store.artifacts(&record.id);
+    if !artifacts.is_empty() {
+        println!(
+            "
+Artifacts"
+        );
+    }
+    for a in &artifacts {
+        let files = if a.files == 1 { "file" } else { "files" };
+        println!(
+            "  {}  {} {files} · {}  {}",
+            a.name,
+            a.files,
+            fmt_size(a.bytes),
+            a.path.display()
+        );
+    }
     let failures = review["failures"].as_array().cloned().unwrap_or_default();
     if !failures.is_empty() {
         println!("\nFailures");
@@ -697,6 +714,14 @@ fn status(root: &Path, id: &str, json: bool) -> Result<ExitCode> {
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn fmt_size(bytes: u64) -> String {
+    match bytes {
+        0..=1023 => format!("{bytes} B"),
+        1024..=1_048_575 => format!("{:.1} KB", bytes as f64 / 1024.0),
+        _ => format!("{:.1} MB", bytes as f64 / 1_048_576.0),
+    }
 }
 
 fn print_lines(record: &RunRecord, lines: &[LogLine], json: bool) {

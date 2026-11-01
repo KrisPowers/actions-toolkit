@@ -83,6 +83,15 @@ pub struct RunRecord {
     pub jobs: Vec<JobRecord>,
 }
 
+/// Files a run kept with `actions/upload-artifact`.
+#[derive(Debug, Clone, Serialize)]
+pub struct Artifact {
+    pub name: String,
+    pub files: usize,
+    pub bytes: u64,
+    pub path: PathBuf,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogLine {
     pub job: usize,
@@ -153,6 +162,38 @@ impl Store {
 
     fn cancel_path(&self, id: &str) -> PathBuf {
         self.dir.join(format!("{id}.cancel"))
+    }
+
+    /// Where run `id` keeps its artifacts, one folder per artifact name.
+    pub fn artifacts_dir(&self, id: &str) -> PathBuf {
+        self.dir.join(id).join("artifacts")
+    }
+
+    /// The artifacts run `id` uploaded, by name.
+    pub fn artifacts(&self, id: &str) -> Vec<Artifact> {
+        let Ok(entries) = fs::read_dir(self.artifacts_dir(id)) else {
+            return Vec::new();
+        };
+        let mut list: Vec<Artifact> = entries
+            .filter_map(Result::ok)
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| {
+                let name = e.file_name().into_string().ok()?;
+                // An upload still being copied in.
+                if name.ends_with(".partial") {
+                    return None;
+                }
+                let (files, bytes) = tree_size(&e.path());
+                Some(Artifact {
+                    name,
+                    files,
+                    bytes,
+                    path: e.path(),
+                })
+            })
+            .collect();
+        list.sort_by(|a, b| a.name.cmp(&b.name));
+        list
     }
 
     pub fn save_summary(&self, record: &RunRecord) -> Result<()> {
@@ -292,7 +333,12 @@ impl Store {
                 _ => {}
             }
         }
-        Ok(())
+        match fs::remove_dir_all(self.dir.join(id)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(e).with_context(|| format!("deleting the artifacts of {id}"))
+            }
+            _ => Ok(()),
+        }
     }
 
     /// Deletes every finished run of `project`; returns how many were removed.
@@ -314,6 +360,25 @@ fn settle_stale(mut record: RunRecord) -> RunRecord {
         record.outcome = Outcome::Interrupted;
     }
     record
+}
+
+/// The number of files under `dir` and their total size.
+fn tree_size(dir: &Path) -> (usize, u64) {
+    let mut total = (0, 0);
+    for entry in fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+    {
+        let Ok(meta) = entry.metadata() else { continue };
+        if meta.is_dir() {
+            let (files, bytes) = tree_size(&entry.path());
+            total = (total.0 + files, total.1 + bytes);
+        } else {
+            total = (total.0 + 1, total.1 + meta.len());
+        }
+    }
+    total
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -468,6 +533,11 @@ impl Recorder {
         self.record.outcome = outcome;
         self.flush();
         let _ = fs::remove_file(self.store.cancel_path(&self.record.id));
+        // Every job mounts the artifacts folder; drop it again when nothing was uploaded.
+        let artifacts = self.store.artifacts_dir(&self.record.id);
+        if fs::remove_dir(&artifacts).is_ok() {
+            let _ = fs::remove_dir(artifacts.parent().unwrap_or(&artifacts));
+        }
     }
 
     fn flush(&mut self) {
@@ -545,7 +615,28 @@ mod tests {
         assert_eq!(store.find(project, "last").unwrap().id, newer.id);
         assert_eq!(store.logs(&older.id)[0].text, "hello");
 
+        let kept = store.artifacts_dir(&older.id).join("report");
+        fs::create_dir_all(kept.join("sub")).unwrap();
+        fs::write(kept.join("a.txt"), "hi").unwrap();
+        fs::write(kept.join("sub/b.txt"), "there").unwrap();
+        let artifacts = store.artifacts(&older.id);
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(
+            (
+                artifacts[0].name.as_str(),
+                artifacts[0].files,
+                artifacts[0].bytes
+            ),
+            ("report", 2, 7)
+        );
+        assert_eq!(
+            store.list(project).len(),
+            2,
+            "artifact folders are not runs"
+        );
+
         store.delete(&older.id).unwrap();
+        assert!(store.artifacts(&older.id).is_empty());
         assert_eq!(store.list(project).len(), 1);
         assert!(store.logs(&older.id).is_empty());
         assert_eq!(store.clear(project).unwrap(), 1);

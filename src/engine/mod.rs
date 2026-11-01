@@ -89,6 +89,8 @@ pub struct SessionRequest<'a> {
     pub pull: bool,
     /// Host folder holding the project's `actions/cache` entries, shared with the job.
     pub cache: Option<PathBuf>,
+    /// Host folder holding the run's artifacts, shared with every job of the run.
+    pub artifacts: Option<PathBuf>,
     pub cancel: Cancel,
 }
 
@@ -120,6 +122,8 @@ pub struct SessionInfo {
     pub tool_cache: String,
     /// The shared `actions/cache` folder, when there is one.
     pub cache: Option<String>,
+    /// The shared artifacts folder, when there is one.
+    pub artifacts: Option<String>,
     pub os: &'static str,
     pub arch: String,
     /// Default `PATH` inside the environment.
@@ -134,6 +138,7 @@ impl SessionInfo {
             temp: temp.to_string(),
             tool_cache: format!("{temp}/_tool"),
             cache: None,
+            artifacts: None,
             os: "Linux",
             arch: "X64".into(),
             path: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(),
