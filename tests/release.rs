@@ -321,6 +321,46 @@ jobs:
 }
 
 #[test]
+fn restores_cached_paths_through_symlinks() {
+    let h = home();
+    if !docker(h.path()) {
+        return;
+    }
+    let job = |name: &str, needs: &str, run: &str| {
+        format!(
+            r#"  {name}:
+    runs-on: ubuntu-latest{needs}
+    steps:
+      - run: mkdir -p /opt/x && ln -sfn /opt/x ~/.x
+      - uses: actions/cache@v4
+        with:
+          path: ~/.x/data
+          key: linked-${{{{ github.run_id }}}}
+      - run: {run}
+"#
+        )
+    };
+    let p = project(&format!(
+        "on: push\njobs:\n{}{}",
+        job(
+            "save",
+            "",
+            "mkdir -p ~/.x/data && echo linked > ~/.x/data/a"
+        ),
+        job(
+            "load",
+            "\n    needs: save",
+            "echo \"restored $(cat ~/.x/data/a)\""
+        ),
+    ));
+    let dir = p.path().to_str().unwrap();
+    let out = run(h.path(), &["-C", dir, "run", "ci"]);
+    assert!(out.status.success(), "{}", text(&out));
+    let logs = text(&run(h.path(), &["-C", dir, "logs", "last"]));
+    assert!(logs.contains("restored linked"), "{logs}");
+}
+
+#[test]
 fn detached_runs_can_be_watched() {
     let h = home();
     if !docker(h.path()) {
